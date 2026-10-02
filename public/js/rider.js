@@ -56,11 +56,14 @@
       sock.on('connect', async () => { const a = await K.api('/trips/active').catch(() => null); if (a) onTrip(a); });
       if (active) onTrip(active); else {
         locate(false); render();
+        const svc = new URLSearchParams(location.search).get('service');
+        if (svc && S.config.services.some((x) => x.id === svc)) { setService(svc); history.replaceState(null, '', location.pathname); openSearch(); }
         let q = null; try { q = sessionStorage.getItem('kwata_q'); sessionStorage.removeItem('kwata_q'); } catch {}
         if (q) openSearch({ query: q });
       }
       setInterval(loadNearby, 8000);
-    } catch (e) { sheet.innerHTML = `<p class="error">${K.esc(e.message)}</p><button class="btn btn-block" onclick="location.reload()">Try again</button>`; }
+      K.ready();
+    } catch (e) { K.ready(); sheet.innerHTML = `<p class="error">${K.esc(e.message)}</p><button class="btn btn-block" onclick="location.reload()">Try again</button>`; }
   }
 
   function buildRecent(hist) {
@@ -149,20 +152,25 @@
     else reset();
   }
 
+  const BLURB = { boda: 'Beat the jam', car: 'Everyday rides', comfort: 'Newer cars, AC', parcel: 'Send anything', airport: 'Entebbe & beyond' };
+  function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
   function vHome() {
     clearRoute();
     const sp = S.user.savedPlaces || {};
-    const tiles = S.config.services.map((s) => `<button class="tile" data-svc="${s.id}">${K.artFor(s.id, s.vehicle)}${K.esc(K.SERVICE_LABEL[s.id] || s.name)}</button>`).join('');
+    const svcs = S.config.services;
+    const tile = (s, wide) => `<button class="svc${wide ? ' wide' : ''}" data-svc="${s.id}"><span><span class="n">${K.esc(K.SERVICE_LABEL[s.id] || s.name)}</span><span class="d" style="display:block">${BLURB[s.id] || ''}</span></span>${K.artFor(s.id, s.vehicle)}</button>`;
     sheet.innerHTML = `
       <div class="grabber"></div>
+      <div id="installHost"></div>
+      <p class="hello">${greeting()}, ${K.esc(K.first(S.user.name))}</p>
+      <div class="svc-grid">${svcs.map((s, i) => tile(s, svcs.length % 2 === 1 && i === svcs.length - 1)).join('')}</div>
       <button class="whereto" id="whereBtn">${K.ic('search')}<span>Where to?</span></button>
-      <div style="margin-top:6px">
+      <div style="margin-top:4px">
         ${placeRow('home', sp.home)}
         ${placeRow('work', sp.work)}
         ${S.recent.map((r, i) => `<button class="lrow" data-recent="${i}"><span class="ic">${K.ic('clock')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(r.name)}</span><span class="s">${K.esc(r.address)}</span></span></button>`).join('')}
-      </div>
-      <h3 style="margin:16px 0 10px">Suggestions</h3>
-      <div class="tiles" style="grid-template-columns:repeat(${Math.min(5, S.config.services.length)},1fr)">${tiles}</div>`;
+      </div>`;
+    K.installCard(K.$('#installHost'));
     K.$('#whereBtn').onclick = () => openSearch();
     sheet.querySelectorAll('[data-place]').forEach((b) => b.onclick = () => {
       const key = b.dataset.place, p = (S.user.savedPlaces || {})[key];

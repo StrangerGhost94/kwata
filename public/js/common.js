@@ -205,62 +205,145 @@
     return { el: ov.firstElementChild, close };
   };
 
-  // ---------- auth screen ----------
-  const HERO = {
-    rider: 'Go anywhere in Kampala.',
-    driver: 'Drive when you want. Keep 88%.',
-    admin: 'Operations',
+  // ---------- launch splash ----------
+  const T0 = performance.now();
+  K.ready = function () {
+    const sp = document.getElementById('splash');
+    if (!sp || sp.classList.contains('out')) return;
+    const wait = Math.max(0, 1150 - (performance.now() - T0));
+    setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 400); }, wait);
   };
-  K.authScreen = function (root, { role, onDone }) {
-    let mode = 'login';
+
+  // ---------- installable app ----------
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  }
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; document.dispatchEvent(new Event('kwata:installable')); });
+  K.standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  K.installCard = function (host, appName = 'Kwata', icon = '/icons/icon-192.png') {
+    const key = 'kwata_install_dismissed_' + APP;
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    let dismissed = false; try { dismissed = !!localStorage.getItem(key); } catch {}
+    if (K.standalone() || dismissed || !host) return;
     const draw = () => {
-      const reg = mode === 'register';
-      root.innerHTML = `
-      <div class="auth">
-        <div class="auth-hero"><div class="wordmark">Kwata${role === 'driver' ? ' Driver' : ''}</div><h1>${HERO[role]}</h1></div>
-        <div class="auth-card">
-        ${role === 'admin' ? '' : `<div class="seg" role="group" aria-label="Sign in or create account">
-          <button type="button" data-m="login" aria-pressed="${!reg}">Sign in</button>
-          <button type="button" data-m="register" aria-pressed="${reg}">Create account</button></div>`}
-        <form novalidate>
-          ${reg ? `<label for="f-name">Full name</label><input id="f-name" name="name" autocomplete="name" required>` : ''}
-          <label for="f-phone">Mobile number</label>
-          <input id="f-phone" name="phone" type="tel" inputmode="tel" placeholder="0772 123456" autocomplete="tel" required>
-          <label for="f-pass">Password</label>
-          <input id="f-pass" name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" minlength="6" required>
-          ${reg && role === 'driver' ? `
-          <label for="f-vt">Vehicle</label>
-          <select id="f-vt" name="vehicleType"><option value="boda">Boda boda (motorcycle)</option><option value="car">Car</option></select>
-          <div class="row"><div class="fill"><label for="f-plate">Number plate</label><input id="f-plate" name="plate" placeholder="UFA 123X" required></div>
-          <div class="fill"><label for="f-color">Colour</label><input id="f-color" name="vehicleColor" placeholder="Red"></div></div>
-          <label for="f-make">Make and model</label><input id="f-make" name="vehicleMake" placeholder="Bajaj Boxer / Toyota Premio">
-          <label for="f-lic">Driving permit number</label><input id="f-lic" name="licenseNo" required>
-          <label for="f-momo">Mobile Money number for payouts</label><input id="f-momo" name="momoNumber" type="tel" placeholder="Same as above if empty">
-          ` : ''}
-          <p class="error" role="alert"></p>
-          <button class="btn btn-primary btn-block btn-lg" type="submit">${reg ? 'Create account' : 'Continue'}</button>
-        </form>
-        ${role === 'rider' ? '<p class="small muted" style="margin-top:18px">Drive or deliver with Kwata? <a href="/driver"><b>Open the driver app</b></a></p>' : ''}
-        ${role === 'driver' ? '<p class="small muted" style="margin-top:18px">Need a ride? <a href="/rider"><b>Open the rider app</b></a></p>' : ''}
-        </div>
-      </div>`;
-      root.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { mode = b.dataset.m; draw(); });
-      const form = root.querySelector('form');
-      form.onsubmit = async (e) => {
-        e.preventDefault();
-        const btn = form.querySelector('button[type=submit]');
-        const err = form.querySelector('.error');
-        const data = Object.fromEntries(new FormData(form).entries());
-        btn.disabled = true; err.textContent = '';
-        try {
-          const out = reg ? await K.api('/auth/register', { ...data, role }) : await K.api('/auth/login', data);
-          if (out.user.role !== role) throw new Error(role === 'driver' ? 'This number is a rider account. Create a driver account with a different number.' : role === 'admin' ? 'Not an admin account.' : 'This number is registered as a driver. Use the driver app.');
-          K.session.set(out);
-          onDone(out);
-        } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
-      };
+      if (!installEvt && !isIOS) return;
+      host.innerHTML = `<div class="install"><img src="${icon}" alt=""><span class="grow"><b>Get the ${K.esc(appName)} app</b><br><span class="tiny" style="opacity:.75">${installEvt ? 'Opens instantly from your home screen' : 'Tap Share, then “Add to Home Screen”'}</span></span>
+        ${installEvt ? '<button class="btn" data-i>Install</button>' : ''}<button class="x" data-x aria-label="Dismiss">${K.ic('x', 'sm')}</button></div>`;
+      const b = host.querySelector('[data-i]');
+      if (b) b.onclick = async () => { installEvt.prompt(); const r = await installEvt.userChoice.catch(() => ({})); installEvt = null; if (r.outcome === 'accepted') host.innerHTML = ''; };
+      host.querySelector('[data-x]').onclick = () => { try { localStorage.setItem(key, '1'); } catch {} host.innerHTML = ''; };
     };
     draw();
+    document.addEventListener('kwata:installable', draw, { once: true });
+  };
+
+  // ---------- phone-first sign in / sign up ----------
+  const COPY = {
+    rider: { title: 'What’s your phone number?', lead: 'We’ll use it to sign you in and so drivers can reach you.' },
+    driver: { title: 'Drive with Kwata', lead: 'Enter your phone number to sign in or start your application.' },
+    admin: { title: 'Kwata Operations', lead: 'Sign in with your admin phone number.' },
+  };
+  const LOGO = '<span class="onb-logo"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path d="M20 15v34M20 33l16-18M25 29l15 20" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="46" cy="47" r="5" fill="#E8B100"/></svg></span>';
+  K.authScreen = function (root, { role, onDone }) {
+    let phone = '', pretty = '';
+    K.ready();
+    const shell = (inner, back) => {
+      root.innerHTML = `<div class="onb onb-enter"><div class="onb-top">${back ? `<button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button>` : LOGO}<span></span></div>${inner}</div>`;
+      const b = root.querySelector('[data-back]'); if (b) b.onclick = stepPhone;
+    };
+    const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.textContent = on ? 'Please wait…' : btn.dataset.label; };
+
+    function stepPhone() {
+      shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
+        <h1>${COPY[role].title}</h1><p class="lead">${COPY[role].lead}</p>
+        <label for="ph" class="hidden">Phone number</label>
+        <div class="phone-field"><span class="cc">🇺🇬 +256</span><input id="ph" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="772 123456" value="${K.esc(pretty)}" required></div>
+        <p class="error" role="alert"></p>
+        <div class="spacer"></div>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
+        ${role === 'rider' ? '<p class="fine">Driving with Kwata? <a href="/driver"><b>Open the driver app</b></a></p>' : ''}
+        ${role === 'driver' ? '<p class="fine">Need a ride? <a href="/"><b>Open Kwata</b></a></p>' : ''}
+      </form>`);
+      const f = root.querySelector('#f'), inp = f.querySelector('#ph');
+      setTimeout(() => inp.focus(), 80);
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const err = f.querySelector('.error'); err.textContent = '';
+        pretty = inp.value.trim();
+        const raw = pretty.replace(/\D/g, '');
+        const guess = raw.startsWith('256') ? raw : raw.startsWith('0') ? raw : '0' + raw;
+        busy(f, true);
+        try {
+          const r = await K.api('/auth/check', { phone: guess });
+          phone = r.phone;
+          if (r.exists && role !== 'admin' && r.role !== role) {
+            err.textContent = { driver: 'This number is a driver account. Use another number for rides, or open the driver app.', rider: 'This number is registered for rides. Use a different number for your driver account.', admin: 'This is a staff account. Use a different number here.' }[r.role] || 'This number can’t be used here.';
+            busy(f, false); return;
+          }
+          if (r.exists) stepPassword(); else if (role === 'admin') { err.textContent = 'No admin account for this number.'; busy(f, false); } else stepCreate();
+        } catch (ex) { err.textContent = ex.message; busy(f, false); }
+      };
+    }
+
+    function stepPassword() {
+      shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
+        <h1>Welcome back</h1><p class="lead">Enter the password for <b>${K.esc(phone.replace('+256', '0'))}</b></p>
+        <label for="pw" class="hidden">Password</label>
+        <input id="pw" type="password" autocomplete="current-password" placeholder="Password" required>
+        <p class="error" role="alert"></p>
+        <p class="small muted">Forgot your password? Call support and we’ll reset it.</p>
+        <div class="spacer"></div>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Sign in">Sign in</button>
+      </form>`, true);
+      const f = root.querySelector('#f');
+      setTimeout(() => f.querySelector('#pw').focus(), 80);
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const err = f.querySelector('.error'); err.textContent = '';
+        busy(f, true);
+        try {
+          const out = await K.api('/auth/login', { phone, password: f.querySelector('#pw').value });
+          if (role !== out.user.role) throw new Error('This account can’t be used here.');
+          K.session.set(out); onDone(out);
+        } catch (ex) { err.textContent = ex.message; busy(f, false); }
+      };
+    }
+
+    function stepCreate() {
+      shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
+        <h1>${role === 'driver' ? 'Your driver details' : 'Let’s get you set up'}</h1>
+        <p class="lead">New number <b>${K.esc(phone.replace('+256', '0'))}</b>. ${role === 'driver' ? 'We’ll review your details before your first trip.' : 'It takes a few seconds.'}</p>
+        <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" required>
+        <label for="pw">Create a password</label><input id="pw" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="At least 6 characters" required>
+        ${role === 'driver' ? `
+          <label for="vt">Vehicle</label>
+          <select id="vt" name="vehicleType"><option value="boda">Boda boda (motorcycle)</option><option value="car">Car</option></select>
+          <div class="row"><div class="fill"><label for="pl">Number plate</label><input id="pl" name="plate" placeholder="UFA 123X" required></div>
+          <div class="fill"><label for="co">Colour</label><input id="co" name="vehicleColor" placeholder="Red"></div></div>
+          <label for="mk">Make and model</label><input id="mk" name="vehicleMake" placeholder="Bajaj Boxer / Toyota Premio">
+          <label for="lc">Driving permit number</label><input id="lc" name="licenseNo" required>
+          <label for="mm">Mobile Money number for payouts</label><input id="mm" name="momoNumber" type="tel" placeholder="Same as your phone if empty">` : ''}
+        <p class="error" role="alert"></p>
+        <div class="spacer"></div>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Create account">Create account</button>
+        <p class="fine">By continuing you agree to Kwata’s terms and privacy policy.</p>
+      </form>`, true);
+      const f = root.querySelector('#f');
+      setTimeout(() => f.querySelector('#nm').focus(), 80);
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const err = f.querySelector('.error'); err.textContent = '';
+        busy(f, true);
+        try {
+          const data = Object.fromEntries(new FormData(f).entries());
+          const out = await K.api('/auth/register', { ...data, phone, role });
+          K.session.set(out); onDone(out);
+        } catch (ex) { err.textContent = ex.message; busy(f, false); }
+      };
+    }
+
+    stepPhone();
   };
 
   // ---------- maps ----------
@@ -282,6 +365,10 @@
       } catch { osm(); }
     } else osm();
     m.attributionControl.setPrefix(false);
+    // Keep the map filling its box when the screen rotates or the window resizes.
+    const box = document.getElementById(id);
+    if (window.ResizeObserver && box) new ResizeObserver(() => m.invalidateSize({ pan: false })).observe(box);
+    setTimeout(() => m.invalidateSize({ pan: false }), 300);
     return m;
   };
   K.divIcon = (html, size = [20, 20], anchor) => L.divIcon({ className: '', html, iconSize: size, iconAnchor: anchor || [size[0] / 2, size[1] / 2] });

@@ -10,6 +10,10 @@ async function api(path, body, token, method) {
 const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('✓', m); };
 (async () => {
   const admin = await api('/auth/login', { phone: '0700000000', password: 'admin123' });
+  const chk = await api('/auth/check', { phone: '0700000000' });
+  assert(chk.exists && chk.role === 'admin', 'phone check finds existing account');
+  const chk2 = await api('/auth/check', { phone: '0779' + rnd().slice(2) });
+  assert(!chk2.exists, 'phone check reports new number');
   const rider = await api('/auth/register', { name: 'Test Rider', phone: '077' + rnd().slice(1), password: 'secret1' });
   const driver = await api('/auth/register', { name: 'Test Driver', phone: '075' + rnd().slice(1), password: 'secret1', role: 'driver', vehicleType: 'boda', plate: 'UFA 123X', licenseNo: 'DL123', vehicleMake: 'Bajaj Boxer', vehicleColor: 'Red' });
   const ds = io(BASE, { auth: { token: driver.token } });

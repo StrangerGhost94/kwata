@@ -6,9 +6,9 @@ One Node.js app serves everything:
 
 | Address | What it is |
 |---|---|
-| `/` | Public landing page |
-| `/rider` | Rider app (install to home screen like a normal app) |
-| `/driver` | Driver app |
+| `/` | The Kwata app itself: logo splash → phone sign in / sign up → services. Installable to the home screen (PWA). |
+| `/driver` | Kwata Driver app (installs separately, gold icon) |
+| `/about` | Marketing page for sharing on social media |
 | `/admin` | Operations console (approve drivers, live map, pricing, SOS, payouts) |
 | `/t/<code>` | Live trip link a rider shares with family |
 
@@ -27,6 +27,12 @@ One Node.js app serves everything:
 - Every balance change is written to a `transactions` ledger.
 
 **Anti-fraud** – the server recalculates every fare itself and rejects fake short distances; PINs are never sent to drivers; phone numbers are only visible during a live trip.
+
+## Installing on a phone (PWA)
+
+Open the Railway link in Chrome on Android: Kwata shows an **Install** card on the home screen, or use the browser menu → *Install app*. On iPhone, open it in Safari → Share → *Add to Home Screen*. It then opens full-screen from its own icon, with a black splash, like any app from the store. Drivers install `/driver` the same way and get a separate gold icon.
+
+When you release changes to the app, bump `VERSION` at the top of `public/sw.js` so phones pick up the new version right away.
 
 ## Run it on your Mac
 

@@ -32,7 +32,7 @@
 
     const [me0, config] = await Promise.all([K.api('/me'), K.api('/config')]);
     S.user = me0.user; S.driver = me0.driver; S.config = config;
-    if (S.driver.status !== 'approved') { renderPending(); return; }
+    if (S.driver.status !== 'approved') { renderPending(); K.ready(); return; }
 
     sock = K.socket(K.token());
     sock.on('connect', async () => {
@@ -53,6 +53,7 @@
     await loadEarnings();
     const active = await K.api('/trips/active');
     if (active) onTrip(active); else render();
+    K.ready();
   }
 
   function renderPending() {
@@ -130,6 +131,7 @@
     const e = S.earnings || { today: { net: 0, trips: 0 }, week: { net: 0, trips: 0 }, balance: 0 };
     sheet.innerHTML = `
       <div class="grabber"></div>
+      <div id="installHost"></div>
       ${S.online
         ? `<div class="row"><div class="grow"><h2 style="margin:0;font-size:1.3rem">Finding trips</h2><span class="small muted">Requests near you will appear here</span></div>
              <button class="btn icon-btn" id="off" aria-label="Go offline" style="background:var(--stop);color:#fff">${K.ic('x')}</button></div>
@@ -142,6 +144,7 @@
       </div>
       ${S.manual ? '<p class="tiny faint" style="text-align:center">Tap the map to set your position.</p>' : ''}`;
     const off = K.$('#off'); if (off) off.onclick = () => setOnline(false);
+    K.installCard(K.$('#installHost'), 'Kwata Driver', '/icons/driver-192.png');
   }
 
   function onOffer(o) {

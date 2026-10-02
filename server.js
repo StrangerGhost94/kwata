@@ -20,6 +20,12 @@ app.use((req, res, next) => {
 app.get('/health', (req, res) => res.json({ ok: true, db: db.kind }));
 app.use('/api', require('./src/routes'));
 app.get('/t/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'track.html')));
+// The rider app *is* the home page, like a native app. Marketing page lives at /about.
+const page = (f) => (req, res) => res.sendFile(path.join(__dirname, 'public', f));
+app.get(['/', '/rider'], page('rider.html'));
+app.get('/driver', page('driver.html'));
+// The service worker must never be cached by the browser, or updates get stuck.
+app.get('/sw.js', (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.sendFile(path.join(__dirname, 'public', 'sw.js')); });
 app.use('/vendor/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist'), { maxAge: '7d' }));
 app.use('/vendor/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist'), { maxAge: '7d' }));
 app.use('/vendor/maplibre-leaflet', express.static(path.join(__dirname, 'node_modules', '@maplibre', 'maplibre-gl-leaflet'), { maxAge: '7d' }));

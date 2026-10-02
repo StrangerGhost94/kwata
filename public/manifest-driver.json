@@ -1,1 +1,32 @@
-{"name":"Kwata Driver","short_name":"Kwata Driver","start_url":"/driver","display":"standalone","background_color":"#000000","theme_color":"#000000","icons":[{"src":"/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
+{
+ "name": "Kwata Driver",
+ "short_name": "Kwata Driver",
+ "description": "Drive with Kwata and keep 88% of every fare.",
+ "id": "/driver",
+ "start_url": "/driver?source=pwa",
+ "scope": "/driver",
+ "display": "standalone",
+ "orientation": "portrait",
+ "background_color": "#E8B100",
+ "theme_color": "#000000",
+ "icons": [
+  {
+   "src": "/icons/driver-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "/icons/driver-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "/icons/driver-maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ]
+}
