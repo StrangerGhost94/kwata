@@ -36,6 +36,7 @@
         </nav>
       </div>`;
     sheet = K.$('#sheet');
+    K.draggableSheet(sheet);
     map = K.map('map');
     map.on('movestart', () => K.$('#cpin').classList.add('lift'));
     map.on('moveend', () => { K.$('#cpin').classList.remove('lift'); onPinMove(); });

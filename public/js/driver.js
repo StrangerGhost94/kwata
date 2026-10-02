@@ -22,6 +22,7 @@
         <section class="sheet" id="sheet" aria-live="polite"></section>
       </div>`;
     sheet = K.$('#sheet');
+    K.draggableSheet(sheet);
     map = K.map('map');
     map.on('click', (e) => { if (S.manual) setLoc(e.latlng.lat, e.latlng.lng); });
     K.$('#menuBtn').onclick = openMenu;

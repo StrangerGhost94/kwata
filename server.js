@@ -21,6 +21,8 @@ app.get('/health', (req, res) => res.json({ ok: true, db: db.kind }));
 app.use('/api', require('./src/routes'));
 app.get('/t/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'track.html')));
 app.use('/vendor/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist'), { maxAge: '7d' }));
+app.use('/vendor/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist'), { maxAge: '7d' }));
+app.use('/vendor/maplibre-leaflet', express.static(path.join(__dirname, 'node_modules', '@maplibre', 'maplibre-gl-leaflet'), { maxAge: '7d' }));
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));

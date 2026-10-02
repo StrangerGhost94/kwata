@@ -265,12 +265,22 @@
 
   // ---------- maps ----------
   K.dark = () => document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+  const webgl = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })();
+  // Crisp vector streets (OpenFreeMap, free, no API key). Falls back to plain
+  // OpenStreetMap tiles on old phones without WebGL.
   K.map = function (id, center = K.KAMPALA, zoom = 16) {
-    const m = L.map(id, { zoomControl: false, attributionControl: true }).setView([center.lat, center.lng], zoom);
-    const style = K.dark() ? 'dark_all' : 'rastertiles/voyager';
-    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`, {
-      maxZoom: 20, subdomains: 'abcd', attribution: '© OpenStreetMap © CARTO',
-    }).addTo(m);
+    const m = L.map(id, { zoomControl: false, attributionControl: true, zoomSnap: 0.25 }).setView([center.lat, center.lng], zoom);
+    const osm = () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(m);
+    if (webgl && L.maplibreGL) {
+      try {
+        const gl = L.maplibreGL({
+          style: `https://tiles.openfreemap.org/styles/${K.dark() ? 'dark' : 'positron'}`,
+          attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © OpenStreetMap',
+        }).addTo(m);
+        const glMap = gl.getMaplibreMap && gl.getMaplibreMap();
+        if (glMap) glMap.on('error', (e) => { if (!m._fellBack && /style|Failed to fetch/i.test(String(e && e.error && e.error.message))) { m._fellBack = true; m.removeLayer(gl); osm(); } });
+      } catch { osm(); }
+    } else osm();
     m.attributionControl.setPrefix(false);
     return m;
   };
@@ -354,6 +364,45 @@
     knob.addEventListener('dblclick', finish);
     el.reset = () => { done = false; set(0); };
     return el;
+  };
+
+  // Bottom sheet you can drag down to reveal the map (and back up), with snap.
+  K.draggableSheet = function (sheet) {
+    if (sheet._drag) return;
+    sheet._drag = true;
+    let startY = 0, startOff = 0, off = 0, dragging = false, moved = false;
+    const peek = () => Math.max(0, sheet.offsetHeight - 132);
+    const set = (v, anim) => {
+      off = Math.max(0, Math.min(peek(), v));
+      sheet.style.transition = anim ? 'transform .3s cubic-bezier(.2,.8,.2,1)' : 'none';
+      sheet.style.transform = off ? `translateY(${off}px)` : '';
+      sheet.classList.toggle('collapsed', off > 0);
+    };
+    sheet.collapse = () => set(peek(), true);
+    sheet.expand = () => set(0, true);
+    sheet.addEventListener('pointerdown', (e) => {
+      if (innerWidth >= 760) return;
+      const r = sheet.getBoundingClientRect();
+      if (e.clientY - r.top > 34) return; // only the handle area
+      dragging = true; moved = false; startY = e.clientY; startOff = off;
+      sheet.setPointerCapture(e.pointerId);
+    });
+    sheet.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const d = e.clientY - startY;
+      if (Math.abs(d) > 4) moved = true;
+      set(startOff + d);
+    });
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (!moved) { set(off > 0 ? 0 : peek(), true); return; }
+      set(off > peek() * 0.35 ? peek() : 0, true);
+    };
+    sheet.addEventListener('pointerup', end);
+    sheet.addEventListener('pointercancel', end);
+    // Any new content opens the sheet again.
+    new MutationObserver(() => { if (off) set(0, true); }).observe(sheet, { childList: true });
   };
 
   K.SERVICE_LABEL = { boda: 'Boda', car: 'Car', comfort: 'Comfort', parcel: 'Parcel', airport: 'Airport' };
