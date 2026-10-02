@@ -15,11 +15,18 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   const chk2 = await api('/auth/check', { phone: '0779' + rnd().slice(2) });
   assert(!chk2.exists, 'phone check reports new number');
   const rider = await api('/auth/register', { name: 'Test Rider', phone: '077' + rnd().slice(1), password: 'secret1' });
-  const driver = await api('/auth/register', { name: 'Test Driver', phone: '075' + rnd().slice(1), password: 'secret1', role: 'driver', vehicleType: 'boda', plate: 'UFA 123X', licenseNo: 'DL123', vehicleMake: 'Bajaj Boxer', vehicleColor: 'Red' });
+  const dPhone = '075' + rnd().slice(1);
+  let selfSignup = null; try { await api('/auth/register', { name: 'Sneaky', phone: '0751' + rnd().slice(2), password: 'secret1', role: 'driver' }); } catch (e) { selfSignup = e.message; }
+  assert(/created by the Kwata team/.test(selfSignup || ''), 'drivers cannot sign themselves up');
+  await api('/admin/drivers', { name: 'Test Driver', phone: dPhone, password: 'secret1', vehicleType: 'boda', plate: 'UFA 123X', licenseNo: 'DL123', vehicleMake: 'Bajaj Boxer', vehicleColor: 'Red' }, admin.token);
+  const driver = await api('/auth/login', { phone: dPhone, password: 'secret1' });
+  assert(driver.user.role === 'driver', 'admin-added driver can sign in');
+  await api(`/admin/users/${driver.user.id}/password`, { password: 'secret1' }, admin.token);
   const ds = io(BASE, { auth: { token: driver.token } });
   await new Promise((r) => ds.on('connect', r));
+  await api(`/admin/drivers/${driver.user.id}/status`, { status: 'suspended' }, admin.token);
   let res = await ds.emitWithAck('driver:online', true);
-  assert(!res.ok, 'unapproved driver cannot go online');
+  assert(!res.ok, 'suspended driver cannot go online');
   await api(`/admin/drivers/${driver.user.id}/status`, { status: 'approved' }, admin.token);
   res = await ds.emitWithAck('driver:online', true);
   assert(res.ok, 'approved driver goes online');

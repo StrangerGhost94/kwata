@@ -53,21 +53,21 @@ r.get('/track/:token', wrap(async (req, res) => {
 }));
 
 // ---------- Auth ----------
-r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
-  const { name, phone, password, role = 'rider', email } = req.body || {};
+// Builds a user (and driver profile) from a form. Returns { error } or { user }.
+async function createAccount(body, role, { approved = false } = {}) {
+  const { name, phone, password, email } = body || {};
   const p = auth.normalizePhone(phone);
-  if (!name || String(name).trim().length < 2) return bad(res, 'Enter your full name.');
-  if (!p) return bad(res, 'Enter a valid Ugandan phone number, e.g. 0772 123456.');
-  if (!password || String(password).length < 6) return bad(res, 'Password must be at least 6 characters.');
-  if (!['rider', 'driver'].includes(role)) return bad(res, 'Invalid account type.');
-  if (await db.one('SELECT id FROM users WHERE phone = $1', [p])) return bad(res, 'This phone number already has an account. Sign in instead.');
+  if (!name || String(name).trim().length < 2) return { error: 'Enter the full name.' };
+  if (!p) return { error: 'Enter a valid Ugandan phone number, e.g. 0772 123456.' };
+  if (!password || String(password).length < 6) return { error: 'Password must be at least 6 characters.' };
+  if (await db.one('SELECT id FROM users WHERE phone = $1', [p])) return { error: 'This phone number already has an account.' };
 
   let driverInfo = null;
   if (role === 'driver') {
-    const { vehicleType, plate, vehicleMake, vehicleColor, licenseNo, momoNumber } = req.body;
-    if (!['boda', 'car'].includes(vehicleType)) return bad(res, 'Choose boda or car.');
-    if (!plate || String(plate).trim().length < 4) return bad(res, 'Enter your number plate.');
-    if (!licenseNo) return bad(res, 'Enter your driving permit number.');
+    const { vehicleType, plate, vehicleMake, vehicleColor, licenseNo, momoNumber } = body;
+    if (!['boda', 'car'].includes(vehicleType)) return { error: 'Choose boda or car.' };
+    if (!plate || String(plate).trim().length < 4) return { error: 'Enter the number plate.' };
+    if (!licenseNo) return { error: 'Enter the driving permit number.' };
     const s = await getSettings();
     const services = Object.entries(s.services).filter(([, v]) => v.vehicle === vehicleType).map(([id]) => id);
     driverInfo = {
@@ -82,14 +82,31 @@ r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
     const u = await t.one('INSERT INTO users(name, phone, email, password_hash, role) VALUES ($1,$2,$3,$4,$5) RETURNING *',
       [String(name).trim().slice(0, 80), p, email ? String(email).slice(0, 120) : null, hash, role]);
     if (driverInfo) {
-      await t.query(`INSERT INTO drivers(user_id, vehicle_type, services, plate, vehicle_make, vehicle_color, license_no, momo_number)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [u.id, driverInfo.vehicleType, driverInfo.services, driverInfo.plate, driverInfo.vehicleMake, driverInfo.vehicleColor, driverInfo.licenseNo, driverInfo.momo]);
+      await t.query(`INSERT INTO drivers(user_id, vehicle_type, services, plate, vehicle_make, vehicle_color, license_no, momo_number, status)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [u.id, driverInfo.vehicleType, driverInfo.services, driverInfo.plate, driverInfo.vehicleMake, driverInfo.vehicleColor, driverInfo.licenseNo, driverInfo.momo, approved ? 'approved' : 'pending']);
     }
     return u;
   });
-  if (driverInfo) rt.io.to('admin').emit('admin:new_driver', { id: user.id, name: user.name });
-  res.json({ token: auth.sign(user), user: auth.publicUser(user) });
+  return { user };
+}
+
+// Public sign-up is for riders only. Drivers are added by the Kwata team after
+// checking their permit, logbook and ID in person.
+r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
+  const role = (req.body || {}).role || 'rider';
+  if (role !== 'rider') return bad(res, 'Driver accounts are created by the Kwata team after verification.', 403);
+  const out = await createAccount(req.body, 'rider');
+  if (out.error) return bad(res, out.error);
+  res.json({ token: auth.sign(out.user), user: auth.publicUser(out.user) });
+}));
+
+r.post('/me/password', auth.requireAuth(), wrap(async (req, res) => {
+  const { current, next } = req.body || {};
+  if (!(await bcrypt.compare(String(current || ''), req.user.password_hash))) return bad(res, 'Your current password is wrong.');
+  if (!next || String(next).length < 6) return bad(res, 'New password must be at least 6 characters.');
+  await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [await bcrypt.hash(String(next), 10), req.user.id]);
+  res.json({ ok: true });
 }));
 
 // Phone-first sign in: tells the app whether to ask for a password or show sign-up.
@@ -442,6 +459,22 @@ r.get('/admin/drivers', admin, wrap(async (req, res) => {
     balance: x.earnings_balance, trips: x.trips, rating: x.rating_count ? Math.round((x.rating_sum / x.rating_count) * 10) / 10 : null,
     createdAt: x.created_at,
   })));
+}));
+
+// Onboard a verified driver. They sign in to the driver app with this phone and password.
+r.post('/admin/drivers', admin, wrap(async (req, res) => {
+  const out = await createAccount(req.body, 'driver', { approved: true });
+  if (out.error) return bad(res, out.error);
+  res.json({ ok: true, id: out.user.id });
+}));
+
+// Reset anyone's password (there's no SMS reset yet, so support does it).
+r.post('/admin/users/:id/password', admin, wrap(async (req, res) => {
+  const pw = String((req.body || {}).password || '');
+  if (pw.length < 6) return bad(res, 'Password must be at least 6 characters.');
+  const u = await db.one("UPDATE users SET password_hash = $1 WHERE id = $2 AND role <> 'admin' RETURNING id", [await bcrypt.hash(pw, 10), Number(req.params.id)]);
+  if (!u) return bad(res, 'User not found.', 404);
+  res.json({ ok: true });
 }));
 
 r.post('/admin/drivers/:id/status', admin, wrap(async (req, res) => {

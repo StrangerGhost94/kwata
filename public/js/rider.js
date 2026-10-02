@@ -689,7 +689,6 @@
       <button class="menu-item" data-a="work">${K.ic('work')}<span class="grow">Work<br><span class="small muted">${u.savedPlaces && u.savedPlaces.work ? K.esc(u.savedPlaces.work.address) : 'Add work'}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="safety">${K.ic('person')}<span class="grow">Emergency contact<br><span class="small muted">${u.emergencyContact ? K.esc(u.emergencyContact) : 'Not set'}</span></span>${K.ic('chev', 'sm')}</button>
       <a class="menu-item" href="tel:${K.esc(S.config.supportPhone)}">${K.ic('help')}<span class="grow">Help</span>${K.ic('chev', 'sm')}</a>
-      <a class="menu-item" href="/driver">${K.ic('bolt')}<span class="grow">Earn by driving or delivering</span>${K.ic('chev', 'sm')}</a>
       <button class="menu-item" data-a="out">${K.ic('logout')}<span class="grow">Sign out</span></button>`;
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => {
       const a = b.dataset.a;

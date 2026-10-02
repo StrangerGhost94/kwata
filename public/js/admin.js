@@ -81,17 +81,58 @@
 
   async function drivers(main) {
     const list = await K.api('/admin/drivers');
-    main.innerHTML = `<h1>Drivers</h1><p class="muted">Check each driver's permit, logbook and National ID in person before approving.</p>
-      <div class="table-wrap"><table><thead><tr><th>Driver</th><th>Vehicle</th><th>Permit</th><th>Trips</th><th>Rating</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>
+    main.innerHTML = `<div class="row" style="align-items:flex-end;margin-bottom:6px"><div class="grow"><h1 style="margin:0">Drivers</h1>
+        <p class="muted" style="margin:6px 0 0">Drivers can’t sign themselves up. Check their permit, logbook and National ID in person, then add them here.</p></div>
+        <button class="btn btn-primary" id="addDriver" style="flex:none">${K.ic('plus')} Add driver</button></div>
+      <div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>Driver</th><th>Vehicle</th><th>Permit</th><th>Trips</th><th>Rating</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>
       ${list.map((d) => `<tr><td><b>${K.esc(d.name)}</b><br><span class="small muted">${K.esc(d.phone)}</span></td>
         <td>${K.vehicleEmoji(d.vehicleType)} <span class="plate-tag">${K.esc(d.plate)}</span><br><span class="small muted">${K.esc(d.vehicle)}</span></td>
         <td>${K.esc(d.licenseNo)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td><td>${K.ugx(d.balance)}</td><td>${badge(d.status)}</td>
         <td style="white-space:nowrap">${d.status !== 'approved' ? `<button class="btn btn-primary btn-sm" data-id="${d.id}" data-s="approved">Approve</button>` : `<button class="btn btn-sm" data-id="${d.id}" data-s="suspended">Suspend</button>`}
-        ${d.status === 'pending' ? `<button class="btn btn-ghost btn-sm" data-id="${d.id}" data-s="rejected">Reject</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">No drivers yet. Share the driver app link: ' + location.origin + '/driver</td></tr>'}
+        <button class="btn btn-ghost btn-sm" data-pw="${d.id}" data-name="${K.esc(d.name)}">Reset password</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">No drivers yet. Click “Add driver” after you’ve met and checked them.</td></tr>'}
       </tbody></table></div>`;
     main.querySelectorAll('[data-s]').forEach((b) => b.onclick = async () => {
       await K.api(`/admin/drivers/${b.dataset.id}/status`, { status: b.dataset.s });
       K.toast(`Driver ${b.dataset.s}`); await refreshCounts(); show();
+    });
+    bindReset(main);
+    K.$('#addDriver').onclick = addDriver;
+  }
+
+  function addDriver() {
+    const m = K.modal(`<h2>Add a driver</h2>
+      <p class="muted small">Only add drivers whose permit, logbook and National ID you’ve checked. Give them the phone and password to sign in to the Driver app at <b>${location.origin}/driver</b>.</p>
+      <form id="df" novalidate>
+        <label for="d-name">Full name</label><input id="d-name" name="name" required>
+        <div class="row"><div class="fill"><label for="d-phone">Phone</label><input id="d-phone" name="phone" type="tel" placeholder="0772 123456" required></div>
+          <div class="fill"><label for="d-pw">Starting password</label><input id="d-pw" name="password" minlength="6" required></div></div>
+        <div class="row"><div class="fill"><label for="d-vt">Vehicle</label><select id="d-vt" name="vehicleType"><option value="boda">Boda boda</option><option value="car">Car</option></select></div>
+          <div class="fill"><label for="d-plate">Number plate</label><input id="d-plate" name="plate" placeholder="UFA 123X" required></div></div>
+        <div class="row"><div class="fill"><label for="d-make">Make and model</label><input id="d-make" name="vehicleMake" placeholder="Bajaj Boxer"></div>
+          <div class="fill"><label for="d-color">Colour</label><input id="d-color" name="vehicleColor" placeholder="Red"></div></div>
+        <div class="row"><div class="fill"><label for="d-lic">Driving permit no.</label><input id="d-lic" name="licenseNo" required></div>
+          <div class="fill"><label for="d-momo">Mobile Money for payouts</label><input id="d-momo" name="momoNumber" type="tel" placeholder="Same as phone"></div></div>
+        <p class="error" id="err"></p>
+        <button class="btn btn-primary btn-block btn-lg" type="submit">Add driver</button>
+      </form>`);
+    const f = K.$('#df', m.el);
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(f).entries());
+      try { await K.api('/admin/drivers', data); m.close(); K.toast(`${data.name} added. They can sign in to the Driver app now.`); await refreshCounts(); show(); }
+      catch (ex) { K.$('#err', m.el).textContent = ex.message; }
+    };
+  }
+
+  function bindReset(root) {
+    root.querySelectorAll('[data-pw]').forEach((b) => b.onclick = () => {
+      const m = K.modal(`<h2>Reset password</h2><p class="muted small">Set a new password for <b>${b.dataset.name}</b> and tell them in person or by phone.</p>
+        <label for="np">New password</label><input id="np" minlength="6" autocomplete="off">
+        <p class="error" id="err"></p><button class="btn btn-primary btn-block btn-lg" id="go">Save password</button>`);
+      K.$('#go', m.el).onclick = async () => {
+        try { await K.api(`/admin/users/${b.dataset.pw}/password`, { password: K.$('#np', m.el).value }); m.close(); K.toast('Password updated'); }
+        catch (ex) { K.$('#err', m.el).textContent = ex.message; }
+      };
     });
   }
 
@@ -99,12 +140,14 @@
     const list = await K.api('/admin/riders');
     main.innerHTML = `<h1>Riders</h1><div class="table-wrap"><table><thead><tr><th>Rider</th><th>Joined</th><th>Trips</th><th>Wallet</th><th></th></tr></thead><tbody>
       ${list.map((u) => `<tr><td><b>${K.esc(u.name)}</b><br><span class="small muted">${K.esc(u.phone)}</span></td><td>${K.when(u.created_at)}</td><td>${u.trips}</td><td>${K.ugx(u.wallet_balance)}</td>
-        <td><button class="btn btn-sm ${u.blocked ? '' : 'btn-ghost'}" data-id="${u.id}" data-b="${!u.blocked}">${u.blocked ? 'Unblock' : 'Block'}</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">No riders yet.</td></tr>'}
+        <td style="white-space:nowrap"><button class="btn btn-sm ${u.blocked ? '' : 'btn-ghost'}" data-id="${u.id}" data-b="${!u.blocked}">${u.blocked ? 'Unblock' : 'Block'}</button>
+        <button class="btn btn-ghost btn-sm" data-pw="${u.id}" data-name="${K.esc(u.name)}">Reset password</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">No riders yet.</td></tr>'}
       </tbody></table></div>`;
     main.querySelectorAll('[data-b]').forEach((b) => b.onclick = async () => {
       if (b.dataset.b === 'true' && !confirm('Block this rider? They will not be able to book.')) return;
       await K.api(`/admin/users/${b.dataset.id}/block`, { blocked: b.dataset.b === 'true' }); show();
     });
+    bindReset(main);
   }
 
   async function trips(main) {

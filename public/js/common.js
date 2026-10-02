@@ -241,7 +241,7 @@
   // ---------- phone-first sign in / sign up ----------
   const COPY = {
     rider: { title: 'What’s your phone number?', lead: 'We’ll use it to sign you in and so drivers can reach you.' },
-    driver: { title: 'Drive with Kwata', lead: 'Enter your phone number to sign in or start your application.' },
+    driver: { title: 'Kwata Driver', lead: 'Sign in with the phone number the Kwata team registered for you.' },
     admin: { title: 'Kwata Operations', lead: 'Sign in with your admin phone number.' },
   };
   const LOGO = '<span class="onb-logo"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path d="M20 15v34M20 33l16-18M25 29l15 20" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="46" cy="47" r="5" fill="#E8B100"/></svg></span>';
@@ -262,8 +262,7 @@
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
-        ${role === 'rider' ? '<p class="fine">Driving with Kwata? <a href="/driver"><b>Open the driver app</b></a></p>' : ''}
-        ${role === 'driver' ? '<p class="fine">Need a ride? <a href="/"><b>Open Kwata</b></a></p>' : ''}
+
       </form>`);
       const f = root.querySelector('#f'), inp = f.querySelector('#ph');
       setTimeout(() => inp.focus(), 80);
@@ -281,9 +280,23 @@
             err.textContent = { driver: 'This number is a driver account. Use another number for rides, or open the driver app.', rider: 'This number is registered for rides. Use a different number for your driver account.', admin: 'This is a staff account. Use a different number here.' }[r.role] || 'This number can’t be used here.';
             busy(f, false); return;
           }
-          if (r.exists) stepPassword(); else if (role === 'admin') { err.textContent = 'No admin account for this number.'; busy(f, false); } else stepCreate();
+          if (r.exists) stepPassword();
+          else if (role === 'admin') { err.textContent = 'No admin account for this number.'; busy(f, false); }
+          else if (role === 'driver') stepNotDriver();
+          else stepCreate();
         } catch (ex) { err.textContent = ex.message; busy(f, false); }
       };
+    }
+
+    function stepNotDriver() {
+      shell(`<div class="grow" style="display:flex;flex-direction:column">
+        <h1>Become a Kwata driver</h1>
+        <p class="lead"><b>${K.esc(phone.replace('+256', '0'))}</b> isn’t registered as a driver yet.</p>
+        <div class="card" style="margin-bottom:12px"><b>How to join</b><p class="small muted" style="margin:6px 0 0">Visit the Kwata office with your driving permit, vehicle logbook and National ID. Once we’ve checked them, we’ll register you and you can sign in here straight away.</p></div>
+        <div class="spacer"></div>
+        <button class="btn btn-block btn-lg" data-back2>Try another number</button>
+      </div>`, true);
+      root.querySelector('[data-back2]').onclick = stepPhone;
     }
 
     function stepPassword() {
@@ -292,7 +305,7 @@
         <label for="pw" class="hidden">Password</label>
         <input id="pw" type="password" autocomplete="current-password" placeholder="Password" required>
         <p class="error" role="alert"></p>
-        <p class="small muted">Forgot your password? Call support and we’ll reset it.</p>
+        <p class="small muted">Forgot your password? Call Kwata support and we’ll reset it for you.</p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Sign in">Sign in</button>
       </form>`, true);
@@ -312,18 +325,11 @@
 
     function stepCreate() {
       shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
-        <h1>${role === 'driver' ? 'Your driver details' : 'Let’s get you set up'}</h1>
-        <p class="lead">New number <b>${K.esc(phone.replace('+256', '0'))}</b>. ${role === 'driver' ? 'We’ll review your details before your first trip.' : 'It takes a few seconds.'}</p>
+        <h1>Let’s get you set up</h1>
+        <p class="lead">New number <b>${K.esc(phone.replace('+256', '0'))}</b>. It takes a few seconds.</p>
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" required>
         <label for="pw">Create a password</label><input id="pw" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="At least 6 characters" required>
-        ${role === 'driver' ? `
-          <label for="vt">Vehicle</label>
-          <select id="vt" name="vehicleType"><option value="boda">Boda boda (motorcycle)</option><option value="car">Car</option></select>
-          <div class="row"><div class="fill"><label for="pl">Number plate</label><input id="pl" name="plate" placeholder="UFA 123X" required></div>
-          <div class="fill"><label for="co">Colour</label><input id="co" name="vehicleColor" placeholder="Red"></div></div>
-          <label for="mk">Make and model</label><input id="mk" name="vehicleMake" placeholder="Bajaj Boxer / Toyota Premio">
-          <label for="lc">Driving permit number</label><input id="lc" name="licenseNo" required>
-          <label for="mm">Mobile Money number for payouts</label><input id="mm" name="momoNumber" type="tel" placeholder="Same as your phone if empty">` : ''}
+
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Create account">Create account</button>
