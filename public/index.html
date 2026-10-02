@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0B3954">
+<title>Kwata — Boda, car, parcel and airport rides in Kampala</title>
+<meta name="description" content="Book a boda, car, parcel delivery or Entebbe airport ride in Kampala. Pay with cash, MTN or Airtel Mobile Money. Drivers keep 88% of every fare.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  body { background: var(--card); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+  header.top { display: flex; justify-content: space-between; align-items: center; padding: 18px 0; }
+  header.top .logo { font: 800 1.5rem var(--display); color: var(--lake); display: flex; align-items: center; gap: 8px; text-decoration: none; }
+  .band { height: 34px; background:
+      repeating-linear-gradient(90deg, var(--lake) 0 34px, #fff 34px 68px) top / 100% 17px no-repeat,
+      repeating-linear-gradient(90deg, #fff 0 34px, var(--lake) 34px 68px) bottom / 100% 17px no-repeat;
+      border-top: 3px solid var(--lake); border-bottom: 3px solid var(--lake); }
+  .hero { background: var(--lake); color: #fff; padding: 56px 0 64px; }
+  .hero h1 { font-size: clamp(2.6rem, 7vw, 5rem); font-weight: 800; letter-spacing: -.03em; line-height: .98; max-width: 12ch; margin-bottom: 20px; }
+  .hero p { font-size: 1.2rem; max-width: 46ch; color: rgba(255,255,255,.88); }
+  .hero .actions { max-width: 460px; margin-top: 26px; }
+  .hero .btn:not(.btn-primary) { background: transparent; color: #fff; border-color: rgba(255,255,255,.5); }
+  section.block { padding: 56px 0; }
+  .services { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0; border-top: 2px solid var(--ink); }
+  .svc { padding: 20px 16px 22px 0; border-bottom: 1px solid var(--line); }
+  .svc .e { font-size: 2.2rem; }
+  .svc h3 { margin-top: 8px; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .big-number { font: 800 clamp(4rem, 12vw, 8rem)/.9 var(--display); color: var(--vest); -webkit-text-stroke: 2px var(--ink); letter-spacing: -.04em; }
+  .facts { list-style: none; padding: 0; margin: 0; }
+  .facts li { padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .facts b { display: block; }
+  .drivers { background: var(--mist); }
+  footer { padding: 30px 0 40px; color: var(--ink-2); font-size: .9rem; }
+  @media (max-width: 760px) { .split { grid-template-columns: 1fr; gap: 20px; } section.block { padding: 40px 0; } }
+</style>
+</head>
+<body>
+<header class="wrap top">
+  <a class="logo" href="/"><span class="brand-dot"></span>Kwata</a>
+  <a class="btn btn-sm" href="/driver">Drive with us</a>
+</header>
+<div class="band" aria-hidden="true"></div>
+<section class="hero">
+  <div class="wrap">
+    <h1>Kampala, sorted. Boda in minutes.</h1>
+    <p>Book a boda, a car, a parcel run or a ride to Entebbe. See the fare before you go. Pay cash, MTN or Airtel Mobile Money.</p>
+    <div class="actions"><a class="btn btn-primary" href="/rider">Book a ride</a><a class="btn" href="/driver">Become a driver</a></div>
+  </div>
+</section>
+
+<section class="block wrap" aria-labelledby="ways">
+  <h2 id="ways">Five ways to move</h2>
+  <div class="services">
+    <div class="svc"><div class="e" aria-hidden="true">🏍️</div><h3>Boda</h3><p class="muted">Fastest through the jam. From UGX 2,500.</p></div>
+    <div class="svc"><div class="e" aria-hidden="true">🚗</div><h3>Car</h3><p class="muted">Everyday rides for up to four. From UGX 7,000.</p></div>
+    <div class="svc"><div class="e" aria-hidden="true">🚙</div><h3>Comfort</h3><p class="muted">Newer cars with AC and top-rated drivers.</p></div>
+    <div class="svc"><div class="e" aria-hidden="true">📦</div><h3>Parcel</h3><p class="muted">Documents, food, phones. Across town same hour.</p></div>
+    <div class="svc"><div class="e" aria-hidden="true">✈️</div><h3>Airport</h3><p class="muted">Fixed-rate trips to Entebbe International.</p></div>
+  </div>
+</section>
+
+<section class="block wrap split" aria-labelledby="safe">
+  <div><h2 id="safe">Safer from the first metre</h2><p class="muted">Every driver is checked in person before their first trip.</p></div>
+  <ul class="facts">
+    <li><b>Your ride starts with your PIN</b><span class="muted">The trip only begins when you give the driver your 4-digit code, so you never board the wrong boda.</span></li>
+    <li><b>Share your trip live</b><span class="muted">Send family a link that shows exactly where you are until you arrive.</span></li>
+    <li><b>SOS in one tap</b><span class="muted">Alerts our safety team with your location and lets you call 999 or text your emergency contact.</span></li>
+  </ul>
+</section>
+
+<section class="block drivers" aria-labelledby="drv">
+  <div class="wrap split">
+    <div><div class="big-number">88%</div><h2 id="drv" style="margin-top:12px">of every fare is yours</h2></div>
+    <ul class="facts">
+      <li><b>Lower commission</b><span class="muted">Kwata takes 12%, not 25%.</span></li>
+      <li><b>Cash out to Mobile Money</b><span class="muted">Request a payout any day. No waiting for the end of the week.</span></li>
+      <li><b>Boda or car</b><span class="muted">Sign up with your permit, logbook and National ID. We approve within 24 hours of your visit.</span></li>
+      <li style="border:0"><a class="btn btn-lake" href="/driver">Start driving</a></li>
+    </ul>
+  </div>
+</section>
+
+<footer class="wrap">
+  <div class="checker" style="width:120px;margin-bottom:14px"></div>
+  Kwata · Made in Kampala
+</footer>
+</body>
+</html>

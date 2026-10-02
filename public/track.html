@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0B3954">
+<title>Follow a Kwata ride</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-app="track">
+<div class="app">
+  <div id="map" aria-label="Map"></div>
+  <div class="topbar"><a class="brand" href="/" style="text-decoration:none"><span class="brand-dot"></span>Kwata</a></div>
+  <section class="sheet" id="sheet" aria-live="polite"><div class="checker"></div><p class="muted">Loading trip…</p></section>
+</div>
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/common.js"></script>
+<script>
+(function () {
+  const token = location.pathname.split('/').pop();
+  const sheet = K.$('#sheet');
+  const map = K.map('map');
+  let car, line, trip;
+  const sock = io();
+  sock.on('connect', () => sock.emit('track:join', { token }, (r) => {
+    if (!r.ok) { sheet.innerHTML = '<div class="checker"></div><h2>Trip not found</h2><p class="muted">This link may be wrong or the trip has ended.</p>'; return; }
+    update(r.trip);
+  }));
+  sock.on('trip:update', update);
+  sock.on('driver:location', (p) => move(p));
+
+  function update(t) {
+    const first = !trip; trip = t;
+    if (first) {
+      K.route(t.pickup, t.drop).then((r) => {
+        line = L.polyline(r.coords, { color: '#0B3954', weight: 5 }).addTo(map);
+        L.marker([t.drop.lat, t.drop.lng], { icon: K.icon('📍') }).addTo(map);
+        map.fitBounds(line.getBounds(), { paddingTopLeft: [30, 80], paddingBottomRight: [30, sheet.offsetHeight + 20] });
+      });
+    }
+    if (t.driver && t.driver.location) move(t.driver.location);
+    const label = { requested: 'Looking for a driver', accepted: 'Driver on the way to pickup', arrived: 'Driver has arrived at pickup', in_progress: 'On the way', completed: 'Arrived safely ✅', cancelled: 'Trip cancelled', no_drivers: 'No driver found' }[t.status] || t.status;
+    sheet.innerHTML = `<div class="checker"></div>
+      <p class="status-line">${K.esc(t.rider.name)}'s ride: ${label}</p>
+      <p class="small muted">From ${K.esc(t.pickup.address)} to <b>${K.esc(t.drop.address)}</b></p>
+      ${t.driver ? `<div class="driver-card"><div class="avatar">${K.initials(t.driver.name)}</div><div class="grow"><b>${K.esc(t.driver.name)}</b><br><span class="small muted">${K.esc(t.driver.vehicle)}</span></div><span class="plate">${K.esc(t.driver.plate)}</span></div>` : ''}
+      <p class="small muted" style="margin-top:12px">If something looks wrong, call the rider first. In an emergency call 999.</p>`;
+  }
+  function move(p) {
+    if (!trip || !trip.driver) return;
+    if (!car) car = L.marker([p.lat, p.lng], { icon: K.icon(K.vehicleEmoji(trip.driver.vehicleType)), zIndexOffset: 1000 }).addTo(map);
+    else car.setLatLng([p.lat, p.lng]);
+  }
+})();
+</script>
+</body>
+</html>
