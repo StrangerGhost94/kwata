@@ -10,7 +10,7 @@
 
   async function start() {
     root.innerHTML = `<div class="shell"><nav class="side" aria-label="Admin sections">
-      <div class="logo"><span class="brand-dot"></span>Kwata</div><div class="checker"></div>
+      <div class="logo">Kwata</div>
       ${TABS.map(([id, n]) => `<button data-t="${id}">${n}<span class="count hidden" id="c-${id}"></span></button>`).join('')}
       <button id="out" style="margin-top:20px">Sign out</button></nav><main id="main"></main></div>`;
     root.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tab = b.dataset.t; location.hash = tab; show(); });
@@ -55,7 +55,7 @@
         <div class="kpi"><span class="small muted">Riders</span><b>${s.riders}</b></div>
       </div>
       <h2>Live map</h2>
-      <p class="small muted">🏍️/🚗 free drivers · 🟡 drivers on a trip · 🙋 riders waiting</p>
+      <p class="small muted">Black vehicles are free drivers, gold markers are drivers on a trip, white circles are riders waiting.</p>
       <div id="liveMap"></div>
       <h2 style="margin-top:24px">All time</h2>
       <div class="kpis">
@@ -75,8 +75,8 @@
     const live = await K.api('/admin/live').catch(() => null);
     if (!live || !document.getElementById('liveMap')) return;
     liveLayer.clearLayers();
-    live.drivers.forEach((d) => L.marker([d.lat, d.lng], { icon: K.icon(d.busy ? '🟡' : K.vehicleEmoji(d.vehicle)) }).bindPopup(`<b>${K.esc(d.name)}</b><br>${K.esc(d.plate)}<br>${d.busy ? 'On a trip' : 'Free'}`).addTo(liveLayer));
-    live.trips.filter((t) => t.status === 'requested').forEach((t) => L.marker([t.pickup.lat, t.pickup.lng], { icon: K.icon('🙋') }).bindPopup(`Trip #${t.id} · ${K.esc(t.rider.name)} · waiting`).addTo(liveLayer));
+    live.drivers.forEach((d) => L.marker([d.lat, d.lng], { icon: d.busy ? K.divIcon('<div style="width:16px;height:16px;border-radius:50%;background:#E8B100;border:3px solid #000"></div>', [16, 16]) : K.divIcon(`<div class="veh" style="width:30px;height:30px">${d.vehicle === 'car' ? '<svg viewBox="0 0 40 40" style="width:26px;height:26px"><rect x="12.5" y="4" width="15" height="32" rx="6" fill="#141414" stroke="#fff" stroke-width="1.6"/></svg>' : '<svg viewBox="0 0 40 40" style="width:26px;height:26px"><rect x="17" y="3" width="6" height="34" rx="3" fill="#141414" stroke="#fff" stroke-width="1.4"/><circle cx="20" cy="21" r="5.5" fill="#E8B100" stroke="#141414" stroke-width="1.8"/></svg>'}</div>`, [30, 30]) }).bindPopup(`<b>${K.esc(d.name)}</b><br>${K.esc(d.plate)}<br>${d.busy ? 'On a trip' : 'Free'}`).addTo(liveLayer));
+    live.trips.filter((t) => t.status === 'requested').forEach((t) => L.marker([t.pickup.lat, t.pickup.lng], { icon: K.divIcon('<div class="pin-ci" style="background:#fff;border-color:#000"></div>', [16, 16]) }).bindPopup(`Trip #${t.id} · ${K.esc(t.rider.name)} · waiting`).addTo(liveLayer));
   }
 
   async function drivers(main) {
@@ -84,7 +84,7 @@
     main.innerHTML = `<h1>Drivers</h1><p class="muted">Check each driver's permit, logbook and National ID in person before approving.</p>
       <div class="table-wrap"><table><thead><tr><th>Driver</th><th>Vehicle</th><th>Permit</th><th>Trips</th><th>Rating</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>
       ${list.map((d) => `<tr><td><b>${K.esc(d.name)}</b><br><span class="small muted">${K.esc(d.phone)}</span></td>
-        <td>${K.vehicleEmoji(d.vehicleType)} <span class="plate" style="font-size:.8rem;padding:3px 6px">${K.esc(d.plate)}</span><br><span class="small muted">${K.esc(d.vehicle)}</span></td>
+        <td>${K.vehicleEmoji(d.vehicleType)} <span class="plate-tag">${K.esc(d.plate)}</span><br><span class="small muted">${K.esc(d.vehicle)}</span></td>
         <td>${K.esc(d.licenseNo)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td><td>${K.ugx(d.balance)}</td><td>${badge(d.status)}</td>
         <td style="white-space:nowrap">${d.status !== 'approved' ? `<button class="btn btn-primary btn-sm" data-id="${d.id}" data-s="approved">Approve</button>` : `<button class="btn btn-sm" data-id="${d.id}" data-s="suspended">Suspend</button>`}
         ${d.status === 'pending' ? `<button class="btn btn-ghost btn-sm" data-id="${d.id}" data-s="rejected">Reject</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">No drivers yet. Share the driver app link: ' + location.origin + '/driver</td></tr>'}

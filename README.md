@@ -14,9 +14,9 @@ One Node.js app serves everything:
 
 ## What works today
 
-**Riders** – drag the map to set pickup, search any place in Uganda, see all fares up front, choose a ride type and payment, live driver tracking, 4-digit PIN to start the trip (no boarding the wrong boda), share-trip link, SOS button with emergency contact, ratings, wallet with top-ups, trip history. Parcel bookings capture recipient name, phone and item.
+**Riders** – the familiar premium flow: *Where to?* → choose a ride (each option shows price, live ETA and arrival time, with the fastest flagged) → confirm pickup on a draggable pin → matching → live trip. Saved Home and Work, recent places, full-screen search, top-down car and boda markers that glide and turn on the map, in-app chat with quick replies, call driver, 4-digit PIN to start, share-trip link, safety centre with SOS and emergency contact, ratings, wallet with top-ups, Activity and Account tabs, light and dark mode. Parcel bookings capture recipient name, phone and item.
 
-**Drivers** – sign up with vehicle and permit details, wait for approval, go online, ring + vibrate on new requests with a 20-second accept timer, one-tap Google Maps navigation, call rider, arrived → PIN → start → complete, earnings today/7 days, cash out to Mobile Money. If a driver cancels, the rider is automatically re-matched with someone else.
+**Drivers** – sign up with vehicle and permit details, wait for approval, tap **GO**, ring + vibrate on new requests with a countdown ring, navigation banner with distance and one-tap Google Maps, chat and call the rider, *slide to arrive* → enter PIN → *slide to complete*, earnings pill, today/7-day stats, cash out to Mobile Money. If a driver cancels, the rider is automatically re-matched with someone else.
 
 **Admin** – live KPIs and map, approve/suspend drivers, block riders, all trips, edit every fare (base, per km, per minute, minimum, busy multiplier) and the commission live, SOS alerts with sound, payout queue.
 
@@ -64,7 +64,7 @@ Driver payouts are currently sent by your team by Mobile Money and marked paid i
 
 ## Before public launch
 
-- **Maps at scale**: the app uses free OpenStreetMap tiles, OSRM routing and Nominatim search. These are fine for testing and a pilot but have usage limits. Before heavy traffic, switch to a paid provider (Mapbox, Google Maps Platform, or self-hosted OSRM) — the calls live in `public/js/common.js`.
+- **Maps at scale**: the app uses CARTO basemaps (on OpenStreetMap data), OSRM routing and Nominatim search. CARTO's free basemaps are meant for low-volume use; get a CARTO or Mapbox plan before you launch commercially. These are fine for testing and a pilot but have usage limits. Before heavy traffic, switch to a paid provider (Mapbox, Google Maps Platform, or self-hosted OSRM) — the calls live in `public/js/common.js`.
 - **SMS verification**: add phone OTP at sign-up (e.g. Africa's Talking) so every number is real.
 - **Driver vetting**: check permit, logbook, National ID and insurance in person before approving.
 - **Legal**: confirm current Ministry of Works & Transport rules for digital ride-hailing operators and register as a data controller with Uganda's Personal Data Protection Office. Write terms of service and a privacy policy.
@@ -73,7 +73,7 @@ Driver payouts are currently sent by your team by Mobile Money and marked paid i
 
 ## Next features worth building
 
-Push notifications, scheduled/airport pre-bookings, promo codes and referrals, automatic MoMo payouts, cancellation fees, heat-map surge pricing, driver document uploads, native Android build (wrap with Capacitor), Luganda/Swahili language toggle.
+Push notifications, scheduled rides, promo codes and referrals, automatic MoMo payouts, cancellation fees, heat-map surge pricing, driver document uploads, native Android build (wrap with Capacitor), Luganda/Swahili language toggle.
 
 ## Code map
 

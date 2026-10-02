@@ -45,6 +45,7 @@ function publicUser(u) {
     walletBalance: u.wallet_balance,
     rating: u.rating_count ? Math.round((u.rating_sum / u.rating_count) * 10) / 10 : null,
     emergencyContact: u.emergency_contact,
+    savedPlaces: (() => { try { return JSON.parse(u.saved_places || '{}'); } catch { return {}; } })(),
   };
 }
 

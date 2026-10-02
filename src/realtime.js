@@ -1,5 +1,8 @@
 // Real-time layer: driver locations, trip offers (dispatch) and live updates.
 const { Server } = require('socket.io');
+const crypto = require('crypto');
+const SALT = crypto.randomBytes(8).toString('hex');
+const anonId = (id) => crypto.createHash('sha1').update(SALT + id).digest('hex').slice(0, 10);
 const db = require('./db');
 const auth = require('./auth');
 const { getSettings, haversineKm } = require('./pricing');
@@ -7,6 +10,7 @@ const { getSettings, haversineKm } = require('./pricing');
 let io;
 const drivers = new Map(); // userId -> live state
 const offers = new Map();  // tripId -> { tried:Set, current, timer }
+const chats = new Map();   // tripId -> [{ from, text, at }] (kept in memory for the trip)
 
 const ACTIVE = ['accepted', 'arrived', 'in_progress'];
 
@@ -71,6 +75,7 @@ function view(t, role) {
 async function broadcast(tripId) {
   const t = await loadTrip(tripId);
   if (!t) return null;
+  if (['completed', 'cancelled', 'no_drivers'].includes(t.status)) setTimeout(() => chats.delete(t.id), 10 * 60e3);
   io.to(`user:${t.rider_id}`).emit('trip:update', view(t, 'rider'));
   if (t.driver_id) io.to(`user:${t.driver_id}`).emit('trip:update', view(t, 'driver'));
   io.to(`share:${t.id}`).emit('trip:update', view(t, 'public'));
@@ -200,6 +205,23 @@ function init(server) {
 
     if (!u) return;
     socket.join(`user:${u.id}`);
+
+    // In-trip chat between rider and driver
+    socket.on('chat:send', async ({ tripId, text } = {}, cb) => {
+      const msg = String(text || '').trim().slice(0, 500);
+      if (!msg) return cb && cb({ ok: false });
+      const t = await db.one('SELECT id, rider_id, driver_id, status FROM trips WHERE id = $1', [Number(tripId)]);
+      if (!t || !ACTIVE.includes(t.status) || (t.rider_id !== u.id && t.driver_id !== u.id)) {
+        return cb && cb({ ok: false, error: 'Chat is only open during a trip.' });
+      }
+      const m = { tripId: t.id, from: t.rider_id === u.id ? 'rider' : 'driver', name: u.name.split(' ')[0], text: msg, at: new Date().toISOString() };
+      const list = chats.get(t.id) || [];
+      list.push(m); if (list.length > 100) list.shift();
+      chats.set(t.id, list);
+      notify(t.rider_id, 'chat:message', m);
+      notify(t.driver_id, 'chat:message', m);
+      cb && cb({ ok: true, message: m });
+    });
     if (u.role === 'admin') socket.join('admin');
 
     // Re-join an active trip after reconnecting
@@ -261,6 +283,8 @@ function init(server) {
   return io;
 }
 
+function messages(tripId) { return chats.get(tripId) || []; }
+
 function joinTripRoom(userId, tripId) {
   io.in(`user:${userId}`).socketsJoin(`trip:${tripId}`);
 }
@@ -273,11 +297,11 @@ function liveDrivers() {
 
 function nearbyDrivers(lat, lng, service) {
   const out = [];
-  for (const d of drivers.values()) {
+  for (const [id, d] of drivers.entries()) {
     if (!d.online || !d.lat || d.busy) continue;
     if (service && !d.services.includes(service)) continue;
     const km = haversineKm({ lat, lng }, d);
-    if (km <= 5) out.push({ lat: d.lat, lng: d.lng, vehicle: d.vehicle, km });
+    if (km <= 5) out.push({ k: anonId(id), lat: d.lat, lng: d.lng, heading: d.heading, vehicle: d.vehicle, km });
   }
   return out.sort((a, b) => a.km - b.km).slice(0, 15);
 }
@@ -294,7 +318,7 @@ function forceOffline(driverId) {
 }
 
 module.exports = {
-  init, broadcast, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
+  init, broadcast, messages, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
   liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, ACTIVE,
   get io() { return io; },
 };

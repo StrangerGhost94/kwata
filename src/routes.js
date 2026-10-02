@@ -114,9 +114,22 @@ r.get('/me', auth.requireAuth(), wrap(async (req, res) => {
 }));
 
 r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
-  const { name, email, emergencyContact } = req.body || {};
+  const { name, email, emergencyContact, savedPlaces } = req.body || {};
   const ec = emergencyContact ? auth.normalizePhone(emergencyContact) : null;
   if (emergencyContact && !ec) return bad(res, 'Emergency contact must be a valid Ugandan number.');
+  if (savedPlaces && typeof savedPlaces === 'object') {
+    let current = {};
+    try { current = JSON.parse(req.user.saved_places || '{}'); } catch {}
+    for (const key of ['home', 'work']) {
+      if (savedPlaces[key] === null) delete current[key];
+      else if (savedPlaces[key]) {
+        const pt = point(savedPlaces[key]);
+        if (!pt) return bad(res, 'That place is outside our service area.');
+        current[key] = pt;
+      }
+    }
+    await db.query('UPDATE users SET saved_places = $1 WHERE id = $2', [JSON.stringify(current), req.user.id]);
+  }
   const u = await db.one(
     'UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), emergency_contact = COALESCE($3, emergency_contact) WHERE id = $4 RETURNING *',
     [name ? String(name).slice(0, 80) : null, email ? String(email).slice(0, 120) : null, ec, req.user.id]);
@@ -128,6 +141,11 @@ r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   const pickup = point(req.body.pickup), drop = point(req.body.drop);
   if (!pickup || !drop) return bad(res, 'Choose a pickup and a destination.');
   const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin);
+  // How far is the nearest free driver for each ride type?
+  for (const o of q.options) {
+    const near = rt.nearbyDrivers(pickup.lat, pickup.lng, o.id)[0];
+    o.etaMin = near ? Math.max(2, Math.round(((near.km * 1.3) / 20) * 60)) : null;
+  }
   res.json(q);
 }));
 
@@ -243,6 +261,12 @@ r.post('/trips/:id/rate', auth.requireAuth('rider', 'driver'), wrap(async (req, 
   const ok = await db.one(`UPDATE trips SET ${field} = $1 WHERE id = $2 AND ${field} IS NULL RETURNING id`, [stars, t.id]);
   if (ok) await db.query('UPDATE users SET rating_sum = rating_sum + $1, rating_count = rating_count + 1 WHERE id = $2', [stars, target]);
   res.json({ ok: true });
+}));
+
+r.get('/trips/:id/messages', auth.requireAuth('rider', 'driver'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, req.user.role);
+  if (!t) return;
+  res.json(rt.messages(t.id));
 }));
 
 r.post('/trips/:id/sos', auth.requireAuth('rider', 'driver'), wrap(async (req, res) => {

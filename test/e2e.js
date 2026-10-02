@@ -25,6 +25,9 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   const pickup = { lat: 0.3136, lng: 32.5811, address: 'Kampala Road' }, drop = { lat: 0.3326, lng: 32.5686, address: 'Wandegeya' };
   const est = await api('/fare/estimate', { pickup, drop, distanceKm: 3.2, durationMin: 12 }, rider.token);
   const boda = est.options.find((o) => o.id === 'boda');
+  assert(boda.etaMin >= 2 && est.options.find((o) => o.id === 'car').etaMin === null, 'boda ETA ' + boda.etaMin + ' min, no car nearby');
+  const saved = await api('/me', { savedPlaces: { home: { lat: 0.33, lng: 32.6, address: 'Ntinda' } } }, rider.token, 'PATCH');
+  assert(saved.user.savedPlaces.home.address === 'Ntinda', 'saved home place');
   assert(boda.fare >= 2500, 'boda fare estimate UGX ' + boda.fare);
   const fake = await api('/fare/estimate', { pickup, drop, distanceKm: 0.01, durationMin: 1 }, rider.token);
   assert(fake.distanceKm >= 2.5, 'cannot fake a tiny distance (server used ' + fake.distanceKm + ' km)');
@@ -43,6 +46,14 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   assert(res.ok, 'driver accepts');
   ds.emit('driver:location', { lat: 0.3140, lng: 32.5808 }); await sleep(300);
   assert(gotLoc, 'rider receives live driver location');
+  // chat
+  const gotMsg = new Promise((r) => ds.once('chat:message', r));
+  const sent = await rs.emitWithAck('chat:send', { tripId: trip.id, text: 'I am at the gate' });
+  assert(sent.ok, 'rider sends chat message');
+  const msg = await gotMsg;
+  assert(msg.text === 'I am at the gate' && msg.from === 'rider', 'driver receives chat message');
+  const hist = await api(`/trips/${trip.id}/messages`, null, driver.token);
+  assert(hist.length === 1, 'chat history available');
   await api(`/trips/${trip.id}/arrived`, {}, driver.token);
   try { await api(`/trips/${trip.id}/start`, { pin: '0000' === trip.pin ? '1111' : '0000' }, driver.token); assert(false, 'wrong pin'); } catch (e) { assert(/Wrong PIN/.test(e.message), 'wrong PIN rejected'); }
   await api(`/trips/${trip.id}/start`, { pin: trip.pin }, driver.token);
