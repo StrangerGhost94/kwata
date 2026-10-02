@@ -16,8 +16,16 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   assert(!chk2.exists, 'phone check reports new number');
   const rider = await api('/auth/register', { name: 'Test Rider', phone: '077' + rnd().slice(1), password: 'secret1' });
   const dPhone = '075' + rnd().slice(1);
-  let selfSignup = null; try { await api('/auth/register', { name: 'Sneaky', phone: '0751' + rnd().slice(2), password: 'secret1', role: 'driver' }); } catch (e) { selfSignup = e.message; }
-  assert(/created by the Kwata team/.test(selfSignup || ''), 'drivers cannot sign themselves up');
+  const applicant = await api('/auth/register', { name: 'New Applicant', phone: '0751' + rnd().slice(2), password: 'secret1', role: 'driver', vehicleType: 'boda', plate: 'UFB 777Z', licenseNo: 'DL777' });
+  const ap = await api('/me', null, applicant.token);
+  assert(ap.driver.status === 'pending', 'driver who applies in the app starts as pending');
+  const tinyJpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
+  await api('/driver/documents', { kind: 'photo', image: tinyJpeg }, applicant.token);
+  await api('/driver/documents', { kind: 'national_id', image: tinyJpeg }, applicant.token);
+  const docs = await api(`/admin/drivers/${applicant.user.id}/documents`, null, admin.token);
+  assert(docs.length === 2 && docs[0].url.startsWith('data:image/jpeg'), 'admin can see uploaded documents');
+  const photo = await fetch(BASE + `/api/drivers/${applicant.user.id}/photo`);
+  assert(photo.status === 200 && photo.headers.get('content-type') === 'image/jpeg', 'driver profile photo is served');
   await api('/admin/drivers', { name: 'Test Driver', phone: dPhone, password: 'secret1', vehicleType: 'boda', plate: 'UFA 123X', licenseNo: 'DL123', vehicleMake: 'Bajaj Boxer', vehicleColor: 'Red' }, admin.token);
   const driver = await api('/auth/login', { phone: dPhone, password: 'secret1' });
   assert(driver.user.role === 'driver', 'admin-added driver can sign in');
@@ -37,7 +45,8 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   const est = await api('/fare/estimate', { pickup, drop, distanceKm: 3.2, durationMin: 12 }, rider.token);
   const boda = est.options.find((o) => o.id === 'boda');
   assert(boda.etaMin >= 2 && est.options.find((o) => o.id === 'car').etaMin === null, 'boda ETA ' + boda.etaMin + ' min, no car nearby');
-  const saved = await api('/me', { savedPlaces: { home: { lat: 0.33, lng: 32.6, address: 'Ntinda' } } }, rider.token, 'PATCH');
+  const saved = await api('/me', { savedPlaces: { home: { lat: 0.33, lng: 32.6, address: 'Ntinda' } }, payPref: 'airtel', payPhone: '0701234567' }, rider.token, 'PATCH');
+  assert(saved.user.payPref === 'airtel' && saved.user.payPhone === '+256701234567', 'payment preference saved');
   assert(saved.user.savedPlaces.home.address === 'Ntinda', 'saved home place');
   assert(boda.fare >= 2500, 'boda fare estimate UGX ' + boda.fare);
   const fake = await api('/fare/estimate', { pickup, drop, distanceKm: 0.01, durationMin: 1 }, rider.token);
@@ -74,6 +83,7 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   const pay = await api(`/trips/${trip.id}/pay`, {}, rider.token);
   assert(pay.demo && pay.status === 'successful', 'demo payment succeeds');
   const earn = await api('/driver/earnings', null, driver.token);
+  assert(earn.days.length === 7 && earn.days[6].trips >= 1, 'weekly earnings chart has today');
   assert(earn.balance === trip.fare - Math.round(trip.fare * 0.12), 'driver credited fare minus 12% (' + earn.balance + ')');
   await api(`/trips/${trip.id}/rate`, { stars: 5 }, rider.token);
   await api(`/trips/${trip.id}/rate`, { stars: 4 }, driver.token);

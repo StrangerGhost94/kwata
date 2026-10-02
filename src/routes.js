@@ -91,14 +91,42 @@ async function createAccount(body, role, { approved = false } = {}) {
   return { user };
 }
 
-// Public sign-up is for riders only. Drivers are added by the Kwata team after
-// checking their permit, logbook and ID in person.
+// Riders sign up and ride straight away. Drivers can apply from the driver app,
+// but stay 'pending' (can't go online) until the Kwata team checks their
+// documents and approves them. The team can also add drivers directly.
 r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
   const role = (req.body || {}).role || 'rider';
-  if (role !== 'rider') return bad(res, 'Driver accounts are created by the Kwata team after verification.', 403);
-  const out = await createAccount(req.body, 'rider');
+  if (!['rider', 'driver'].includes(role)) return bad(res, 'Invalid account type.');
+  const out = await createAccount(req.body, role);
   if (out.error) return bad(res, out.error);
+  if (role === 'driver') rt.io.to('admin').emit('admin:new_driver', { id: out.user.id, name: out.user.name });
   res.json({ token: auth.sign(out.user), user: auth.publicUser(out.user) });
+}));
+
+// ---------- Driver documents ----------
+const DOC_KINDS = { national_id: 'National ID', license: 'Driving permit', vehicle: 'Vehicle photo', photo: 'Profile photo' };
+r.post('/driver/documents', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const { kind, image } = req.body || {};
+  if (!DOC_KINDS[kind]) return bad(res, 'Unknown document.');
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(image || ''));
+  if (!m) return bad(res, 'Upload a photo (JPG or PNG).');
+  if (m[2].length > 2.8e6) return bad(res, 'That photo is too large. Try again.');
+  await db.query(`INSERT INTO driver_docs(user_id, kind, mime, data) VALUES ($1,$2,$3,$4)
+    ON CONFLICT (user_id, kind) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, created_at = NOW()`, [req.user.id, kind, m[1], m[2]]);
+  rt.io.to('admin').emit('admin:new_driver', { id: req.user.id, name: req.user.name });
+  res.json({ ok: true });
+}));
+r.get('/driver/documents', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const { rows } = await db.query('SELECT kind, created_at FROM driver_docs WHERE user_id = $1', [req.user.id]);
+  res.json({ kinds: DOC_KINDS, uploaded: Object.fromEntries(rows.map((x) => [x.kind, x.created_at])) });
+}));
+// Driver profile photos are shown to riders on the trip screen.
+r.get('/drivers/:id/photo', wrap(async (req, res) => {
+  const d = await db.one("SELECT mime, data FROM driver_docs WHERE user_id = $1 AND kind = 'photo'", [Number(req.params.id)]);
+  if (!d) return res.status(404).end();
+  res.setHeader('Content-Type', d.mime);
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.end(Buffer.from(d.data, 'base64'));
 }));
 
 r.post('/me/password', auth.requireAuth(), wrap(async (req, res) => {
@@ -139,7 +167,16 @@ r.get('/me', auth.requireAuth(), wrap(async (req, res) => {
 }));
 
 r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
-  const { name, email, emergencyContact, savedPlaces } = req.body || {};
+  const { name, email, emergencyContact, savedPlaces, payPref, payPhone } = req.body || {};
+  if (payPref !== undefined) {
+    if (!['mtn', 'airtel', 'card', 'cash', 'wallet'].includes(payPref)) return bad(res, 'Choose a payment method.');
+    await db.query('UPDATE users SET pay_pref = $1 WHERE id = $2', [payPref, req.user.id]);
+  }
+  if (payPhone !== undefined) {
+    const pp = auth.normalizePhone(payPhone);
+    if (!pp) return bad(res, 'Enter a valid Mobile Money number.');
+    await db.query('UPDATE users SET pay_phone = $1 WHERE id = $2', [pp, req.user.id]);
+  }
   const ec = emergencyContact ? auth.normalizePhone(emergencyContact) : null;
   if (emergencyContact && !ec) return bad(res, 'Emergency contact must be a valid Ugandan number.');
   if (savedPlaces && typeof savedPlaces === 'object') {
@@ -326,7 +363,7 @@ r.post('/trips/:id/arrived', auth.requireAuth('driver'), wrap(async (req, res) =
   const t = await driverStep(req, res, ['accepted'], 'arrived', ', arrived_at = NOW()');
   if (!t) return;
   await rt.broadcast(t.id);
-  rt.notify(t.rider_id, 'toast', { text: 'Your driver has arrived 👋' });
+  rt.notify(t.rider_id, 'toast', { text: 'Your ride is here 👋' });
   res.json({ ok: true });
 }));
 
@@ -401,7 +438,21 @@ r.get('/driver/earnings', auth.requireAuth('driver'), wrap(async (req, res) => {
     FROM trips WHERE driver_id = $1 AND status = 'completed' AND completed_at > NOW() - INTERVAL '7 days'`, [req.user.id]);
   const { rows: tx } = await db.query('SELECT type, amount, note, trip_id, created_at FROM transactions WHERE user_id = $1 ORDER BY id DESC LIMIT 40', [req.user.id]);
   const { rows: wd } = await db.query('SELECT id, amount, status, created_at FROM withdrawals WHERE driver_id = $1 ORDER BY id DESC LIMIT 10', [req.user.id]);
-  res.json({ balance: d.earnings_balance, momoNumber: d.momo_number, today, week, transactions: tx, withdrawals: wd });
+  // Last 7 days, Kampala time, for the earnings chart.
+  const { rows: byDay } = await db.query(`SELECT to_char(completed_at AT TIME ZONE 'Africa/Kampala', 'YYYY-MM-DD') AS day,
+      COUNT(*)::int AS trips, COALESCE(SUM(fare - commission),0)::int AS net
+    FROM trips WHERE driver_id = $1 AND status = 'completed' AND completed_at > NOW() - INTERVAL '7 days' GROUP BY 1`, [req.user.id]);
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() + 3 * 3600e3 - i * 86400e3).toISOString().slice(0, 10);
+    const hit = byDay.find((x) => x.day === d);
+    days.push({ day: d, trips: hit ? hit.trips : 0, net: hit ? hit.net : 0 });
+  }
+  const mix = await db.one(`SELECT COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN fare ELSE 0 END),0)::int AS cash,
+      COALESCE(SUM(commission),0)::int AS commission, COUNT(*)::int AS trips
+    FROM trips WHERE driver_id = $1 AND status = 'completed' AND completed_at > NOW() - INTERVAL '7 days'`, [req.user.id]);
+  const all = await db.one("SELECT COUNT(*)::int AS trips FROM trips WHERE driver_id = $1 AND status = 'completed'", [req.user.id]);
+  res.json({ balance: d.earnings_balance, momoNumber: d.momo_number, today, week, days, cashWeek: mix.cash, commissionWeek: mix.commission, allTrips: all.trips, transactions: tx, withdrawals: wd });
 }));
 
 r.post('/driver/withdraw', auth.requireAuth('driver'), wrap(async (req, res) => {
@@ -450,14 +501,15 @@ r.get('/admin/live', admin, wrap(async (req, res) => {
 r.get('/admin/drivers', admin, wrap(async (req, res) => {
   const { rows } = await db.query(`
     SELECT u.id, u.name, u.phone, u.blocked, u.rating_sum, u.rating_count, u.created_at, d.*,
-      (SELECT COUNT(*)::int FROM trips t WHERE t.driver_id = u.id AND t.status = 'completed') AS trips
+      (SELECT COUNT(*)::int FROM trips t WHERE t.driver_id = u.id AND t.status = 'completed') AS trips,
+      (SELECT COUNT(*)::int FROM driver_docs dd WHERE dd.user_id = u.id) AS docs
     FROM drivers d JOIN users u ON u.id = d.user_id
     ORDER BY CASE d.status WHEN 'pending' THEN 0 ELSE 1 END, u.id DESC LIMIT 300`);
   res.json(rows.map((x) => ({
     id: x.id, name: x.name, phone: x.phone, status: x.status, vehicleType: x.vehicle_type, plate: x.plate,
     vehicle: [x.vehicle_color, x.vehicle_make].filter(Boolean).join(' '), licenseNo: x.license_no, momoNumber: x.momo_number,
     balance: x.earnings_balance, trips: x.trips, rating: x.rating_count ? Math.round((x.rating_sum / x.rating_count) * 10) / 10 : null,
-    createdAt: x.created_at,
+    createdAt: x.created_at, docs: x.docs,
   })));
 }));
 
@@ -466,6 +518,11 @@ r.post('/admin/drivers', admin, wrap(async (req, res) => {
   const out = await createAccount(req.body, 'driver', { approved: true });
   if (out.error) return bad(res, out.error);
   res.json({ ok: true, id: out.user.id });
+}));
+
+r.get('/admin/drivers/:id/documents', admin, wrap(async (req, res) => {
+  const { rows } = await db.query('SELECT kind, mime, data, created_at FROM driver_docs WHERE user_id = $1', [Number(req.params.id)]);
+  res.json(rows.map((x) => ({ kind: x.kind, label: DOC_KINDS[x.kind], url: `data:${x.mime};base64,${x.data}`, at: x.created_at })));
 }));
 
 // Reset anyone's password (there's no SMS reset yet, so support does it).

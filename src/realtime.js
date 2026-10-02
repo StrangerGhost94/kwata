@@ -19,7 +19,10 @@ async function loadTrip(id) {
     SELECT t.*,
       r.name AS rider_name, r.phone AS rider_phone, r.rating_sum AS r_rs, r.rating_count AS r_rc,
       d.name AS driver_name, d.phone AS driver_phone, d.rating_sum AS d_rs, d.rating_count AS d_rc,
-      dv.plate, dv.vehicle_make, dv.vehicle_color, dv.vehicle_type
+      dv.plate, dv.vehicle_make, dv.vehicle_color, dv.vehicle_type,
+      (SELECT COUNT(*)::int FROM trips x WHERE x.driver_id = t.driver_id AND x.status = 'completed') AS d_trips,
+      (SELECT COUNT(*)::int FROM trips x WHERE x.rider_id = t.rider_id AND x.status = 'completed') AS r_trips,
+      EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'photo') AS d_photo
     FROM trips t
     JOIN users r ON r.id = t.rider_id
     LEFT JOIN users d ON d.id = t.driver_id
@@ -43,7 +46,8 @@ function view(t, role) {
     createdAt: t.created_at, acceptedAt: t.accepted_at, startedAt: t.started_at, completedAt: t.completed_at,
     cancelledBy: t.cancelled_by,
     driver: t.driver_id ? {
-      id: t.driver_id, name: t.driver_name, rating: rating(t.d_rs, t.d_rc),
+      id: t.driver_id, name: t.driver_name, rating: rating(t.d_rs, t.d_rc), trips: t.d_trips,
+      photo: t.d_photo ? `/api/drivers/${t.driver_id}/photo` : null,
       plate: t.plate, vehicle: [t.vehicle_color, t.vehicle_make].filter(Boolean).join(' '), vehicleType: t.vehicle_type,
       location: live && live.lat ? { lat: live.lat, lng: live.lng, heading: live.heading } : null,
     } : null,
@@ -51,10 +55,10 @@ function view(t, role) {
   if (role === 'public') {
     v.rider = { name: (t.rider_name || '').split(' ')[0] };
     delete v.fare; delete v.paymentMethod; delete v.paymentStatus; delete v.parcel; delete v.notes;
-    if (v.driver) v.driver = { name: t.driver_name, plate: t.plate, vehicle: v.driver.vehicle, vehicleType: t.vehicle_type, location: v.driver.location };
+    if (v.driver) v.driver = { name: t.driver_name, plate: t.plate, vehicle: v.driver.vehicle, vehicleType: t.vehicle_type, photo: v.driver.photo, location: v.driver.location };
     return v;
   }
-  v.rider = { id: t.rider_id, name: t.rider_name, rating: rating(t.r_rs, t.r_rc) };
+  v.rider = { id: t.rider_id, name: t.rider_name, rating: rating(t.r_rs, t.r_rc), trips: t.r_trips };
   // Phone numbers are only shared while the trip is live.
   const live2 = ACTIVE.includes(t.status);
   if (role === 'rider') {

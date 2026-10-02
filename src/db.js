@@ -166,6 +166,16 @@ async function migrate() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   ALTER TABLE users ADD COLUMN IF NOT EXISTS saved_places TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS pay_pref TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS pay_phone TEXT;
+  CREATE TABLE IF NOT EXISTS driver_docs (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, kind)
+  );
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

@@ -82,13 +82,14 @@
   async function drivers(main) {
     const list = await K.api('/admin/drivers');
     main.innerHTML = `<div class="row" style="align-items:flex-end;margin-bottom:6px"><div class="grow"><h1 style="margin:0">Drivers</h1>
-        <p class="muted" style="margin:6px 0 0">Drivers can’t sign themselves up. Check their permit, logbook and National ID in person, then add them here.</p></div>
+        <p class="muted" style="margin:6px 0 0">Drivers apply in the Driver app and upload their documents. Check them here before approving, or add a driver you’ve met in person.</p></div>
         <button class="btn btn-primary" id="addDriver" style="flex:none">${K.ic('plus')} Add driver</button></div>
       <div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>Driver</th><th>Vehicle</th><th>Permit</th><th>Trips</th><th>Rating</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>
       ${list.map((d) => `<tr><td><b>${K.esc(d.name)}</b><br><span class="small muted">${K.esc(d.phone)}</span></td>
         <td>${K.vehicleEmoji(d.vehicleType)} <span class="plate-tag">${K.esc(d.plate)}</span><br><span class="small muted">${K.esc(d.vehicle)}</span></td>
         <td>${K.esc(d.licenseNo)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td><td>${K.ugx(d.balance)}</td><td>${badge(d.status)}</td>
-        <td style="white-space:nowrap">${d.status !== 'approved' ? `<button class="btn btn-primary btn-sm" data-id="${d.id}" data-s="approved">Approve</button>` : `<button class="btn btn-sm" data-id="${d.id}" data-s="suspended">Suspend</button>`}
+        <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}">Documents (${d.docs || 0}/4)</button>
+        ${d.status !== 'approved' ? `<button class="btn btn-primary btn-sm" data-id="${d.id}" data-s="approved">Approve</button>` : `<button class="btn btn-sm" data-id="${d.id}" data-s="suspended">Suspend</button>`}
         <button class="btn btn-ghost btn-sm" data-pw="${d.id}" data-name="${K.esc(d.name)}">Reset password</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">No drivers yet. Click “Add driver” after you’ve met and checked them.</td></tr>'}
       </tbody></table></div>`;
     main.querySelectorAll('[data-s]').forEach((b) => b.onclick = async () => {
@@ -97,6 +98,24 @@
     });
     bindReset(main);
     K.$('#addDriver').onclick = addDriver;
+    main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status));
+  }
+
+  async function showDocs(id, name, status) {
+    const m = K.modal('<p class="muted">Loading documents…</p>');
+    try {
+      const docs = await K.api(`/admin/drivers/${id}/documents`);
+      m.el.innerHTML = `<h2>${name}</h2><p class="small muted">Check that the name, photo and number plate match before approving.</p>
+        ${docs.length ? `<div class="doc-thumbs">${docs.map((d) => `<figure><a href="${d.url}" target="_blank" rel="noopener"><img src="${d.url}" alt="${K.esc(d.label)}"></a><figcaption>${K.esc(d.label)}<br><span class="muted" style="font-weight:500">${K.when(d.at)}</span></figcaption></figure>`).join('')}</div>`
+          : '<div class="card" style="margin:10px 0">This driver hasn’t uploaded any documents yet.</div>'}
+        <div class="row" style="margin-top:14px">
+          ${status !== 'approved' ? `<button class="btn btn-danger-soft fill" data-st="rejected">Reject</button><button class="btn btn-primary fill" data-st="approved">Approve</button>` : '<button class="btn fill" data-close>Close</button>'}
+        </div>`;
+      m.el.querySelectorAll('[data-st]').forEach((b) => b.onclick = async () => {
+        await K.api(`/admin/drivers/${id}/status`, { status: b.dataset.st });
+        m.close(); K.toast(`Driver ${b.dataset.st}`); await refreshCounts(); show();
+      });
+    } catch (e) { m.el.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; }
   }
 
   function addDriver() {

@@ -15,7 +15,7 @@
 <body data-app="track">
 <div class="app">
   <div id="map" aria-label="Map"></div>
-  <div class="topbar"><a class="pill-chip wordmark" href="/" style="text-decoration:none;font-size:1.1rem">Kwata</a></div>
+  <div class="topbar"><a class="pill-chip wordmark" href="/" style="text-decoration:none;font-size:1.1rem;padding:6px 16px 6px 8px"><svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 3C19.3 3 9 13.1 9 25.6 9 42 32 61 32 61s23-19 23-35.4C55 13.1 44.7 3 32 3z" fill="#FFC400"/><path d="M25.5 14v23M25.5 27.5 37.5 14M29.5 23.5l9 13.5" stroke="#141414" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Kwata</a></div>
   <section class="sheet" id="sheet" aria-live="polite"><div class="grabber"></div><p class="muted">Loading trip…</p></section>
 </div>
 <script src="/vendor/leaflet/leaflet.js"></script>
@@ -48,11 +48,18 @@
       });
     }
     if (t.driver && t.driver.location) move(t.driver.location);
-    const label = { requested: 'Looking for a driver', accepted: 'Driver on the way to pickup', arrived: 'Driver has arrived at pickup', in_progress: 'On the way', completed: 'Arrived safely ✅', cancelled: 'Trip cancelled', no_drivers: 'No driver found' }[t.status] || t.status;
+    const label = { requested: 'Looking for a ride', accepted: 'Ride on the way to pickup', arrived: 'Ride has arrived at pickup', in_progress: 'On trip', completed: 'Arrived safely ✅', cancelled: 'Trip cancelled', no_drivers: 'No ride found' }[t.status] || t.status;
+    const d = t.driver;
     sheet.innerHTML = `<div class="grabber"></div>
-      <div class="eta-big">${label}</div>
-      <p class="small muted">${K.esc(t.rider.name)} is travelling from ${K.esc(t.pickup.address)} to <b>${K.esc(t.drop.address)}</b></p>
-      ${t.driver ? `<div class="driver-block"><span class="car-art">${K.artFor(null, t.driver.vehicleType)}</span><span class="grow"><span class="plate" style="display:block">${K.esc(t.driver.plate)}</span><span class="small muted">${K.esc(t.driver.vehicle)}</span></span><span class="avatar">${K.initials(t.driver.name)}</span></div>` : ''}
+      <h2>${label}</h2>
+      <p class="small muted">You’re following ${K.esc(t.rider.name)}’s Kwata trip live.</p>
+      ${d ? `<div class="driver-card" style="margin:12px 0"><span class="photo">${d.photo ? `<img src="${K.esc(d.photo)}" alt="">` : K.initials(d.name)}</span>
+        <span class="grow"><b style="display:block">${K.esc(d.name)}</b><span class="small muted">${K.esc(d.vehicle || '')}</span></span>
+        <span style="text-align:right"><span class="plate-chip">${K.esc(d.plate)}</span><span style="display:block;width:70px;height:44px;margin-top:4px">${K.artFor(null, d.vehicleType)}</span></span></div>` : ''}
+      <div class="stops">
+        <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b>${K.esc(t.pickup.address)}</b></span></div>
+        <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b>${K.esc(t.drop.address)}</b></span></div>
+      </div>
       <p class="tiny faint">If something looks wrong, call ${K.esc(t.rider.name)} first. In an emergency call 999.</p>`;
   }
   function move(p) {

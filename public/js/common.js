@@ -57,57 +57,98 @@
     check: '<path d="m5 12 5 5 9-10"/>',
     arrowR: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     trend: '<path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+    bell: '<path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+    camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+    idcard: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M6 16c.6-1.6 1.7-2.3 3-2.3s2.4.7 3 2.3M14 10h4M14 13h3"/>',
+    tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3.6 15 1.7 1.7 0 0 0 2 14H2a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 3.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    power: '<path d="M12 3v9M6.3 7.3a8 8 0 1 0 11.4 0"/>',
   };
   K.ic = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${name === 'star' && cls.includes('fill') ? P.star : P[name] || ''}</svg>`;
   K.starSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
 
-  // ---------- vehicle art (side view, for ride options) ----------
-  const sedan = (body, glass) => `
-    <ellipse cx="60" cy="63" rx="50" ry="3.5" fill="#000" opacity=".13"/>
+  // ---------- vehicle art (3D-style icons for services) ----------
+  const shadow = (w = 46) => `<ellipse cx="60" cy="64" rx="${w}" ry="3.5" fill="#000" opacity=".12"/>`;
+  const sedan = (body, glass, trim = '#111') => `${shadow(50)}
     <path d="M10 50c0-6 3-10 10-11l16-2c6-9 13-14 24-14h16c11 0 18 5 24 13l9 2c5 1 7 5 7 10v4c0 2-1 3-3 3H13c-2 0-3-1-3-3z" fill="${body}"/>
+    <path d="M10 52h100v2c0 2-1 3-3 3H13c-2 0-3-1-3-3z" fill="#000" opacity=".18"/>
     <path d="M42 37c5-7 10-10 18-10h12c8 0 14 3 19 10z" fill="${glass}"/>
+    <path d="M45 35c4-5 8-7 14-7" stroke="#fff" stroke-width="2" opacity=".55" fill="none" stroke-linecap="round"/>
     <rect x="65" y="27" width="2.4" height="10" fill="${body}"/>
-    <rect x="104" y="42" width="6" height="3" rx="1.5" fill="#FFD25A"/><rect x="11" y="43" width="4" height="3" rx="1.5" fill="#E33"/>
-    <circle cx="33" cy="56" r="9" fill="#111"/><circle cx="33" cy="56" r="3.8" fill="#A3A3A3"/>
-    <circle cx="90" cy="56" r="9" fill="#111"/><circle cx="90" cy="56" r="3.8" fill="#A3A3A3"/>`;
-  const suv = `
-    <ellipse cx="60" cy="63" rx="52" ry="3.5" fill="#000" opacity=".13"/>
-    <path d="M9 52V38c0-4 2-6 6-7l12-2 8-9c2-2 4-3 7-3h38c4 0 6 1 8 4l8 9 7 2c4 1 6 4 6 8v12c0 2-1 3-3 3H12c-2 0-3-1-3-3z" fill="#1F1F1F"/>
-    <path d="M33 30l7-8c1-1 2-2 4-2h16v10zM64 20h16c2 0 3 1 4 2l7 8H64z" fill="#5A6470"/>
-    <rect x="106" y="38" width="6" height="3" rx="1.5" fill="#FFD25A"/>
-    <circle cx="32" cy="56" r="9.5" fill="#0A0A0A"/><circle cx="32" cy="56" r="4" fill="#BDBDBD"/>
-    <circle cx="91" cy="56" r="9.5" fill="#0A0A0A"/><circle cx="91" cy="56" r="4" fill="#BDBDBD"/>`;
-  const boda = `
-    <ellipse cx="60" cy="64" rx="46" ry="3.5" fill="#000" opacity=".13"/>
-    <circle cx="28" cy="52" r="11" fill="none" stroke="#111" stroke-width="5"/>
-    <circle cx="93" cy="52" r="11" fill="none" stroke="#111" stroke-width="5"/>
-    <path d="M28 52 46 40h28l19 12" stroke="#4D4D4D" stroke-width="4" fill="none" stroke-linejoin="round"/>
-    <path d="M44 33c8-4 22-5 32-2l6 9H46z" fill="#C8102E"/>
-    <rect x="34" y="31" width="24" height="5" rx="2.5" fill="#111"/>
-    <path d="M82 39 92 22" stroke="#111" stroke-width="3.5" stroke-linecap="round"/><path d="M88 22h8" stroke="#111" stroke-width="3.5" stroke-linecap="round"/>
-    <path d="M47 31 52 15c1-3 4-4 7-3l2 1" stroke="#1E5BC6" stroke-width="8" stroke-linecap="round" fill="none"/>
-    <path d="M58 16 88 22" stroke="#1E5BC6" stroke-width="5" stroke-linecap="round"/>
-    <path d="M50 31 62 42" stroke="#222" stroke-width="6" stroke-linecap="round"/>
-    <circle cx="58" cy="8" r="7.5" fill="#E8B100" stroke="#111" stroke-width="1.5"/><path d="M60 6h6" stroke="#111" stroke-width="2"/>`;
-  const parcel = `
-    <ellipse cx="60" cy="64" rx="40" ry="3.5" fill="#000" opacity=".13"/>
-    <path d="M28 26 60 14l32 12v30L60 68 28 56z" fill="#C9965B"/>
-    <path d="M28 26 60 38l32-12" fill="none" stroke="#A97A42" stroke-width="2"/><path d="M60 38v30" stroke="#A97A42" stroke-width="2"/>
-    <path d="M40 21.5 72 33.5v9l-6-2.2v-6L34 23.7z" fill="#EBD5AA"/>`;
-  const airport = sedan('#2E2E2E', '#7A8794') + `<path d="M84 8h3l8 9h10a2.5 2.5 0 0 1 0 5H95l-8 9h-3l4-9h-7l-3 3h-3l2-5.5-2-5.5h3l3 3h7z" fill="#276EF1"/>`;
+    <rect x="103" y="42" width="7" height="3.5" rx="1.7" fill="#FFE27A"/><rect x="11" y="43" width="4" height="3" rx="1.5" fill="#FF5A4E"/>
+    <circle cx="33" cy="56" r="9.5" fill="${trim}"/><circle cx="33" cy="56" r="4" fill="#C9CCD1"/>
+    <circle cx="90" cy="56" r="9.5" fill="${trim}"/><circle cx="90" cy="56" r="4" fill="#C9CCD1"/>`;
+  const suv = `${shadow(52)}
+    <path d="M9 52V38c0-4 2-6 6-7l12-2 8-9c2-2 4-3 7-3h38c4 0 6 1 8 4l8 9 7 2c4 1 6 4 6 8v12c0 2-1 3-3 3H12c-2 0-3-1-3-3z" fill="#1E1E20"/>
+    <path d="M9 50h102v2c0 2-1 3-3 3H12c-2 0-3-1-3-3z" fill="#000" opacity=".3"/>
+    <path d="M33 30l7-8c1-1 2-2 4-2h16v10zM64 20h16c2 0 3 1 4 2l7 8H64z" fill="#7C8B99"/>
+    <path d="M14 40h92" stroke="#FFC400" stroke-width="2.5" opacity=".9"/>
+    <rect x="105" y="38" width="7" height="3.5" rx="1.7" fill="#FFE27A"/>
+    <circle cx="32" cy="56" r="10" fill="#0A0A0A"/><circle cx="32" cy="56" r="4.2" fill="#D4D7DB"/>
+    <circle cx="91" cy="56" r="10" fill="#0A0A0A"/><circle cx="91" cy="56" r="4.2" fill="#D4D7DB"/>`;
+  const boda = `${shadow(46)}
+    <circle cx="28" cy="52" r="11" fill="none" stroke="#141414" stroke-width="5"/><circle cx="28" cy="52" r="3" fill="#9A9A9A"/>
+    <circle cx="93" cy="52" r="11" fill="none" stroke="#141414" stroke-width="5"/><circle cx="93" cy="52" r="3" fill="#9A9A9A"/>
+    <path d="M28 52 46 40h28l19 12" stroke="#3A3A3C" stroke-width="4.5" fill="none" stroke-linejoin="round"/>
+    <path d="M42 33c9-5 24-6 35-2l6 10H45z" fill="#FFC400"/><path d="M45 39h37" stroke="#D49F00" stroke-width="2"/>
+    <rect x="33" y="30" width="26" height="5.5" rx="2.7" fill="#141414"/>
+    <path d="M82 39 92 21" stroke="#141414" stroke-width="3.5" stroke-linecap="round"/><path d="M87 21h9" stroke="#141414" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M48 31 53 15c1-3 4-4 7-3l2 1" stroke="#FFC400" stroke-width="9" stroke-linecap="round" fill="none"/>
+    <path d="M50 17h8" stroke="#141414" stroke-width="2" opacity=".35"/>
+    <path d="M59 16 88 21" stroke="#FFC400" stroke-width="5.5" stroke-linecap="round"/>
+    <path d="M51 31 63 42" stroke="#2A2A2C" stroke-width="6.5" stroke-linecap="round"/>
+    <circle cx="58" cy="8" r="8" fill="#141414"/><path d="M60 6.5h7" stroke="#6E6E73" stroke-width="2.5" stroke-linecap="round"/>`;
+  const parcel = `${shadow(40)}
+    <path d="M26 26 60 13l34 13v32L60 71 26 58z" fill="#F2B233"/>
+    <path d="M26 26 60 39l34-13" fill="none" stroke="#C98A12" stroke-width="2"/><path d="M60 39v32" stroke="#C98A12" stroke-width="2"/>
+    <path d="M60 39 94 26v32L60 71z" fill="#000" opacity=".08"/>
+    <path d="M39 21 73 34v10l-6-2.3v-6.5L33 22.8z" fill="#FCE5B0"/>`;
+  const plane = `${shadow(40)}
+    <path d="M18 44c0-3 3-5 7-5h22l18-24c1-2 3-3 5-3h4l-9 27h22l7-9h5l-3 14 3 14h-5l-7-9H72l9 27h-4c-2 0-4-1-5-3L54 49H25c-4 0-7-2-7-5z" fill="#FFC400"/>
+    <path d="M25 44h60" stroke="#D49F00" stroke-width="2" opacity=".6"/>`;
   K.ART = {
     boda: `<svg viewBox="0 0 120 72" aria-hidden="true">${boda}</svg>`,
-    car: `<svg viewBox="0 0 120 72" aria-hidden="true">${sedan('#DADADA', '#2B2F33')}</svg>`,
+    car: `<svg viewBox="0 0 120 72" aria-hidden="true">${sedan('#3A3A3C', '#A9BBCB')}</svg>`,
     comfort: `<svg viewBox="0 0 120 72" aria-hidden="true">${suv}</svg>`,
     parcel: `<svg viewBox="0 0 120 72" aria-hidden="true">${parcel}</svg>`,
-    airport: `<svg viewBox="0 0 120 72" aria-hidden="true">${airport}</svg>`,
+    airport: `<svg viewBox="0 0 120 72" aria-hidden="true">${plane}</svg>`,
   };
   K.artFor = (service, vehicleType) => K.ART[service] || (vehicleType === 'car' ? K.ART.car : K.ART.boda);
+
+  // ---------- brand: pin logo & night skyline ----------
+  K.logo = (pin = '#FFC400', k = '#141414', size = 64) => `<svg class="pin" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
+    <path d="M32 3C19.3 3 9 13.1 9 25.6 9 42 32 61 32 61s23-19 23-35.4C55 13.1 44.7 3 32 3z" fill="${pin}"/>
+    <path d="M25.5 14v23M25.5 27.5 37.5 14M29.5 23.5l9 13.5" stroke="${k}" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+  K.skyline = function (seed = 7) {
+    let x = seed; const rnd = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
+    let blds = '', wins = '', px = -10;
+    while (px < 400) {
+      const w = 18 + rnd() * 34, h = 50 + rnd() * 150, y = 220 - h;
+      blds += `<rect x="${px.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h + 90}" fill="${rnd() > .5 ? '#121214' : '#17171A'}"/>`;
+      if (rnd() > .7) blds += `<rect x="${(px + w / 2 - 1).toFixed(1)}" y="${(y - 18).toFixed(1)}" width="2" height="18" fill="#17171A"/>`;
+      for (let wy = y + 8; wy < 214; wy += 10) for (let wx = px + 4; wx < px + w - 5; wx += 7) {
+        const r = rnd();
+        if (r > .62) wins += `<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="3" height="4" fill="${r > .9 ? '#FFFFFF' : '#FFC400'}" opacity="${(.25 + rnd() * .6).toFixed(2)}"/>`;
+      }
+      px += w + 2 + rnd() * 4;
+    }
+    return `<svg viewBox="0 0 390 300" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <defs><linearGradient id="sk${seed}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E0E10" stop-opacity="0"/><stop offset=".55" stop-color="#2A1F05" stop-opacity=".55"/><stop offset="1" stop-color="#0E0E10"/></linearGradient>
+      <filter id="gl${seed}" x="-10%" y="-50%" width="120%" height="200%"><feGaussianBlur stdDeviation="3"/></filter></defs>
+      <rect width="390" height="300" fill="url(#sk${seed})"/>
+      ${blds}${wins}
+      <rect y="218" width="390" height="82" fill="#0E0E10"/>
+      <path d="M-20 300 C 90 250, 200 236, 410 232" stroke="#FFC400" stroke-width="6" fill="none" filter="url(#gl${seed})" opacity=".85"/>
+      <path d="M-20 300 C 90 250, 200 236, 410 232" stroke="#FFE38A" stroke-width="2" fill="none"/>
+      <path d="M-20 286 C 110 254, 230 246, 410 244" stroke="#FF8A00" stroke-width="3" fill="none" filter="url(#gl${seed})" opacity=".6"/>
+    </svg>`;
+  };
 
   // ---------- vehicle markers (top view) ----------
   const TOP = {
     car: '<svg viewBox="0 0 40 40"><rect x="12.5" y="4" width="15" height="32" rx="6" fill="#141414" stroke="#fff" stroke-width="1.6"/><path d="M14.5 12.5c2-2.2 9-2.2 11 0v4h-11z" fill="#8C96A0"/><path d="M14.5 29c2 1.6 9 1.6 11 0v-3.5h-11z" fill="#8C96A0"/><rect x="14.5" y="17" width="11" height="8" rx="1" fill="#222"/></svg>',
-    boda: '<svg viewBox="0 0 40 40"><rect x="17" y="3" width="6" height="34" rx="3" fill="#141414" stroke="#fff" stroke-width="1.4"/><rect x="10" y="9" width="20" height="3.2" rx="1.6" fill="#141414" stroke="#fff" stroke-width="1"/><circle cx="20" cy="21" r="5.5" fill="#E8B100" stroke="#141414" stroke-width="1.8"/></svg>',
+    boda: '<svg viewBox="0 0 40 40"><rect x="17" y="3" width="6" height="34" rx="3" fill="#141414" stroke="#fff" stroke-width="1.4"/><rect x="10" y="9" width="20" height="3.2" rx="1.6" fill="#141414" stroke="#fff" stroke-width="1"/><circle cx="20" cy="21" r="5.5" fill="#FFC400" stroke="#141414" stroke-width="1.8"/></svg>',
   };
   function bearing(a, b) {
     const toR = (d) => d * Math.PI / 180, toD = (r) => r * 180 / Math.PI;
@@ -207,6 +248,7 @@
 
   // ---------- launch splash ----------
   const T0 = performance.now();
+  (function () { const sky = document.querySelector('#splash .sky'); if (sky && !sky.firstChild) sky.innerHTML = K.skyline(APP === 'driver' ? 11 : 7); })();
   K.ready = function () {
     const sp = document.getElementById('splash');
     if (!sp || sp.classList.contains('out')) return;
@@ -238,122 +280,224 @@
     document.addEventListener('kwata:installable', draw, { once: true });
   };
 
-  // ---------- phone-first sign in / sign up ----------
-  const COPY = {
-    rider: { title: 'What’s your phone number?', lead: 'We’ll use it to sign you in and so drivers can reach you.' },
-    driver: { title: 'Kwata Driver', lead: 'Sign in with the phone number the Kwata team registered for you.' },
-    admin: { title: 'Kwata Operations', lead: 'Sign in with your admin phone number.' },
-  };
-  const LOGO = '<span class="onb-logo"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path d="M20 15v34M20 33l16-18M25 29l15 20" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="46" cy="47" r="5" fill="#E8B100"/></svg></span>';
+  // ---------- onboarding, sign up & log in (mockup screens 1–4, 14–16) ----------
+  K.splashMarkup = (driver) => `<div class="sky">${K.skyline(driver ? 11 : 7)}</div>
+    <div class="splash-logo">${K.logo('#FFC400', '#141414', 84)}
+      <div class="splash-word">Kwata${driver ? '<small>Driver</small>' : ''}</div>
+      <div class="splash-tag">${driver ? 'Earn. Drive. Grow.' : 'Move. Deliver. Connect.'}</div></div>`;
+
+  // Shrink a photo in the browser so uploads are quick on mobile data.
+  K.compressImage = (file, max = 1280, quality = 0.8) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => reject(new Error('That file isn’t a photo we can read.'));
+    img.src = URL.createObjectURL(file);
+  });
+
+  const phoneField = (id, val = '') => `<div class="phone-field"><span class="cc">🇺🇬 +256 ${K.ic('chevDown', 'sm')}</span><input id="${id}" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7XX XXX XXX" value="${K.esc(val)}" required></div>`;
+  const toLocal = (raw) => { const d = String(raw || '').replace(/\D/g, ''); return d.startsWith('256') ? d : d.startsWith('0') ? d : '0' + d; };
+
   K.authScreen = function (root, { role, onDone }) {
-    let phone = '', pretty = '';
+    let draft = {};
     K.ready();
     const shell = (inner, back) => {
-      root.innerHTML = `<div class="onb onb-enter"><div class="onb-top">${back ? `<button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button>` : LOGO}<span></span></div>${inner}</div>`;
-      const b = root.querySelector('[data-back]'); if (b) b.onclick = stepPhone;
+      root.innerHTML = `<div class="onb onb-enter">${back ? `<div class="onb-top"><button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button></div>` : '<div style="height:20px"></div>'}${inner}</div>`;
+      const b = root.querySelector('[data-back]'); if (b) b.onclick = back;
+      const f = root.querySelector('form'); if (f) setTimeout(() => { const i = f.querySelector('input'); i && i.focus({ preventScroll: true }); }, 80);
     };
     const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.textContent = on ? 'Please wait…' : btn.dataset.label; };
+    const finish = async (out) => {
+      K.session.set(out);
+      if (role === 'rider') await K.askLocation(root);
+      onDone(out);
+    };
 
-    function stepPhone() {
+    // Rider onboarding slides
+    function onboarding() {
+      const slides = [
+        ['Rides, deliveries and more.', 'Fast. Safe. Reliable. Boda, car or parcel, in a few taps.', K.ART.boda],
+        ['Send anything across Kampala.', 'Documents, food, phones. Your parcel is tracked all the way.', K.ART.parcel],
+        ['Safer from the first metre.', 'Every trip starts with your PIN, and family can follow along live.', K.ART.comfort],
+      ];
+      root.innerHTML = `<div class="onboard">
+        <div class="slides" id="sl">${slides.map(([h, p, art], i) => `<div class="slide">
+          <div class="art"><svg viewBox="0 0 390 420" preserveAspectRatio="xMidYMid slice">
+            <foreignObject width="390" height="420"><div xmlns="http://www.w3.org/1999/xhtml" style="width:390px;height:420px;position:relative">
+              <div style="position:absolute;inset:0">${K.skyline(3 + i * 5)}</div>
+              <div style="position:absolute;left:50%;bottom:40px;transform:translateX(-50%);width:300px;height:180px;filter:drop-shadow(0 18px 24px rgba(0,0,0,.55))">${art}</div>
+            </div></foreignObject></svg></div>
+          <h1>${h}</h1><p>${p}</p></div>`).join('')}</div>
+        <div class="dots">${slides.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>
+        <div class="cta"><button class="btn btn-primary btn-block btn-lg" id="go">Get Started</button><button class="btn btn-link" id="li">Log In</button></div></div>`;
+      const sl = root.querySelector('#sl'), dots = root.querySelectorAll('.dots i');
+      sl.addEventListener('scroll', () => { const i = Math.round(sl.scrollLeft / sl.clientWidth); dots.forEach((d, j) => d.classList.toggle('on', i === j)); }, { passive: true });
+      const seen = () => { try { localStorage.setItem('kwata_onboarded', '1'); } catch {} };
+      root.querySelector('#go').onclick = () => { seen(); signUp(); };
+      root.querySelector('#li').onclick = () => { seen(); logIn(); };
+    }
+
+    // Driver welcome = splash with buttons (screen 14)
+    function driverWelcome() {
+      root.innerHTML = `<div class="splash" style="position:fixed">${K.splashMarkup(true)}
+        <div class="splash-cta"><button class="btn btn-primary btn-block btn-lg" id="go">Get Started</button><button class="btn btn-link" id="li">Log In</button></div></div>`;
+      root.querySelector('#go').onclick = becomeDriver;
+      root.querySelector('#li').onclick = logIn;
+    }
+
+    function becomeDriver() {
+      shell(`<div class="grow" style="display:flex;flex-direction:column">
+        <div class="illu" style="width:190px;height:130px;border-radius:24px;margin:10px auto 22px">${K.ART.boda}</div>
+        <h1>Become a driver</h1><p class="lead">Join drivers earning with Kwata. Keep 88% of every fare.</p>
+        <ul class="checklist"><li>Quick registration</li><li>Flexible hours</li><li>Secure payments to Mobile Money</li></ul>
+        <div class="spacer"></div>
+        <button class="btn btn-primary btn-block btn-lg" id="go">Continue</button>
+        <p class="fine">Already have an account? <button data-li>Log In</button></p></div>`, driverWelcome);
+      root.querySelector('#go').onclick = driverForm;
+      root.querySelector('[data-li]').onclick = logIn;
+    }
+
+    function signUp() {
       shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
-        <h1>${COPY[role].title}</h1><p class="lead">${COPY[role].lead}</p>
-        <label for="ph" class="hidden">Phone number</label>
-        <div class="phone-field"><span class="cc">🇺🇬 +256</span><input id="ph" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="772 123456" value="${K.esc(pretty)}" required></div>
+        <h1>Create your account</h1><p class="lead">Get started in seconds</p>
+        <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" placeholder="John Doe" value="${K.esc(draft.name || '')}" required>
+        <label for="ph">Phone number</label>${phoneField('ph', draft.phone)}
+        <label for="pw">Password</label><input id="pw" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="At least 6 characters" required>
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
-
-      </form>`);
-      const f = root.querySelector('#f'), inp = f.querySelector('#ph');
-      setTimeout(() => inp.focus(), 80);
-      f.onsubmit = async (e) => {
-        e.preventDefault();
-        const err = f.querySelector('.error'); err.textContent = '';
-        pretty = inp.value.trim();
-        const raw = pretty.replace(/\D/g, '');
-        const guess = raw.startsWith('256') ? raw : raw.startsWith('0') ? raw : '0' + raw;
-        busy(f, true);
-        try {
-          const r = await K.api('/auth/check', { phone: guess });
-          phone = r.phone;
-          if (r.exists && role !== 'admin' && r.role !== role) {
-            err.textContent = { driver: 'This number is a driver account. Use another number for rides, or open the driver app.', rider: 'This number is registered for rides. Use a different number for your driver account.', admin: 'This is a staff account. Use a different number here.' }[r.role] || 'This number can’t be used here.';
-            busy(f, false); return;
-          }
-          if (r.exists) stepPassword();
-          else if (role === 'admin') { err.textContent = 'No admin account for this number.'; busy(f, false); }
-          else if (role === 'driver') stepNotDriver();
-          else stepCreate();
-        } catch (ex) { err.textContent = ex.message; busy(f, false); }
-      };
-    }
-
-    function stepNotDriver() {
-      shell(`<div class="grow" style="display:flex;flex-direction:column">
-        <h1>Become a Kwata driver</h1>
-        <p class="lead"><b>${K.esc(phone.replace('+256', '0'))}</b> isn’t registered as a driver yet.</p>
-        <div class="card" style="margin-bottom:12px"><b>How to join</b><p class="small muted" style="margin:6px 0 0">Visit the Kwata office with your driving permit, vehicle logbook and National ID. Once we’ve checked them, we’ll register you and you can sign in here straight away.</p></div>
-        <div class="spacer"></div>
-        <button class="btn btn-block btn-lg" data-back2>Try another number</button>
-      </div>`, true);
-      root.querySelector('[data-back2]').onclick = stepPhone;
-    }
-
-    function stepPassword() {
-      shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
-        <h1>Welcome back</h1><p class="lead">Enter the password for <b>${K.esc(phone.replace('+256', '0'))}</b></p>
-        <label for="pw" class="hidden">Password</label>
-        <input id="pw" type="password" autocomplete="current-password" placeholder="Password" required>
-        <p class="error" role="alert"></p>
-        <p class="small muted">Forgot your password? Call Kwata support and we’ll reset it for you.</p>
-        <div class="spacer"></div>
-        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Sign in">Sign in</button>
-      </form>`, true);
+        <p class="fine">Already have an account? <button type="button" data-li>Log In</button></p>
+        <p class="fine" style="margin-top:4px">By continuing you agree to Kwata’s terms and privacy policy.</p>
+      </form>`, onboarding);
       const f = root.querySelector('#f');
-      setTimeout(() => f.querySelector('#pw').focus(), 80);
+      root.querySelector('[data-li]').onclick = logIn;
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
+        draft = { name: f.nm.value.trim(), phone: f.ph.value.trim() };
         busy(f, true);
-        try {
-          const out = await K.api('/auth/login', { phone, password: f.querySelector('#pw').value });
-          if (role !== out.user.role) throw new Error('This account can’t be used here.');
-          K.session.set(out); onDone(out);
-        } catch (ex) { err.textContent = ex.message; busy(f, false); }
+        try { await finish(await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw.value, role: 'rider' })); }
+        catch (ex) { err.innerHTML = /already has an account/.test(ex.message) ? `This number already has an account. <a href="#" data-li2>Log in instead</a>` : K.esc(ex.message); busy(f, false); const l = err.querySelector('[data-li2]'); if (l) l.onclick = (ev) => { ev.preventDefault(); logIn(); }; }
       };
     }
 
-    function stepCreate() {
+    function driverForm() {
       shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
-        <h1>Let’s get you set up</h1>
-        <p class="lead">New number <b>${K.esc(phone.replace('+256', '0'))}</b>. It takes a few seconds.</p>
+        <h1>Your details</h1><p class="lead">We’ll check these before your first trip.</p>
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" required>
+        <label for="ph">Phone number</label>${phoneField('ph')}
         <label for="pw">Create a password</label><input id="pw" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="At least 6 characters" required>
-
+        <label for="vt">What do you drive?</label><select id="vt" name="vehicleType"><option value="boda">Boda boda (motorcycle)</option><option value="car">Car</option></select>
+        <div class="row"><div class="fill"><label for="pl">Number plate</label><input id="pl" name="plate" placeholder="UFA 123X" required></div>
+          <div class="fill"><label for="co">Colour</label><input id="co" name="vehicleColor" placeholder="Red"></div></div>
+        <label for="mk">Make and model</label><input id="mk" name="vehicleMake" placeholder="Bajaj Boxer / Toyota Premio">
+        <label for="lc">Driving permit number</label><input id="lc" name="licenseNo" required>
+        <label for="mm">Mobile Money for payouts</label><input id="mm" name="momoNumber" type="tel" placeholder="Same as your phone if empty">
         <p class="error" role="alert"></p>
-        <div class="spacer"></div>
-        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Create account">Create account</button>
-        <p class="fine">By continuing you agree to Kwata’s terms and privacy policy.</p>
-      </form>`, true);
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue" style="margin-top:8px">Continue</button>
+      </form>`, becomeDriver);
       const f = root.querySelector('#f');
-      setTimeout(() => f.querySelector('#nm').focus(), 80);
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
+        const data = Object.fromEntries(new FormData(f).entries());
+        data.phone = toLocal(data.phone);
+        busy(f, true);
+        try { const out = await K.api('/auth/register', { ...data, role: 'driver' }); K.session.set(out); K.verifyDocs(root, { onDone: () => onDone(out) }); }
+        catch (ex) { err.textContent = ex.message; busy(f, false); }
+      };
+    }
+
+    function logIn() {
+      shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
+        <h1>${role === 'driver' ? 'Welcome back, driver' : role === 'admin' ? 'Kwata Operations' : 'Welcome back'}</h1>
+        <p class="lead">Log in with your phone number</p>
+        <label for="ph">Phone number</label>${phoneField('ph', draft.phone)}
+        <label for="pw">Password</label><input id="pw" name="password" type="password" autocomplete="current-password" required>
+        <p class="error" role="alert"></p>
+        <p class="small muted">Forgot your password? Call Kwata support and we’ll reset it.</p>
+        <div class="spacer"></div>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Log In">Log In</button>
+        ${role === 'admin' ? '' : `<p class="fine">${role === 'driver' ? 'New driver?' : 'New to Kwata?'} <button type="button" data-su>${role === 'driver' ? 'Become a driver' : 'Create account'}</button></p>`}
+      </form>`, role === 'rider' ? onboarding : role === 'driver' ? driverWelcome : null);
+      const f = root.querySelector('#f');
+      const su = root.querySelector('[data-su]'); if (su) su.onclick = role === 'driver' ? becomeDriver : signUp;
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const err = f.querySelector('.error'); err.textContent = '';
+        draft.phone = f.ph.value.trim();
         busy(f, true);
         try {
-          const data = Object.fromEntries(new FormData(f).entries());
-          const out = await K.api('/auth/register', { ...data, phone, role });
-          K.session.set(out); onDone(out);
+          const out = await K.api('/auth/login', { phone: toLocal(draft.phone), password: f.pw.value });
+          if (out.user.role !== role) throw new Error({ driver: 'This is a driver account. Use the Kwata Driver app.', rider: 'This number is a rider account. Use a different number for driving.', admin: 'This is a staff account.' }[out.user.role] || 'This account can’t be used here.');
+          await finish(out);
         } catch (ex) { err.textContent = ex.message; busy(f, false); }
       };
     }
 
-    stepPhone();
+    let onboarded = false; try { onboarded = !!localStorage.getItem('kwata_onboarded'); } catch {}
+    if (role === 'driver') driverWelcome();
+    else if (role === 'rider' && !onboarded) onboarding();
+    else logIn();
+  };
+
+  // Screen 4: location permission, asked once after sign up / log in.
+  K.askLocation = (root) => new Promise(async (resolve) => {
+    let state = 'prompt';
+    try { state = (await navigator.permissions.query({ name: 'geolocation' })).state; } catch {}
+    let asked = false; try { asked = !!localStorage.getItem('kwata_loc_asked'); } catch {}
+    if (state !== 'prompt' || asked || !navigator.geolocation) return resolve();
+    root.innerHTML = `<div class="onb onb-enter" style="text-align:center">
+      <div class="illu">${K.ic('pin').replace('class="i "', 'class="i" style="width:64px;height:64px;stroke-width:1.6"')}</div>
+      <h1>Allow location access</h1>
+      <p class="lead" style="max-width:30ch;margin:0 auto">We need your location to find the nearest drivers and give you the best service.</p>
+      <div class="spacer"></div>
+      <button class="btn btn-primary btn-block btn-lg" id="al">Allow Location</button>
+      <button class="btn btn-link btn-block" id="nn">Not Now</button></div>`;
+    const done = () => { try { localStorage.setItem('kwata_loc_asked', '1'); } catch {} resolve(); };
+    root.querySelector('#al').onclick = () => navigator.geolocation.getCurrentPosition(done, done, { timeout: 15000 });
+    root.querySelector('#nn').onclick = done;
+  });
+
+  // Screen 16: driver identity documents.
+  K.verifyDocs = async function (root, { onDone, back }) {
+    const ICON = { national_id: 'idcard', license: 'card', vehicle: 'camera', photo: 'user' };
+    const HINT = { national_id: 'Front of your National ID', license: 'Your driving permit', vehicle: 'Clear photo with the number plate', photo: 'A clear photo of your face' };
+    const draw = async () => {
+      let info = { kinds: {}, uploaded: {} };
+      try { info = await K.api('/driver/documents'); } catch {}
+      const kinds = Object.keys(info.kinds);
+      const allDone = kinds.every((k) => info.uploaded[k]);
+      root.innerHTML = `<div class="onb onb-enter">${back ? `<div class="onb-top"><button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button></div>` : '<div style="height:20px"></div>'}
+        <h1>Verify your identity</h1><p class="lead">Upload the required documents to get verified.</p>
+        ${kinds.map((k) => `<label class="doc ${info.uploaded[k] ? 'done' : ''}" for="f-${k}" style="margin:0 0 10px">
+          <span class="ic">${K.ic(ICON[k] || 'camera')}</span><span class="grow"><span style="display:block">${K.esc(info.kinds[k])}</span><span class="tiny muted" style="font-weight:500">${HINT[k] || ''}</span></span>
+          <span class="st">${info.uploaded[k] ? 'Uploaded ✓' : 'Upload'}</span>
+          <input type="file" id="f-${k}" data-k="${k}" accept="image/*" ${k === 'photo' ? 'capture="user"' : 'capture="environment"'} hidden></label>`).join('')}
+        <p class="error" id="err"></p>
+        <div class="spacer"></div>
+        <button class="btn btn-primary btn-block btn-lg" id="go" ${allDone ? '' : 'disabled'}>Continue</button>
+        <p class="fine">Need help? <a href="tel:+256700000000">Contact Support</a></p></div>`;
+      const b = root.querySelector('[data-back]'); if (b) b.onclick = back;
+      root.querySelectorAll('input[type=file]').forEach((inp) => inp.onchange = async () => {
+        const file = inp.files[0]; if (!file) return;
+        const st = inp.closest('.doc').querySelector('.st'); st.textContent = 'Uploading…';
+        try { await K.api('/driver/documents', { kind: inp.dataset.k, image: await K.compressImage(file) }); draw(); }
+        catch (ex) { root.querySelector('#err').textContent = ex.message; st.textContent = 'Try again'; }
+      });
+      root.querySelector('#go').onclick = onDone;
+    };
+    draw();
   };
 
   // ---------- maps ----------
-  K.dark = () => document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+  K.dark = () => false; // the brand is designed light-first, like the mockups
   const webgl = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })();
   // Crisp vector streets (OpenFreeMap, free, no API key). Falls back to plain
   // OpenStreetMap tiles on old phones without WebGL.
@@ -363,7 +507,7 @@
     if (webgl && L.maplibreGL) {
       try {
         const gl = L.maplibreGL({
-          style: `https://tiles.openfreemap.org/styles/${K.dark() ? 'dark' : 'positron'}`,
+          style: `https://tiles.openfreemap.org/styles/${K.dark() ? 'dark' : 'liberty'}`,
           attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © OpenStreetMap',
         }).addTo(m);
         const glMap = gl.getMaplibreMap && gl.getMaplibreMap();

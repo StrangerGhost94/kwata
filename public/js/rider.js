@@ -1,13 +1,13 @@
-// Kwata rider app — Uber-style flow:
-// Home ("Where to?") → Search → Choose a ride → Confirm pickup → Matching → Live trip → Rate
+// Kwata customer app (mockup screens 5–13):
+// Home → Search → Choose a ride → Finding your rider → Rider found → On trip → Trip completed
 (function () {
   const root = document.getElementById('root');
   const S = {
     view: 'home', pickup: null, drop: null, route: null, quote: null, gps: null,
-    service: localStorage.getItem('kwata_service') || 'boda', payment: localStorage.getItem('kwata_pay') || 'cash',
+    service: localStorage.getItem('kwata_service') || 'boda',
     trip: null, user: null, config: null, recent: [], parcel: null, rating: 0, unread: 0, chatOpen: false, messages: [],
   };
-  let map, sock, sheet, routeLayer, labels = [], driverMarker, meMarker, radarMarker, nearby = new Map(), revTimer, phaseKm = null, routedPhase = null;
+  let map, sock, sheet, routeLayer, labels = [], driverMarker, meMarker, nearby = new Map(), revTimer, phaseKm = null, routedPhase = null;
 
   const params = new URLSearchParams(location.search);
   if (params.get('payment')) {
@@ -18,16 +18,26 @@
   if (!K.token()) K.authScreen(root, { role: 'rider', onDone: start });
   else start();
 
+  // ---------- payment preference ----------
+  const PAY = {
+    mtn: { name: 'MTN Mobile Money', logo: '<span class="paylogo mtn">MTN</span>', method: 'momo' },
+    airtel: { name: 'Airtel Money', logo: '<span class="paylogo airtel">a</span>', method: 'momo' },
+    card: { name: 'Card', logo: `<span class="paylogo card">${K.ic('card', 'sm')}</span>`, method: 'card' },
+    cash: { name: 'Cash', logo: `<span class="paylogo cash">${K.ic('cash', 'sm')}</span>`, method: 'cash' },
+    wallet: { name: 'Kwata Wallet', logo: `<span class="paylogo wallet">${K.ic('wallet', 'sm')}</span>`, method: 'wallet' },
+  };
+  const pref = () => (PAY[S.user && S.user.payPref] ? S.user.payPref : 'cash');
+  const payOfTrip = (t) => t.paymentMethod === 'momo' ? (S.user.payPref === 'airtel' ? 'airtel' : 'mtn') : t.paymentMethod;
+  const prettyPhone = (p) => String(p || '').replace(/^\+256/, '0').replace(/^(\d{4})(\d{3})(\d{3})$/, '$1 $2 $3');
+  const who = (t) => (t.driver && t.driver.vehicleType === 'car') || ['car', 'comfort', 'airport'].includes(t.service) ? 'driver' : 'rider';
+  const svcName = (id) => K.SERVICE_LABEL[id] || id;
+
   async function start() {
     root.innerHTML = `
       <div class="app" id="app">
         <div id="map" aria-label="Map"></div>
-        <div class="center-pin hidden" id="cpin" aria-hidden="true"><div class="head"></div><div class="stem"></div><div class="shadow"></div></div>
-        <div class="topbar" id="topbar">
-          <button class="btn icon-btn fab" id="backBtn" aria-label="Back" style="visibility:hidden">${K.ic('back')}</button>
-          <span></span>
-          <button class="btn icon-btn fab" id="locBtn" aria-label="Go to my location">${K.ic('locate')}</button>
-        </div>
+        <div class="center-pin hidden" id="cpin" aria-hidden="true">${K.logo('#FFC400', '#141414', 46)}</div>
+        <div class="topbar" id="topbar"></div>
         <section class="sheet" id="sheet" aria-live="polite"></section>
         <nav class="tabbar" id="tabs" aria-label="Main">
           <button data-tab="home" aria-current="page">${K.ic('home')}Home</button>
@@ -38,10 +48,7 @@
     sheet = K.$('#sheet');
     K.draggableSheet(sheet);
     map = K.map('map');
-    map.on('movestart', () => K.$('#cpin').classList.add('lift'));
-    map.on('moveend', () => { K.$('#cpin').classList.remove('lift'); onPinMove(); });
-    K.$('#locBtn').onclick = () => locate(true);
-    K.$('#backBtn').onclick = goBack;
+    map.on('moveend', onPinMove);
     root.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => openTab(b.dataset.tab));
 
     try {
@@ -56,8 +63,8 @@
       sock.on('connect', async () => { const a = await K.api('/trips/active').catch(() => null); if (a) onTrip(a); });
       if (active) onTrip(active); else {
         locate(false); render();
-        const svc = new URLSearchParams(location.search).get('service');
-        if (svc && S.config.services.some((x) => x.id === svc)) { setService(svc); history.replaceState(null, '', location.pathname); openSearch(); }
+        const svc = params.get('service');
+        if (svc && S.config.services.some((x) => x.id === svc)) { setService(svc); history.replaceState(null, '', location.pathname); openSearch(svc === 'airport' ? { preset: K.PLACES[0] } : {}); }
         let q = null; try { q = sessionStorage.getItem('kwata_q'); sessionStorage.removeItem('kwata_q'); } catch {}
         if (q) openSearch({ query: q });
       }
@@ -92,13 +99,12 @@
   }
 
   function setPickup(lat, lng, label) {
-    S.pickup = { lat, lng, address: label || 'Finding address…' };
+    S.pickup = { lat, lng, address: label || 'Finding address…', short: label };
     clearTimeout(revTimer);
     revTimer = setTimeout(async () => {
       const addr = await K.reverse(lat, lng);
       if (S.pickup && S.pickup.lat === lat) {
-        S.pickup.address = label === 'Current location' ? addr : addr;
-        S.pickup.short = label;
+        S.pickup.address = addr;
         const el = K.$('#pickLabel'); if (el) el.textContent = addr;
       }
     }, 450);
@@ -106,18 +112,19 @@
   }
 
   function onPinMove() {
+    if (S.view !== 'pickup' && S.view !== 'droppin') return;
     const c = map.getCenter();
-    if (S.view === 'pickup') {
-      S.pickup = { lat: c.lat, lng: c.lng, address: 'Finding address…' };
-      const el = K.$('#pinAddr'); if (el) el.textContent = 'Finding address…';
-      clearTimeout(revTimer);
-      revTimer = setTimeout(async () => { const a = await K.reverse(c.lat, c.lng); if (S.pickup.lat === c.lat) { S.pickup.address = a; const e2 = K.$('#pinAddr'); if (e2) e2.textContent = a; } }, 450);
-    } else if (S.view === 'droppin') {
-      S.pinDrop = { lat: c.lat, lng: c.lng, name: 'Pinned location' };
-      const el = K.$('#pinAddr'); if (el) el.textContent = 'Finding address…';
-      clearTimeout(revTimer);
-      revTimer = setTimeout(async () => { const a = await K.reverse(c.lat, c.lng); if (S.pinDrop && S.pinDrop.lat === c.lat) { S.pinDrop.name = a; const e2 = K.$('#pinAddr'); if (e2) e2.textContent = a; } }, 450);
-    }
+    const el = K.$('#pinAddr'); if (el) el.textContent = 'Finding address…';
+    if (S.view === 'pickup') S.pickup = { lat: c.lat, lng: c.lng, address: 'Finding address…' };
+    else S.pinDrop = { lat: c.lat, lng: c.lng, name: 'Pinned location' };
+    clearTimeout(revTimer);
+    revTimer = setTimeout(async () => {
+      const a = await K.reverse(c.lat, c.lng);
+      if (S.view === 'pickup' && S.pickup.lat === c.lat) S.pickup.address = a;
+      else if (S.view === 'droppin' && S.pinDrop && S.pinDrop.lat === c.lat) S.pinDrop.name = a;
+      else return;
+      const e2 = K.$('#pinAddr'); if (e2) e2.textContent = a;
+    }, 450);
   }
 
   async function loadNearby() {
@@ -136,12 +143,37 @@
   function clearNearby() { for (const m of nearby.values()) map.removeLayer(m); nearby.clear(); }
 
   // ---------- render ----------
+  function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
+  function topbar() {
+    const v = S.view, tb = K.$('#topbar');
+    if (v === 'home') {
+      tb.innerHTML = `<button class="hello-chip" id="me"><span class="avatar">${K.initials(S.user.name)}</span><span><small>${greeting()},</small><b>${K.esc(K.first(S.user.name))}</b></span></button>
+        <button class="btn icon-btn fab" id="locBtn" aria-label="Go to my location">${K.ic('locate')}</button>`;
+      K.$('#me').onclick = () => openTab('account');
+    } else if (['choose', 'pickup', 'droppin', 'none'].includes(v)) {
+      tb.innerHTML = `<button class="btn icon-btn fab" id="backBtn" aria-label="Back">${K.ic('back')}</button><button class="btn icon-btn fab" id="locBtn" aria-label="Go to my location">${K.ic('locate')}</button>`;
+      K.$('#backBtn').onclick = goBack;
+    } else if (v === 'trip' && S.trip.status === 'in_progress') {
+      const mins = tripMins();
+      tb.innerHTML = `<div class="trip-banner"><button class="round" id="bnSos" aria-label="Safety">${K.ic('shield')}</button>
+        <span class="grow"><b>On trip</b><small id="bnTxt">${mins ? `Arriving in ${mins} min` : 'Heading to ' + K.esc(shorten(S.trip.drop.address))}</small></span>
+        <button class="round" id="bnShare" aria-label="Share trip">${K.ic('share')}</button></div>`;
+      K.$('#bnSos').onclick = openSafetySheet;
+      K.$('#bnShare').onclick = shareTrip;
+    } else if (v === 'trip') {
+      tb.innerHTML = `<span></span><button class="btn icon-btn fab" id="safeBtn" aria-label="Safety">${K.ic('shield')}</button>`;
+      K.$('#safeBtn').onclick = openSafetySheet;
+    } else tb.innerHTML = '';
+    const lb = K.$('#locBtn'); if (lb) lb.onclick = () => locate(true);
+  }
+
   function render() {
     const v = S.view;
     K.$('#cpin').classList.toggle('hidden', !['pickup', 'droppin'].includes(v));
     K.$('#tabs').classList.toggle('hidden', v !== 'home');
+    sheet.classList.toggle('home-card', v === 'home');
     sheet.style.bottom = v === 'home' ? (K.$('#tabs').offsetHeight || 58) + 'px' : '';
-    K.$('#backBtn').style.visibility = ['choose', 'pickup', 'droppin'].includes(v) ? 'visible' : 'hidden';
+    topbar();
     sheet.classList.remove('sheet-enter'); void sheet.offsetWidth; sheet.classList.add('sheet-enter');
     ({ home: vHome, choose: vChoose, pickup: vPickup, droppin: vDropPin, searching: vSearching, trip: vTrip, done: vDone, none: vNone })[v]();
   }
@@ -152,24 +184,24 @@
     else reset();
   }
 
-  const BLURB = { boda: 'Beat the jam', car: 'Everyday rides', comfort: 'Newer cars, AC', parcel: 'Send anything', airport: 'Entebbe & beyond' };
-  function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
+  // Screen 5: home
   function vHome() {
     clearRoute();
     const sp = S.user.savedPlaces || {};
-    const svcs = S.config.services;
-    const tile = (s, wide) => `<button class="svc${wide ? ' wide' : ''}" data-svc="${s.id}"><span><span class="n">${K.esc(K.SERVICE_LABEL[s.id] || s.name)}</span><span class="d" style="display:block">${BLURB[s.id] || ''}</span></span>${K.artFor(s.id, s.vehicle)}</button>`;
+    const ids = S.config.services.map((s) => s.id);
+    const main = ['boda', 'car', 'comfort', 'parcel'].filter((id) => ids.includes(id));
+    const saved = (key) => `<button class="saved" data-place="${key}"><span class="ic">${K.ic(key === 'home' ? 'home' : 'work')}</span>
+      <span class="grow"><b>${key === 'home' ? 'Home' : 'Work'}</b><span>${sp[key] ? K.esc(shorten(sp[key].address)) : 'Add address'}</span></span></button>`;
     sheet.innerHTML = `
       <div class="grabber"></div>
       <div id="installHost"></div>
-      <p class="hello">${greeting()}, ${K.esc(K.first(S.user.name))}</p>
-      <div class="svc-grid">${svcs.map((s, i) => tile(s, svcs.length % 2 === 1 && i === svcs.length - 1)).join('')}</div>
-      <button class="whereto" id="whereBtn">${K.ic('search')}<span>Where to?</span></button>
-      <div style="margin-top:4px">
-        ${placeRow('home', sp.home)}
-        ${placeRow('work', sp.work)}
-        ${S.recent.map((r, i) => `<button class="lrow" data-recent="${i}"><span class="ic">${K.ic('clock')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(r.name)}</span><span class="s">${K.esc(r.address)}</span></span></button>`).join('')}
-      </div>`;
+      <button class="search-bar" id="whereBtn">${K.ic('search')}<span>Where are you going?</span></button>
+      <div class="saved-row">${saved('home')}${saved('work')}</div>
+      ${S.recent.length ? S.recent.slice(0, 2).map((r, i) => `<button class="lrow" data-recent="${i}"><span class="ic">${K.ic('clock')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(shorten(r.name, 40))}</span><span class="s">${K.esc(r.address)}</span></span></button>`).join('') : ''}
+      <div class="svc-row">${main.map((id) => `<button class="svc-ic" data-svc="${id}"><span class="tile">${K.ART[id]}</span>${svcName(id)}</button>`).join('')}</div>
+      ${ids.includes('airport') ? `<div class="section-label">More services</div>
+        <button class="more-row" data-svc="airport"><span class="ic">${K.ic('plane')}</span><span class="grow">Airport transfer<br><span class="tiny muted" style="font-weight:500">Entebbe and long-distance trips</span></span>${K.ic('chev', 'sm')}</button>` : ''}
+      ${ids.includes('parcel') ? `<button class="promo" data-svc="parcel"><span class="grow"><b>Need to send a package?</b><span>Fast and reliable delivery across Kampala</span></span>${K.ART.parcel}</button>` : ''}`;
     K.installCard(K.$('#installHost'));
     K.$('#whereBtn').onclick = () => openSearch();
     sheet.querySelectorAll('[data-place]').forEach((b) => b.onclick = () => {
@@ -179,11 +211,6 @@
     });
     sheet.querySelectorAll('[data-recent]').forEach((b) => b.onclick = () => chooseDrop(S.recent[+b.dataset.recent]));
     sheet.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { setService(b.dataset.svc); openSearch(b.dataset.svc === 'airport' ? { preset: K.PLACES[0] } : {}); });
-  }
-  function placeRow(key, p) {
-    const label = key === 'home' ? 'Home' : 'Work';
-    return `<button class="lrow" data-place="${key}"><span class="ic">${K.ic(key === 'home' ? 'home' : 'work')}</span>
-      <span class="grow"><span class="t">${label}</span><span class="s ellipsis" style="display:block">${p ? K.esc(p.address) : 'Add ' + label.toLowerCase() + ' address'}</span></span>${K.ic('chev', 'sm')}</button>`;
   }
   function setService(id) { S.service = id; try { localStorage.setItem('kwata_service', id); } catch {} }
 
@@ -197,7 +224,7 @@
     page.style.zIndex = 870;
     page.innerHTML = `<div class="page-inner">
       <div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Close">${K.ic('back')}</button>
-        <h3 style="margin:0">${saveAs ? 'Set ' + saveAs + ' address' : 'Plan your ride'}</h3></div>
+        <h2>${saveAs ? 'Set ' + saveAs + ' address' : S.service === 'parcel' ? 'Where should it go?' : 'Where are you going?'}</h2></div>
       ${saveAs ? '' : `<div class="route-box" style="margin-bottom:6px">
         <div class="rb-line" style="grid-row:span 2"><span class="rb-dot"></span><span class="rb-bar"></span><span class="rb-sq"></span></div>
         <input id="qPick" placeholder="Pickup location" value="${K.esc(S.pickup ? (S.pickup.short || S.pickup.address) : '')}" autocomplete="off" aria-label="Pickup">
@@ -212,8 +239,7 @@
     const close = () => page.remove();
     K.$('[data-x]', page).onclick = close;
 
-    const rows = (items, heading, iconFn) => (heading ? `<p class="tiny faint bold" style="margin:14px 2px 2px">${heading}</p>` : '') +
-      items.map((p, i) => `<button class="lrow" data-i="${i}"><span class="ic">${K.ic(iconFn ? iconFn(p) : 'pin')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(p.name)}</span><span class="s ellipsis" style="display:block">${K.esc(p.address || '')}</span></span>${S.pickup && p.lat ? `<span class="tiny faint">${K.km(S.pickup, p).toFixed(1)} km</span>` : ''}</button>`).join('');
+    const rows = (items, iconFn) => items.map((p, i) => `<button class="lrow" data-i="${i}"><span class="ic">${K.ic(iconFn ? iconFn(p) : 'pin')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(p.name)}</span><span class="s ellipsis" style="display:block">${K.esc(p.address || '')}</span></span>${S.pickup && p.lat ? `<span class="tiny faint">${K.km(S.pickup, p).toFixed(1)} km</span>` : ''}</button>`).join('');
     let current = [];
     const bind = () => res.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => pick(current[+b.dataset.i]));
     const showDefault = () => {
@@ -224,7 +250,7 @@
       const recent = saveAs ? [] : S.recent.map((r) => ({ ...r, _ic: 'clock' }));
       const extra = target === 'pick' && S.gps ? [{ name: 'Current location', address: 'Use GPS', lat: S.gps.lat, lng: S.gps.lng, _ic: 'locate' }] : [];
       current = [...extra, ...saved, ...recent, ...K.PLACES.map((p) => ({ ...p, _ic: p.icon || 'pin' }))];
-      res.innerHTML = rows(current, null, (p) => p._ic) +
+      res.innerHTML = rows(current, (p) => p._ic) +
         (!saveAs && target === 'drop' ? `<button class="lrow" id="onMap"><span class="ic">${K.ic('pin')}</span><span class="t">Set location on map</span></button>` : '');
       bind();
       const om = K.$('#onMap', page); if (om) om.onclick = () => { close(); S.view = 'droppin'; map.setView([S.pickup.lat, S.pickup.lng], 16); render(); };
@@ -247,7 +273,8 @@
       if (saveAs) {
         try {
           const out = await K.api('/me', { savedPlaces: { [saveAs]: { lat: p.lat, lng: p.lng, address: p.name } } }, 'PATCH');
-          S.user = out.user; K.toast(`${saveAs === 'home' ? 'Home' : 'Work'} saved`); close(); render();
+          S.user = out.user; K.toast(`${saveAs === 'home' ? 'Home' : 'Work'} saved`); close();
+          if (opts.onSaved) opts.onSaved(); else if (S.view === 'home') render();
         } catch (e) { K.toast(e.message); }
         return;
       }
@@ -273,9 +300,10 @@
     if (!S.pickup) setPickup(K.KAMPALA.lat, K.KAMPALA.lng);
     S.view = 'choose';
     K.$('#tabs').classList.add('hidden');
+    sheet.classList.remove('home-card');
     sheet.style.bottom = '';
-    sheet.innerHTML = `<div class="grabber"></div><h2>Choose a ride</h2><div class="progress indet"><i></i></div>`;
-    K.$('#backBtn').style.visibility = 'visible';
+    topbar();
+    sheet.innerHTML = `<div class="grabber"></div><h2>Choose a ride</h2><div class="bar indet"><i></i></div>`;
     S.route = await K.route(S.pickup, S.drop);
     try {
       S.quote = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.min });
@@ -289,13 +317,13 @@
     clearRoute();
     routeLayer = K.drawRoute(map, S.route.coords);
     const etaPick = (S.quote && (S.quote.options.find((o) => o.id === S.service) || {}).etaMin) || null;
-    labels.push(L.marker(S.route.coords[0], { icon: K.divIcon('<div class="pin-ci"></div>', [16, 16]) }).addTo(map));
-    labels.push(L.marker(S.route.coords[S.route.coords.length - 1], { icon: K.divIcon('<div class="pin-sq"></div>', [16, 16]) }).addTo(map));
+    labels.push(L.marker(S.route.coords[0], { icon: K.divIcon('<div class="pin-ci"></div>', [18, 18]) }).addTo(map));
+    labels.push(L.marker(S.route.coords[S.route.coords.length - 1], { icon: K.divIcon('<div class="pin-sq"></div>', [18, 18]) }).addTo(map));
     labels.push(L.marker(S.route.coords[0], { icon: K.label(`${etaPick ? `<b>${etaPick}<br>min</b>` : ''}<span>${K.esc(shorten(S.pickup.short || S.pickup.address))}</span>`), interactive: false }).addTo(map));
     labels.push(L.marker(S.route.coords[S.route.coords.length - 1], { icon: K.label(`<span>${K.esc(shorten(S.drop.address))}</span>`), interactive: false }).addTo(map));
     fit(routeLayer.bounds());
   }
-  const shorten = (s) => String(s || '').split(',')[0].slice(0, 26);
+  const shorten = (s, n = 26) => String(s || '').split(',')[0].slice(0, n);
   function fit(bounds) {
     const pad = window.innerWidth >= 760 ? { paddingTopLeft: [460, 90], paddingBottomRight: [60, 60] } : { paddingTopLeft: [40, 90], paddingBottomRight: [40, sheet.offsetHeight + 30] };
     map.fitBounds(bounds, { ...pad, maxZoom: 16 });
@@ -305,58 +333,47 @@
     labels.forEach((l) => map.removeLayer(l)); labels = [];
   }
 
+  // Screen 6: choose a ride
   function vChoose() {
     const q = S.quote;
     const sel = q.options.find((o) => o.id === S.service);
-    const etas = q.options.map((o) => o.etaMin).filter((x) => x != null);
-    const fastest = etas.length ? Math.min(...etas) : null;
-    const uniqueFastest = etas.filter((x) => x === fastest).length === 1;
-    const arrive = (o) => K.clock((o.etaMin || 0) + q.durationMin);
+    const p = pref(), P = PAY[p];
+    const meta = (o) => [o.etaMin != null ? `${o.etaMin} min` : 'No drivers nearby', o.seats ? `${o.seats} seat${o.seats > 1 ? 's' : ''}` : 'Up to 10 kg'].join(' · ');
     sheet.innerHTML = `
       <div class="grabber"></div>
-      <h2 style="text-align:center;font-size:1.25rem;margin-bottom:10px">Choose a ride</h2>
+      <h2 style="margin-bottom:12px">Choose a ride</h2>
       <div class="opts" role="radiogroup" aria-label="Ride type">
       ${q.options.map((o) => `
         <button class="opt" data-s="${o.id}" aria-pressed="${o.id === S.service}">
           <span class="art">${K.artFor(o.id, o.vehicle)}</span>
-          <span class="grow">
-            <span class="name">${K.esc(o.name.replace('Kwata ', ''))} ${o.seats ? `<span class="seats">${K.ic('person', 'sm')}${o.seats}</span>` : ''} ${uniqueFastest && o.etaMin === fastest ? '<span class="badge-fast">Fastest</span>' : ''}</span>
-            <span class="meta">${o.etaMin != null ? `${arrive(o)} · ${o.etaMin} min away` : K.esc(o.blurb)}</span>
-            ${o.surge > 1 ? `<span class="surge">Busy right now · fares are higher</span>` : ''}
-          </span>
+          <span class="grow"><span class="name" style="display:block">${K.esc(svcName(o.id))}</span>
+            <span class="meta">${meta(o)}</span>${o.surge > 1 ? `<span class="surge" style="display:block">Busy right now · higher fares</span>` : ''}</span>
           <span class="price">${K.ugx(o.fare)}</span>
+          <span class="tick">${K.ic('check', 'sm')}</span>
         </button>`).join('')}
       </div>
-      ${S.service === 'parcel' ? `<button class="payrow" id="parcelRow">${K.ic('gift')}<span class="grow">${S.parcel ? `Package for ${K.esc(S.parcel.recipientName)}` : 'Add delivery details'}</span>${K.ic('chev', 'sm')}</button>` : ''}
-      <button class="payrow" id="payRow">${K.ic(K.PAY_ICON[S.payment])}<span class="grow">${K.PAY_LABEL[S.payment]}${S.payment === 'wallet' ? ` · ${K.ugx(S.user.walletBalance)}` : ''}</span>${K.ic('chev', 'sm')}</button>
-      <button class="btn btn-primary btn-block btn-lg" id="choose">Choose ${K.esc(sel.name.replace('Kwata ', ''))}</button>`;
+      <button class="payrow" id="pickRow" style="padding-bottom:4px"><span class="dot-pick" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Pickup</span><span class="ellipsis" id="pickLabel" style="display:block">${K.esc(S.pickup.address)}</span></span><span class="small muted">Change</span></button>
+      ${S.service === 'parcel' ? `<button class="payrow" id="parcelRow"><span class="paylogo wallet">${K.ic('gift', 'sm')}</span><span class="grow">${S.parcel ? `Package for ${K.esc(S.parcel.recipientName)}` : 'Add delivery details'}</span>${K.ic('chev', 'sm')}</button>` : ''}
+      <button class="payrow" id="payRow">${P.logo}<span class="grow">${P.name}${p === 'wallet' ? ` · ${K.ugx(S.user.walletBalance)}` : ''}${['mtn', 'airtel'].includes(p) ? `<span class="tiny muted" style="display:block;font-weight:500">${prettyPhone(S.user.payPhone)}</span>` : ''}</span>${K.ic('chev', 'sm')}</button>
+      <p class="error" id="err" style="margin:0 0 8px"></p>
+      <button class="btn btn-primary btn-block btn-lg" id="request">Request ${K.esc(svcName(sel.id))}</button>`;
     sheet.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => {
-      if (b.dataset.s === S.service) { K.$('#choose').click(); return; }
+      if (b.dataset.s === S.service) return;
       setService(b.dataset.s); showRoute(); render();
     });
-    K.$('#payRow').onclick = openPayment;
+    K.$('#payRow').onclick = () => openPayments({ onPick: render });
+    K.$('#pickRow').onclick = () => { S.view = 'pickup'; clearRoute(); map.setView([S.pickup.lat, S.pickup.lng], 18); render(); };
     const pr = K.$('#parcelRow'); if (pr) pr.onclick = openParcel;
-    K.$('#choose').onclick = () => {
+    K.$('#request').onclick = () => {
       if (S.service === 'parcel' && !S.parcel) { openParcel(); return; }
-      if (S.payment === 'wallet' && S.user.walletBalance < sel.fare) { K.toast('Not enough in your wallet. Top up or pick another way to pay.'); openPayment(); return; }
-      S.view = 'pickup'; clearRoute(); map.setView([S.pickup.lat, S.pickup.lng], 18); render();
+      if (p === 'wallet' && S.user.walletBalance < sel.fare) { K.toast('Not enough in your wallet. Top up or pick another way to pay.'); openPayments({ onPick: render }); return; }
+      book();
     };
-  }
-
-  function openPayment() {
-    const opts = ['cash', 'momo', 'wallet', 'card'];
-    const m = K.modal(`<h2>Payment</h2>
-      ${opts.map((p) => `<button class="lrow" data-p="${p}"><span class="ic">${K.ic(K.PAY_ICON[p])}</span><span class="grow"><span class="t">${K.PAY_LABEL[p]}</span>
-        <span class="s" style="display:block">${{ cash: 'Pay your driver at the end', momo: 'MTN or Airtel, prompt at the end', wallet: 'Balance ' + K.ugx(S.user.walletBalance), card: 'Visa or Mastercard' }[p]}</span></span>
-        ${S.payment === p ? K.ic('check') : ''}</button>`).join('')}
-      <button class="btn btn-block" style="margin-top:12px" id="topup">${K.ic('plus')} Add money to wallet</button>`);
-    m.el.querySelectorAll('[data-p]').forEach((b) => b.onclick = () => { S.payment = b.dataset.p; try { localStorage.setItem('kwata_pay', S.payment); } catch {} m.close(); render(); });
-    K.$('#topup', m.el).onclick = () => { m.close(); openWallet(); };
   }
 
   function openParcel() {
     const p = S.parcel || {};
-    const m = K.modal(`<h2>Delivery details</h2><p class="muted small">Your driver will call the recipient on arrival.</p>
+    const m = K.modal(`<h2>Delivery details</h2><p class="muted small">Your rider will call the recipient on arrival.</p>
       <label for="pr-name">Recipient name</label><input id="pr-name" value="${K.esc(p.recipientName || '')}">
       <label for="pr-phone">Recipient phone</label><input id="pr-phone" type="tel" placeholder="0772 123456" value="${K.esc(p.recipientPhone || '')}">
       <label for="pr-item">What are you sending?</label><input id="pr-item" placeholder="e.g. Documents in an envelope" value="${K.esc(p.item || '')}">
@@ -371,18 +388,21 @@
   function vPickup() {
     sheet.innerHTML = `
       <div class="grabber"></div>
-      <h2 style="text-align:center;font-size:1.25rem">Confirm your pickup spot</h2>
-      <p class="small muted" style="text-align:center">Drag the map to move the pin</p>
+      <h2 style="text-align:center">Adjust your pickup</h2>
+      <p class="small muted" style="text-align:center">Move the map to put the pin where you’ll wait</p>
       <div class="lrow" style="cursor:default"><span class="ic">${K.ic('pin')}</span><span class="grow"><span class="t ellipsis" id="pinAddr" style="display:block">${K.esc(S.pickup.address)}</span></span></div>
-      <p class="error" id="err"></p>
-      <button class="btn btn-primary btn-block btn-lg" id="confirm">Confirm pickup</button>`;
-    K.$('#confirm').onclick = book;
+      <button class="btn btn-primary btn-block btn-lg" id="confirm" style="margin-top:8px">Confirm pickup</button>`;
+    K.$('#confirm').onclick = () => {
+      if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
+      S.pickup.short = null;
+      prepareQuote();
+    };
   }
 
   function vDropPin() {
     sheet.innerHTML = `
       <div class="grabber"></div>
-      <h2 style="text-align:center;font-size:1.25rem">Set your destination</h2>
+      <h2 style="text-align:center">Set your destination</h2>
       <div class="lrow" style="cursor:default"><span class="ic">${K.ic('flag')}</span><span class="grow"><span class="t ellipsis" id="pinAddr" style="display:block">Move the map to your destination</span></span></div>
       <button class="btn btn-primary btn-block btn-lg" id="confirm" style="margin-top:8px">Confirm destination</button>`;
     onPinMove();
@@ -390,120 +410,153 @@
   }
 
   async function book() {
-    const btn = K.$('#confirm'), err = K.$('#err');
-    btn.disabled = true; err.textContent = '';
+    const btn = K.$('#request'), err = K.$('#err');
+    btn.disabled = true; btn.textContent = 'Requesting…'; err.textContent = '';
     if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
-    const body = { service: S.service, paymentMethod: S.payment, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.min };
+    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.min };
     if (S.service === 'parcel') body.parcel = S.parcel;
     try { onTrip(await K.api('/trips', body)); }
-    catch (e) { err.textContent = e.message; btn.disabled = false; }
+    catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = `Request ${svcName(S.service)}`; }
   }
 
+  // Screen 7: finding your rider
   function vSearching() {
     const t = S.trip;
-    clearNearby();
-    if (!radarMarker) radarMarker = L.marker([t.pickup.lat, t.pickup.lng], { icon: K.divIcon('<div class="radar"></div>', [160, 160]), interactive: false }).addTo(map);
+    clearNearby(); clearRoute();
+    labels.push(L.marker([t.pickup.lat, t.pickup.lng], { icon: K.divIcon('<div class="radar"></div>', [160, 160]), interactive: false }).addTo(map));
+    labels.push(L.marker([t.pickup.lat, t.pickup.lng], { icon: K.divIcon('<div class="pin-ci"></div>', [18, 18]), interactive: false }).addTo(map));
     map.setView([t.pickup.lat, t.pickup.lng], 16);
     sheet.innerHTML = `
       <div class="grabber"></div>
-      <h2 style="font-size:1.3rem">Connecting you to a driver</h2>
-      <div class="progress indet"><i></i></div>
-      <div class="row" style="margin-bottom:6px"><span class="opt" style="padding:0;width:auto"><span class="art">${K.artFor(t.service)}</span></span>
-        <span class="grow"><b>${K.esc((S.config.services.find((s) => s.id === t.service) || {}).name || '')}</b><br><span class="small muted">${K.ugx(t.fare)} · ${K.PAY_LABEL[t.paymentMethod]}</span></span></div>
-      ${tripStops(t)}
-      <button class="btn btn-block" id="cancel" style="margin-top:10px">Cancel request</button>`;
+      <div class="finding">
+        <h2>Finding your ${who(t)}…</h2>
+        <p class="small muted">Connecting you to the nearest ${svcName(t.service).toLowerCase()} ${who(t)}</p>
+        <div class="ring-wrap">
+          <svg class="ring" viewBox="0 0 150 150" aria-hidden="true"><circle cx="75" cy="75" r="68" fill="none" stroke="var(--surface-2)" stroke-width="7"/><circle cx="75" cy="75" r="68" fill="none" stroke="var(--brand)" stroke-width="7" stroke-linecap="round" stroke-dasharray="110 330"/></svg>
+          <div class="center">${K.artFor(t.service)}</div>
+        </div>
+        <p class="small muted">${K.ugx(t.fare)} · ${PAY[payOfTrip(t)].name}</p>
+        <button class="btn btn-outline btn-block btn-lg" id="cancel">Cancel</button>
+      </div>`;
     K.$('#cancel').onclick = cancelTrip;
   }
 
-  const tripStops = (t) => `<div class="trip-list">
-      <div class="lrow" style="cursor:default"><span class="ic"><span class="rb-dot"></span></span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(t.pickup.address)}</span><span class="s">Pickup</span></span></div>
-      <div class="lrow" style="cursor:default"><span class="ic"><span class="rb-sq"></span></span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(t.drop.address)}</span><span class="s">Drop-off</span></span></div></div>`;
-
   function vNone() {
-    removeRadar();
-    sheet.innerHTML = `<div class="grabber"></div><h2>No drivers available</h2>
-      <p class="muted">Every nearby driver is busy right now. Try again in a minute or choose another ride type.</p>
+    clearRoute();
+    sheet.innerHTML = `<div class="grabber"></div>
+      <div class="finding"><div class="illu" style="width:110px;height:110px;margin:6px auto 16px"><span style="width:80px;height:54px;display:block">${K.artFor(S.trip ? S.trip.service : S.service)}</span></div>
+      <h2>No ${S.trip ? who(S.trip) : 'driver'}s free right now</h2>
+      <p class="muted">Everyone nearby is busy. Try again in a minute or choose another ride type.</p></div>
       <div class="row" style="margin-top:12px"><button class="btn fill" id="home">Back</button><button class="btn btn-primary fill" id="again">Try again</button></div>`;
     K.$('#home').onclick = reset;
-    K.$('#again').onclick = () => { S.view = 'choose'; showRoute(); render(); };
+    K.$('#again').onclick = () => prepareQuote();
   }
 
+  function tripMins() {
+    const t = S.trip; if (!t || !t.driver || !t.driver.location) return null;
+    return K.etaMin(t.driver.location, t.status === 'in_progress' ? t.drop : t.pickup);
+  }
+  const photo = (d, cls = 'photo') => `<span class="${cls}">${d.photo ? `<img src="${K.esc(d.photo)}" alt="">` : K.initials(d.name)}</span>`;
+  const stars = (r, n) => `<span class="rating"><span class="star-ic">★</span><b>${r || 'New'}</b>${n ? ` (${n} trip${n > 1 ? 's' : ''})` : ''}</span>`;
+  const pinDigits = (pin) => `<span class="pin-code" aria-label="PIN ${pin}">${String(pin).split('').map((d) => `<span>${d}</span>`).join('')}</span>`;
+
+  // Screens 8 & 9: rider found / on trip
   function vTrip() {
     const t = S.trip, d = t.driver;
-    removeRadar(); clearNearby();
-    const toPickup = t.status !== 'in_progress';
-    const loc = d.location;
-    const target = toPickup ? t.pickup : t.drop;
-    const mins = loc ? K.etaMin(loc, target) : null;
-    let head, sub;
-    if (t.status === 'accepted') { head = mins ? `Pickup in ${mins} min` : 'Driver is on the way'; sub = `Meet ${K.first(d.name)} at the pickup spot`; }
-    else if (t.status === 'arrived') { head = 'Your driver has arrived'; sub = `Meet ${K.first(d.name)} now · ${K.esc(d.plate)}`; }
-    else { head = `Heading to ${shorten(t.drop.address)}`; sub = mins ? `Arrive around ${K.clock(mins)}` : 'Enjoy the ride'; }
-    const pct = phaseKm && loc ? Math.max(5, Math.min(100, 100 - (K.km(loc, target) / phaseKm) * 100)) : 8;
-    sheet.innerHTML = `
-      <div class="grabber"></div>
-      <div class="row"><div class="grow"><div class="eta-big" id="etaHead">${K.esc(head)}</div><div class="small muted" id="etaSub">${sub}</div></div>
-        ${mins && t.status !== 'arrived' ? `<div class="eta-chip" id="etaChip">${mins}<small>min</small></div>` : ''}</div>
-      <div class="progress"><i id="etaBar" style="width:${t.status === 'arrived' ? 100 : pct}%"></i></div>
-      ${toPickup ? `<div class="pin-box"><span><b>Your PIN</b><br><span class="small muted">Share it with your driver to start</span></span><span class="pin">${t.pin}</span></div>` : ''}
-      <div class="driver-block">
-        <span class="car-art">${K.artFor(t.service, d.vehicleType)}</span>
-        <span class="grow"><span class="plate" style="display:block">${K.esc(d.plate)}</span><span class="small muted">${K.esc(d.vehicle || K.SERVICE_LABEL[t.service])}</span></span>
-        <span style="text-align:center"><span class="avatar">${K.initials(d.name)}<span class="star">★ ${d.rating || 'New'}</span></span><span class="tiny bold" style="display:block;margin-top:10px">${K.esc(K.first(d.name))}</span></span>
-      </div>
-      <div class="row">
-        <button class="msg-pill" id="chatBtn">${K.ic('msg', 'sm')} Send a message…</button>
-        ${d.phone ? `<a class="round" href="tel:${K.esc(d.phone)}" aria-label="Call driver">${K.ic('phone')}</a>` : ''}
-      </div>
-      <div class="trip-list" style="margin-top:12px">
-        <button class="lrow" id="safety"><span class="ic shield">${K.ic('shield')}</span><span class="grow"><span class="t">Safety</span><span class="s" style="display:block">Share trip, emergency help</span></span>${K.ic('chev', 'sm')}</button>
-        <button class="lrow" id="share"><span class="ic">${K.ic('share')}</span><span class="grow"><span class="t">Share trip status</span></span>${K.ic('chev', 'sm')}</button>
-        <div class="lrow" style="cursor:default"><span class="ic"><span class="rb-sq"></span></span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(t.drop.address)}</span><span class="s">Drop-off</span></span></div>
-        <div class="lrow" style="cursor:default"><span class="ic">${K.ic(K.PAY_ICON[t.paymentMethod])}</span><span class="grow"><span class="t">${K.ugx(t.fare)}</span><span class="s" style="display:block">${K.PAY_LABEL[t.paymentMethod]}</span></span></div>
-        ${toPickup ? `<button class="lrow" id="cancel"><span class="ic">${K.ic('x')}</span><span class="t" style="color:var(--stop)">Cancel ride</span></button>` : ''}
-      </div>`;
+    clearNearby();
+    const mins = tripMins();
+    const pct = t.status === 'arrived' ? 100 : phaseKm && d.location ? Math.max(5, Math.min(100, 100 - (K.km(d.location, t.status === 'in_progress' ? t.drop : t.pickup) / phaseKm) * 100)) : 8;
+    const callBtn = (cls) => d.phone ? `<a class="${cls}" href="tel:${K.esc(d.phone)}" aria-label="Call">${K.ic('phone')}${cls === 'act' ? ' Call' : ''}</a>` : '';
+    if (t.status === 'in_progress') {
+      sheet.innerHTML = `
+        <div class="grabber"></div>
+        <div class="driver-card">${photo(d)}
+          <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))} · <span class="plate-chip">${K.esc(d.plate)}</span></span></span>
+          ${callBtn('round go')}<button class="round brand" id="chatBtn" aria-label="Message">${K.ic('msg')}</button></div>
+        <div class="bar" style="margin:14px 0 4px"><i id="etaBar" style="width:${pct}%"></i></div>
+        <div class="stops">
+          <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
+          <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
+        </div>
+        <div class="fare-row"><span class="muted">Total fare</span><b>${K.ugx(t.fare)}</b></div>
+        <div class="row" style="margin-top:14px"><button class="btn fill" id="share">${K.ic('share', 'sm')} Share trip</button><button class="btn btn-danger-soft fill" id="sos">${K.ic('sos', 'sm')} SOS</button></div>`;
+      K.$('#share').onclick = shareTrip;
+      K.$('#sos').onclick = sos;
+    } else {
+      const arrived = t.status === 'arrived';
+      sheet.innerHTML = `
+        <div class="grabber"></div>
+        <h2 style="font-size:1.15rem">${arrived ? `Your ${who(t)} has arrived` : `Your ${who(t)} is on the way`}</h2>
+        <div class="driver-card" style="margin-top:12px">${photo(d)}
+          <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))}</span></span>
+          <span style="text-align:right"><span class="plate-chip">${K.esc(d.plate)}</span><span style="display:block;width:70px;height:44px;margin-top:4px">${K.artFor(t.service, d.vehicleType)}</span></span></div>
+        <div class="eta-line"><span id="etaTxt">${arrived ? `Meet ${K.esc(K.first(d.name))} now` : mins ? `Arriving in ${mins} min` : 'On the way'}</span><span class="small muted" style="font-weight:600">${t.service === 'parcel' ? 'Parcel pickup' : 'Pickup'}</span></div>
+        <div class="bar"><i id="etaBar" style="width:${pct}%"></i></div>
+        <div class="act-row">${callBtn('act') || '<span></span>'}<button class="act" id="chatBtn">${K.ic('msg')} Message</button></div>
+        <div class="pin-box"><span><b>Your trip PIN</b><br><span class="small muted">Tell your ${who(t)} to start</span></span>${pinDigits(t.pin)}</div>
+        <div class="stops">
+          <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
+          <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Drop-off</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
+        </div>
+        <div class="fare-row" style="margin-bottom:14px"><span class="row" style="gap:8px">${PAY[payOfTrip(t)].logo}<span class="muted">${PAY[payOfTrip(t)].name}</span></span><b>${K.ugx(t.fare)}</b></div>
+        <button class="btn btn-danger btn-block btn-lg" id="cancel">Cancel ride</button>`;
+      K.$('#cancel').onclick = cancelTrip;
+    }
     K.$('#chatBtn').onclick = openChat;
-    K.$('#safety').onclick = openSafetySheet;
-    K.$('#share').onclick = () => K.share(location.origin + '/t/' + t.shareToken, `Follow my Kwata ride live: ${d.name}, ${d.plate}`);
-    const c = K.$('#cancel'); if (c) c.onclick = cancelTrip;
     updateUnread();
     // route for this phase
     const phase = t.status === 'in_progress' ? 'drop' : 'pickup';
+    const target = phase === 'drop' ? t.drop : t.pickup;
     if (routedPhase !== phase + t.id) {
       routedPhase = phase + t.id;
       clearRoute();
-      const from = loc || (phase === 'drop' ? t.pickup : null);
+      const from = d.location || (phase === 'drop' ? t.pickup : null);
       phaseKm = from ? Math.max(0.2, K.km(from, target)) : null;
+      labels.push(L.marker([target.lat, target.lng], { icon: K.divIcon(phase === 'drop' ? '<div class="pin-sq"></div>' : '<div class="pin-ci"></div>', [18, 18]) }).addTo(map));
       if (from) K.route(from, target).then((r) => {
         if (routedPhase !== phase + t.id) return;
         routeLayer = K.drawRoute(map, r.coords);
-        labels.push(L.marker([target.lat, target.lng], { icon: K.divIcon(phase === 'drop' ? '<div class="pin-sq"></div>' : '<div class="pin-ci"></div>', [16, 16]) }).addTo(map));
         fit(routeLayer.bounds());
       });
       else map.setView([target.lat, target.lng], 16);
     }
-    if (loc) moveDriver(loc, true);
+    if (d.location) moveDriver(d.location, true);
   }
 
+  // Screen 10: trip completed
   function vDone() {
     const t = S.trip, d = t.driver || {};
-    removeRadar(); clearRoute(); routedPhase = null;
+    clearRoute(); routedPhase = null;
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
     const needsPay = t.paymentStatus === 'pending' && ['momo', 'card'].includes(t.paymentMethod);
+    const P = PAY[payOfTrip(t)];
+    const colors = ['#FFC400', '#141414', '#12A150', '#FF8A00', '#2F6BFF'];
+    const confetti = Array.from({ length: 26 }, (_, i) => `<i style="background:${colors[i % 5]};--x:${Math.round(Math.cos(i * 0.9) * (90 + (i % 4) * 30))}px;--y:${Math.round(Math.sin(i * 0.9) * 60 - 20)}px;--r:${i * 47}deg;animation-delay:${(i % 6) * 0.03}s"></i>`).join('');
     sheet.innerHTML = `
       <div class="grabber"></div>
-      <h2>${t.service === 'parcel' ? 'Your parcel was delivered' : 'You’ve arrived'}</h2>
-      <p class="muted small">${K.esc(t.drop.address)}</p>
-      <div class="row" style="align-items:baseline;margin:14px 0 2px"><span class="grow bold">Total</span><span class="money">${K.ugx(t.fare)}</span></div>
-      <p class="small muted">${t.paymentMethod === 'cash' ? 'Pay your driver in cash.' : needsPay ? `Pay with ${K.PAY_LABEL[t.paymentMethod]} to finish.` : `Paid with ${K.PAY_LABEL[t.paymentMethod]}`}</p>
-      ${needsPay ? `<button class="btn btn-gold btn-block btn-lg" id="pay">Pay ${K.ugx(t.fare)}</button><p class="error" id="err"></p>` : ''}
-      ${!t.riderRated ? `
-        <div style="text-align:center;margin-top:18px"><span class="avatar" style="margin:0 auto">${K.initials(d.name)}</span>
-        <h3 style="margin-top:10px">How was your trip with ${K.esc(K.first(d.name))}?</h3></div>
-        <div class="stars" role="radiogroup" aria-label="Rate your driver">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${n} star${n > 1 ? 's' : ''}" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>
-        <button class="btn btn-primary btn-block btn-lg" id="rate" ${S.rating ? '' : 'disabled'}>Done</button>
-        ${!needsPay ? '<button class="btn btn-ghost btn-block" id="skip" style="margin-top:6px">Skip</button>' : ''}` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}`;
-    sheet.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => { S.rating = +b.dataset.n; render(); });
+      <div class="done-wrap">
+        <div class="confetti">${confetti}</div>
+        <div class="check-big">${K.ic('check')}</div>
+        <h2>${t.service === 'parcel' ? 'Parcel delivered!' : 'Trip completed!'}</h2>
+        <p class="small muted">${t.service === 'parcel' ? 'Your package has arrived' : 'You have arrived at your destination'}</p>
+        <div class="fare-card">
+          <span class="small muted">${t.paymentMethod === 'cash' ? 'Pay in cash' : needsPay ? 'Amount due' : 'Total paid'}</span>
+          <div class="amt">${K.ugx(t.fare)}</div>
+          <span class="row" style="justify-content:center;gap:8px;margin-top:6px">${P.logo}<span class="small bold">${P.name}</span></span>
+        </div>
+        ${needsPay ? `<button class="btn btn-primary btn-block btn-lg" id="pay">Pay ${K.ugx(t.fare)}</button><p class="error" id="err"></p>` : ''}
+        ${!t.riderRated ? `
+          <h3 style="margin-top:6px">Rate your ${who(t)}</h3>
+          <div class="row" style="justify-content:center;gap:8px">${photo(d, 'photo')}<span style="text-align:left"><b>${K.esc(d.name || '')}</b><br><span class="small muted">${K.esc(d.plate || '')}</span></span></div>
+          <div class="stars" role="radiogroup" aria-label="Rate your ${who(t)}">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${n} star${n > 1 ? 's' : ''}" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>
+          <button class="btn ${needsPay ? '' : 'btn-primary'} btn-block btn-lg" id="rate" ${S.rating ? '' : 'disabled'}>Rate ${who(t)}</button>` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}
+        <button class="btn btn-link btn-block" id="details">View details</button>
+      </div>`;
+    sheet.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => {
+      S.rating = +b.dataset.n;
+      sheet.querySelectorAll('[data-n]').forEach((x) => x.classList.toggle('on', +x.dataset.n <= S.rating));
+      K.$('#rate').disabled = false;
+    });
     const pay = K.$('#pay');
     if (pay) pay.onclick = async () => {
       pay.disabled = true;
@@ -519,7 +572,25 @@
       S.trip.riderRated = true; S.rating = 0;
       if (needsPay) render(); else { K.toast('Thanks for riding with Kwata'); reset(); }
     };
-    ['done', 'skip'].forEach((id) => { const b = K.$('#' + id); if (b) b.onclick = reset; });
+    const dn = K.$('#done'); if (dn) dn.onclick = reset;
+    K.$('#details').onclick = () => tripDetails(t);
+  }
+
+  function tripDetails(t) {
+    const d = t.driver || {};
+    const P = PAY[payOfTrip(t)] || PAY.cash;
+    K.modal(`<h2>Trip details</h2>
+      <p class="small muted">${K.when(t.createdAt)}</p>
+      <div class="stops">
+        <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b>${K.esc(t.pickup.address)}</b></span></div>
+        <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b>${K.esc(t.drop.address)}</b></span></div>
+      </div>
+      <div class="kv"><span>Service</span><b>${svcName(t.service)}</b></div>
+      ${d.name ? `<div class="kv"><span>${who(t) === 'rider' ? 'Rider' : 'Driver'}</span><b>${K.esc(d.name)} · ${K.esc(d.plate || '')}</b></div>` : ''}
+      ${t.distanceKm ? `<div class="kv"><span>Distance</span><b>${Number(t.distanceKm).toFixed(1)} km</b></div>` : ''}
+      <div class="kv"><span>Payment</span><b>${P.name}${t.paymentStatus === 'paid' ? ' · Paid' : t.paymentStatus === 'pending' && t.paymentMethod !== 'cash' ? ' · Not paid' : ''}</b></div>
+      <div class="big-total"><span class="bold">Total</span><b>${K.ugx(t.fare)}</b></div>
+      <button class="btn btn-block" style="margin-top:14px" data-close>Close</button>`);
   }
 
   // ---------- trip events ----------
@@ -532,12 +603,14 @@
     else if (['accepted', 'arrived', 'in_progress'].includes(t.status)) S.view = 'trip';
     else if (t.status === 'completed') S.view = 'done';
     else if (t.status === 'no_drivers') S.view = 'none';
-    else if (t.status === 'cancelled') { if (t.cancelledBy === 'rider') { reset(); return; } S.view = 'none'; }
+    else if (t.status === 'cancelled') { if (t.cancelledBy === 'rider') { reset(); return; } S.view = 'none'; K.toast(`Your ${who(t)} cancelled. Try again.`); }
     if (prev !== t.status) {
       if (t.status === 'accepted') { K.toast(`${K.first(t.driver.name)} is on the way`); vibrate(); loadMessages(); }
       if (t.status === 'arrived') vibrate();
     }
     S.pickup = t.pickup; S.drop = t.drop;
+    document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
+    root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === 'home' ? 'page' : 'false'));
     render();
   }
   const vibrate = () => { try { navigator.vibrate && navigator.vibrate([120, 80, 120]); } catch {} };
@@ -550,20 +623,17 @@
     if (quiet || S.view !== 'trip') return;
     const t = S.trip, target = t.status === 'in_progress' ? t.drop : t.pickup;
     const mins = K.etaMin(p, target);
-    const chip = K.$('#etaChip'); if (chip) chip.innerHTML = `${mins}<small>min</small>`;
-    const head = K.$('#etaHead');
-    if (head && t.status === 'accepted') head.textContent = `Pickup in ${mins} min`;
-    if (head && t.status === 'in_progress') { const sub = K.$('#etaSub'); if (sub) sub.textContent = `Arrive around ${K.clock(mins)}`; }
-    const bar = K.$('#etaBar'); if (bar && phaseKm) bar.style.width = Math.max(5, Math.min(100, 100 - (K.km(p, target) / phaseKm) * 100)) + '%';
+    const et = K.$('#etaTxt'); if (et && t.status === 'accepted') et.textContent = `Arriving in ${mins} min`;
+    const bn = K.$('#bnTxt'); if (bn) bn.textContent = `Arriving in ${mins} min`;
+    const bar = K.$('#etaBar'); if (bar && phaseKm && t.status !== 'arrived') bar.style.width = Math.max(5, Math.min(100, 100 - (K.km(p, target) / phaseKm) * 100)) + '%';
   }
 
-  function removeRadar() { if (radarMarker) { map.removeLayer(radarMarker); radarMarker = null; } }
-
   async function cancelTrip() {
-    const m = K.modal(`<h2>Cancel your ride?</h2><p class="muted">${S.trip.driver ? `${K.esc(K.first(S.trip.driver.name))} is already on the way.` : 'We’re still finding you a driver.'}</p>
-      <button class="btn btn-danger btn-block btn-lg" id="yes">Cancel ride</button><button class="btn btn-block" style="margin-top:8px" data-close>Keep my ride</button>`);
+    const t = S.trip;
+    const m = K.modal(`<h2>Cancel your ride?</h2><p class="muted">${t.driver ? `${K.esc(K.first(t.driver.name))} is already on the way.` : `We’re still finding you a ${who(t)}.`}</p>
+      <button class="btn btn-danger btn-block btn-lg" id="yes">Yes, cancel</button><button class="btn btn-block" style="margin-top:8px" data-close>Keep my ride</button>`);
     K.$('#yes', m.el).onclick = async () => {
-      try { await K.api(`/trips/${S.trip.id}/cancel`, { reason: 'rider' }); m.close(); reset(); } catch (e) { K.toast(e.message); }
+      try { await K.api(`/trips/${t.id}/cancel`, { reason: 'rider' }); m.close(); reset(); } catch (e) { K.toast(e.message); }
     };
   }
 
@@ -578,17 +648,22 @@
     if (S.chatOpen) drawChat();
     else if (m.from !== 'rider') { S.unread++; updateUnread(); K.toast(`${m.name}: ${m.text}`); vibrate(); }
   }
-  function updateUnread() { const b = K.$('#chatBtn'); if (b) b.innerHTML = `${K.ic('msg', 'sm')} ${S.unread ? `<b style="color:var(--ink)">${S.unread} new message${S.unread > 1 ? 's' : ''}</b>` : 'Send a message…'}`; }
+  function updateUnread() {
+    const b = K.$('#chatBtn'); if (!b) return;
+    const dot = b.querySelector('.dot');
+    if (S.unread && !dot) b.insertAdjacentHTML('beforeend', '<span class="dot"></span>');
+    if (!S.unread && dot) dot.remove();
+  }
   function openChat() {
-    S.chatOpen = true; S.unread = 0;
+    S.chatOpen = true; S.unread = 0; updateUnread();
     const d = S.trip.driver;
     const page = document.createElement('div');
     page.className = 'page page-enter'; page.id = 'chatPage'; page.style.zIndex = 870;
     page.style.paddingBottom = 'calc(12px + env(safe-area-inset-bottom))';
     page.innerHTML = `<div class="page-inner chat">
       <div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Close chat">${K.ic('back')}</button>
-        <span class="grow"><b>${K.esc(d.name)}</b><br><span class="small muted">${K.esc(d.plate)}</span></span>
-        ${d.phone ? `<a class="round" href="tel:${K.esc(d.phone)}" aria-label="Call">${K.ic('phone')}</a>` : ''}</div>
+        ${photo(d, 'avatar')}<span class="grow"><b>${K.esc(d.name)}</b><br><span class="small muted">${K.esc(d.plate)}</span></span>
+        ${d.phone ? `<a class="round go" href="tel:${K.esc(d.phone)}" aria-label="Call">${K.ic('phone')}</a>` : ''}</div>
       <div class="chat-log" id="log"></div>
       <div class="quick">${['I’m on my way', 'I’m at the pickup spot', 'Please call me', 'Okay, thanks'].map((q) => `<button data-q="${q}">${q}</button>`).join('')}</div>
       <form class="chat-input" id="cf"><input id="ci" placeholder="Message ${K.esc(K.first(d.name))}" autocomplete="off" aria-label="Message"><button class="btn btn-primary icon-btn" aria-label="Send">${K.ic('send')}</button></form></div>`;
@@ -607,14 +682,15 @@
   }
 
   // ---------- safety ----------
+  const shareTrip = () => K.share(location.origin + '/t/' + S.trip.shareToken, `Follow my Kwata trip live: ${S.trip.driver.name}, ${S.trip.driver.plate}`);
   function openSafetySheet() {
     const t = S.trip;
     const m = K.modal(`<h2>Safety</h2>
-      <button class="lrow" id="s-share"><span class="ic shield">${K.ic('share')}</span><span class="grow"><span class="t">Share trip status</span><span class="s" style="display:block">Family can follow your ride live</span></span></button>
-      <button class="lrow" id="s-ec"><span class="ic shield">${K.ic('person')}</span><span class="grow"><span class="t">Emergency contact</span><span class="s" style="display:block">${S.user.emergencyContact ? K.esc(S.user.emergencyContact) : 'Add someone we can alert'}</span></span></button>
-      <div class="card small" style="margin:12px 0">Your PIN makes sure you get into the right vehicle. Check the plate <b>${K.esc(t.driver.plate)}</b> before you board.</div>
+      <button class="lrow" id="s-share"><span class="ic">${K.ic('share')}</span><span class="grow"><span class="t">Share trip status</span><span class="s" style="display:block">Family can follow your trip live</span></span></button>
+      <button class="lrow" id="s-ec"><span class="ic">${K.ic('person')}</span><span class="grow"><span class="t">Emergency contact</span><span class="s" style="display:block">${S.user.emergencyContact ? K.esc(prettyPhone(S.user.emergencyContact)) : 'Add someone we can alert'}</span></span></button>
+      <div class="card small" style="margin:12px 0">Your PIN makes sure you get on the right ${t.driver.vehicleType === 'car' ? 'car' : 'boda'}. Check the plate <b>${K.esc(t.driver.plate)}</b> before you board.</div>
       <button class="btn btn-danger btn-block btn-lg" id="s-sos">${K.ic('sos')} Emergency assistance</button>`);
-    K.$('#s-share', m.el).onclick = () => K.share(location.origin + '/t/' + t.shareToken, 'Follow my Kwata ride live');
+    K.$('#s-share', m.el).onclick = shareTrip;
     K.$('#s-ec', m.el).onclick = () => { m.close(); openEmergency(); };
     K.$('#s-sos', m.el).onclick = () => { m.close(); sos(); };
   }
@@ -627,10 +703,10 @@
         const m = K.modal(`<h2>Help is being alerted</h2>
           <p>The Kwata safety team has your live location and trip details.</p>
           <a class="btn btn-danger btn-block btn-lg" href="tel:999">Call Police (999)</a>
-          ${out.emergencyContact ? `<a class="btn btn-block" style="margin-top:8px" href="sms:${out.emergencyContact}?body=${encodeURIComponent('I need help. Follow my Kwata ride: ' + link)}">Text my emergency contact</a>` : ''}
+          ${out.emergencyContact ? `<a class="btn btn-block" style="margin-top:8px" href="sms:${out.emergencyContact}?body=${encodeURIComponent('I need help. Follow my Kwata trip: ' + link)}">Text my emergency contact</a>` : ''}
           <button class="btn btn-block" style="margin-top:8px" id="sh">Share my live location</button>
           <button class="btn btn-ghost btn-block" data-close>Close</button>`);
-        K.$('#sh', m.el).onclick = () => K.share(link, 'I need help. Follow my Kwata ride live');
+        K.$('#sh', m.el).onclick = () => K.share(link, 'I need help. Follow my Kwata trip live');
       } catch (e) { K.toast(e.message); }
     };
     if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => send(p.coords.latitude, p.coords.longitude), () => send(), { timeout: 5000 });
@@ -641,16 +717,17 @@
     S.view = 'home'; S.drop = null; S.quote = null; S.route = null; S.trip = null; S.rating = 0; S.parcel = null;
     S.messages = []; S.unread = 0; routedPhase = null; phaseKm = null;
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
-    removeRadar(); clearRoute();
+    clearRoute();
     K.api('/me').then((m) => { S.user = m.user; }).catch(() => {});
     K.api('/trips/history').then((h) => { buildRecent(h); if (S.view === 'home') render(); }).catch(() => {});
-    if (S.gps) { S.pickup = { ...S.gps, address: 'Current location', short: 'Current location' }; map.setView([S.gps.lat, S.gps.lng], 16); }
+    if (S.gps) { S.pickup = { ...S.gps, address: 'Current location', short: 'Current location' }; map.setView([S.gps.lat, S.gps.lng], 16); setPickup(S.gps.lat, S.gps.lng, 'Current location'); }
     else if (S.pickup) map.setView([S.pickup.lat, S.pickup.lng], 16);
     render();
   }
 
-  // ---------- tabs: activity & account ----------
+  // ---------- tabs: activity & account (screens 11–13) ----------
   function openTab(tab) {
+    if (tab !== 'home' && S.view !== 'home') return;
     root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false'));
     document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
     if (tab === 'home') return;
@@ -661,55 +738,111 @@
     (tab === 'activity' ? drawActivity : drawAccount)(page.firstElementChild);
   }
 
-  async function drawActivity(el) {
-    const list = await K.api('/trips/history');
-    const st = (t) => ({ completed: '', cancelled: 'Cancelled', no_drivers: 'No driver found' }[t.status] ?? t.status.replace('_', ' '));
+  function subPage(title, onBack) {
+    const page = document.createElement('div');
+    page.className = 'page page-enter'; page.style.zIndex = 860;
+    page.innerHTML = `<div class="page-inner"><div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Back">${K.ic('back')}</button><h2>${title}</h2></div><div data-body></div></div>`;
+    root.querySelector('#app').appendChild(page);
+    K.$('[data-x]', page).onclick = () => { page.remove(); onBack && onBack(); };
+    return { page, body: K.$('[data-body]', page), close: () => page.remove() };
+  }
+
+  async function drawActivity(el, filter = 'all') {
+    let list = [];
+    try { list = await K.api('/trips/history'); } catch (e) { el.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; return; }
+    const shown = list.filter((t) => filter === 'all' || (filter === 'parcel' ? t.service === 'parcel' : t.service !== 'parcel'));
+    const st = (t) => ({ completed: ['Completed', 'ok'], cancelled: ['Cancelled', 'bad'], no_drivers: ['No driver found', 'bad'] }[t.status] || [t.status.replace('_', ' '), 'warn']);
     el.innerHTML = `<div class="page-title">Activity</div>
-      ${list.length ? list.map((t) => `<div class="lrow" style="cursor:default;align-items:flex-start">
-        <span style="width:64px;flex:none">${K.artFor(t.service)}</span>
-        <span class="grow"><span class="t ellipsis" style="display:block">${K.esc(t.drop.address)}</span>
-          <span class="s">${K.when(t.createdAt)} · ${K.ugx(t.fare)}</span>${st(t) ? `<span class="s" style="display:block;color:var(--stop)">${st(t)}</span>` : ''}</span></div>`).join('')
-      : `<div class="card" style="margin-top:12px"><h3>No trips yet</h3><p class="muted small">Your past rides and deliveries will show here.</p><button class="btn btn-primary" id="first">Book a ride</button></div>`}`;
-    const f = K.$('#first', el); if (f) f.onclick = () => { openTab('home'); openSearch(); };
+      <div class="seg-tabs">${[['all', 'All'], ['ride', 'Rides'], ['parcel', 'Deliveries']].map(([k, l]) => `<button data-f="${k}" aria-pressed="${k === filter}">${l}</button>`).join('')}</div>
+      ${shown.length ? shown.map((t, i) => `<button class="trip-card" data-t="${i}" style="width:100%;cursor:pointer;text-align:left">
+        <span class="ic">${K.artFor(t.service)}</span>
+        <span class="grow"><span class="t ellipsis" style="display:block">${K.esc(shorten(t.drop.address, 34))}</span>
+          <span class="s" style="display:block">${K.when(t.createdAt)}</span><span class="badge ${st(t)[1]}" style="margin-top:4px">${st(t)[0]}</span></span>
+        <span class="p">${K.ugx(t.fare)}</span></button>`).join('')
+      : `<div class="empty"><div class="illu">${K.ART[filter === 'parcel' ? 'parcel' : 'boda']}</div><h3>No ${filter === 'parcel' ? 'deliveries' : 'trips'} yet</h3><p class="small">Your ${filter === 'parcel' ? 'deliveries' : 'rides and deliveries'} will show here.</p><button class="btn btn-primary" id="first">${filter === 'parcel' ? 'Send a parcel' : 'Book a ride'}</button></div>`}`;
+    el.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => drawActivity(el, b.dataset.f));
+    el.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => tripDetails(shown[+b.dataset.t]));
+    const f = K.$('#first', el); if (f) f.onclick = () => { openTab('home'); if (filter === 'parcel') setService('parcel'); openSearch(); };
   }
 
   function drawAccount(el) {
-    const u = S.user;
+    const u = S.user, P = PAY[pref()];
     el.innerHTML = `
-      <div class="row" style="margin:6px 0 18px"><div class="grow"><div class="page-title" style="margin:0">${K.esc(u.name)}</div>
-        <span class="chip" style="margin-top:8px;cursor:default">★ ${u.rating || 'New rider'}</span></div>
-        <span class="avatar" style="width:64px;height:64px;font-size:1.3rem">${K.initials(u.name)}</span></div>
-      <div class="tiles" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px">
-        <button class="tile" data-a="wallet" style="padding:16px 4px">${K.ic('wallet')}Wallet</button>
-        <button class="tile" data-a="safety" style="padding:16px 4px">${K.ic('shield')}Safety</button>
-        <button class="tile" data-a="activity" style="padding:16px 4px">${K.ic('receipt')}Activity</button>
-      </div>
-      <div class="card row" style="margin-bottom:8px"><span class="grow"><b>Kwata Wallet</b><br><span class="small muted">Pay for rides without cash</span></span><b>${K.ugx(u.walletBalance)}</b></div>
-      <button class="menu-item" data-a="home">${K.ic('home')}<span class="grow">Home<br><span class="small muted">${u.savedPlaces && u.savedPlaces.home ? K.esc(u.savedPlaces.home.address) : 'Add home'}</span></span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="work">${K.ic('work')}<span class="grow">Work<br><span class="small muted">${u.savedPlaces && u.savedPlaces.work ? K.esc(u.savedPlaces.work.address) : 'Add work'}</span></span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="safety">${K.ic('person')}<span class="grow">Emergency contact<br><span class="small muted">${u.emergencyContact ? K.esc(u.emergencyContact) : 'Not set'}</span></span>${K.ic('chev', 'sm')}</button>
-      <a class="menu-item" href="tel:${K.esc(S.config.supportPhone)}">${K.ic('help')}<span class="grow">Help</span>${K.ic('chev', 'sm')}</a>
-      <button class="menu-item" data-a="out">${K.ic('logout')}<span class="grow">Sign out</span></button>`;
+      <div class="page-title">Account</div>
+      <div class="profile-head"><span class="photo">${K.initials(u.name)}</span>
+        <span class="grow"><b style="font-size:1.2rem;display:block">${K.esc(u.name)}</b><span class="small muted">${K.esc(prettyPhone(u.phone))}</span><br>
+          <span class="verified">★ ${u.rating || 'New'} rider rating</span></span></div>
+      <button class="menu-item" data-a="pay"><span class="ic">${K.ic('card')}</span><span class="grow">Payment methods<br><span class="small muted">${P.name}</span></span>${K.ic('chev', 'sm')}</button>
+      <button class="menu-item" data-a="places"><span class="ic">${K.ic('pin')}</span><span class="grow">Saved places</span>${K.ic('chev', 'sm')}</button>
+      <button class="menu-item" data-a="wallet"><span class="ic">${K.ic('wallet')}</span><span class="grow">Kwata Wallet<br><span class="small muted">${K.ugx(u.walletBalance)}</span></span>${K.ic('chev', 'sm')}</button>
+      <button class="menu-item" data-a="safety"><span class="ic">${K.ic('shield')}</span><span class="grow">Safety<br><span class="small muted">${u.emergencyContact ? 'Emergency contact ' + K.esc(prettyPhone(u.emergencyContact)) : 'Add an emergency contact'}</span></span>${K.ic('chev', 'sm')}</button>
+      <a class="menu-item" href="tel:${K.esc(S.config.supportPhone)}"><span class="ic">${K.ic('help')}</span><span class="grow">Help & Support</span>${K.ic('chev', 'sm')}</a>
+      <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>`;
+    const redraw = () => drawAccount(el);
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => {
       const a = b.dataset.a;
-      if (a === 'wallet') openWallet();
-      else if (a === 'safety') openEmergency();
-      else if (a === 'activity') openTab('activity');
-      else if (a === 'home' || a === 'work') { openTab('home'); openSearch({ saveAs: a }); }
+      if (a === 'pay') openPayments({ onBack: redraw });
+      else if (a === 'places') openPlaces(redraw);
+      else if (a === 'wallet') openWallet(redraw);
+      else if (a === 'safety') openEmergency(redraw);
       else if (a === 'out') { K.session.clear(); location.reload(); }
     });
   }
 
-  async function openWallet() {
+  // Screen 13: payment methods
+  function openPayments({ onPick, onBack } = {}) {
+    const sp = subPage('Payment methods', onBack);
+    const draw = () => {
+      const cur = pref();
+      const sub = { mtn: prettyPhone(S.user.payPhone), airtel: prettyPhone(S.user.payPhone), card: 'Visa or Mastercard, paid at the end', cash: 'Pay your rider or driver directly', wallet: 'Balance ' + K.ugx(S.user.walletBalance) };
+      sp.body.innerHTML = `<p class="small muted" style="margin:0 0 12px">Your default is used for every trip. Change it any time.</p>
+        ${Object.keys(PAY).map((k) => `<button class="pay-item ${k === cur ? 'on' : ''}" data-p="${k}">${PAY[k].logo}<span class="grow"><b>${PAY[k].name}</b><span>${sub[k]}</span></span>${k === cur ? '<span class="default-badge">Default</span>' : ''}</button>`).join('')}
+        <button class="btn btn-outline btn-block" id="num" style="margin-top:6px">${K.ic('momo', 'sm')} Change Mobile Money number</button>
+        <button class="btn btn-outline btn-block" id="top" style="margin-top:8px">${K.ic('plus', 'sm')} Add money to wallet</button>
+        ${S.config.paymentsLive ? '' : '<p class="tiny faint" style="margin-top:10px">Test mode: Mobile Money and card payments complete instantly without charging you.</p>'}`;
+      sp.body.querySelectorAll('[data-p]').forEach((b) => b.onclick = async () => {
+        try { S.user = (await K.api('/me', { payPref: b.dataset.p }, 'PATCH')).user; } catch (e) { K.toast(e.message); return; }
+        if (onPick) { sp.close(); onPick(); } else draw();
+      });
+      K.$('#num', sp.page).onclick = () => {
+        const m = K.modal(`<h2>Mobile Money number</h2><p class="small muted">We send MTN or Airtel payment prompts to this number.</p>
+          <label for="mm">Phone number</label><input id="mm" type="tel" inputmode="tel" value="${K.esc(prettyPhone(S.user.payPhone))}">
+          <p class="error" id="err"></p><button class="btn btn-primary btn-block btn-lg" id="sv">Save</button>`);
+        K.$('#sv', m.el).onclick = async () => {
+          try { S.user = (await K.api('/me', { payPhone: K.$('#mm', m.el).value }, 'PATCH')).user; m.close(); draw(); K.toast('Number saved'); }
+          catch (e) { K.$('#err', m.el).textContent = e.message; }
+        };
+      };
+      K.$('#top', sp.page).onclick = () => openWallet(draw);
+    };
+    draw();
+  }
+
+  function openPlaces(onBack) {
+    const sp = subPage('Saved places', onBack);
+    const draw = () => {
+      const p = S.user.savedPlaces || {};
+      sp.body.innerHTML = ['home', 'work'].map((k) => `<div class="menu-item" style="cursor:default"><span class="ic">${K.ic(k === 'home' ? 'home' : 'work')}</span>
+        <span class="grow">${k === 'home' ? 'Home' : 'Work'}<br><span class="small muted">${p[k] ? K.esc(p[k].address) : 'Not set'}</span></span>
+        <button class="btn btn-sm" data-set="${k}">${p[k] ? 'Change' : 'Add'}</button>${p[k] ? `<button class="btn btn-sm btn-ghost" data-del="${k}" aria-label="Remove">${K.ic('x', 'sm')}</button>` : ''}</div>`).join('');
+      sp.body.querySelectorAll('[data-set]').forEach((b) => b.onclick = () => openSearch({ saveAs: b.dataset.set, onSaved: draw }));
+      sp.body.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+        try { S.user = (await K.api('/me', { savedPlaces: { [b.dataset.del]: null } }, 'PATCH')).user; draw(); } catch (e) { K.toast(e.message); }
+      });
+    };
+    draw();
+  }
+
+  async function openWallet(after) {
     const m = K.modal('<p class="muted">Loading wallet…</p>');
     const w = await K.api('/wallet');
     m.el.innerHTML = `
       <h2>Kwata Wallet</h2>
       <p class="money">${K.ugx(w.balance)}</p>
-      <p class="small muted">Top up with Mobile Money once, and every ride pays itself.</p>
+      <p class="small muted">Top up once with Mobile Money and pay for trips in one tap.</p>
       <div class="chips">${[10000, 20000, 50000, 100000].map((a) => `<button class="chip" data-amt="${a}">${K.ugx(a)}</button>`).join('')}</div>
       <label for="amt">Amount</label><input id="amt" type="number" inputmode="numeric" min="1000" step="500" value="20000">
-      <div class="row" style="margin-top:12px"><button class="btn btn-primary fill" data-m="momo">${K.ic('momo')} MTN / Airtel</button><button class="btn fill" data-m="card">${K.ic('card')} Card</button></div>
+      <div class="row" style="margin-top:12px"><button class="btn btn-primary fill" data-m="momo">MTN / Airtel</button><button class="btn fill" data-m="card">${K.ic('card', 'sm')} Card</button></div>
       ${S.config.paymentsLive ? '' : '<p class="tiny faint" style="margin-top:8px">Test mode: top-ups are added instantly without charging you.</p>'}
       <p class="error" id="err"></p>
       ${w.transactions.length ? `<h3>History</h3>${w.transactions.map((x) => `<div class="tx"><span>${K.esc(x.note || x.type)}<br><span class="tiny faint">${K.when(x.created_at)}</span></span><span class="${x.amount > 0 ? 'pos' : 'neg'}">${x.amount > 0 ? '+' : ''}${K.ugx(x.amount)}</span></div>`).join('')}` : ''}`;
@@ -720,23 +853,23 @@
         const out = await K.api('/wallet/topup', { amount: +K.$('#amt', m.el).value, method: b.dataset.m });
         if (out.link) { location.href = out.link; return; }
         S.user.walletBalance = out.balance; K.toast('Wallet topped up'); m.close();
-        const acc = document.querySelector('.page[data-tabpage="account"] .page-inner'); if (acc) drawAccount(acc);
+        after && after();
         if (S.view === 'choose') render();
       } catch (e) { K.$('#err', m.el).textContent = e.message; b.disabled = false; }
     });
   }
 
-  function openEmergency() {
+  function openEmergency(after) {
     const m = K.modal(`<h2>Emergency contact</h2>
       <p class="muted small">If you press SOS during a trip, we’ll help you alert this person with your live location.</p>
-      <label for="ec">Phone number</label><input id="ec" type="tel" placeholder="0772 123456" value="${K.esc(S.user.emergencyContact || '')}">
+      <label for="ec">Phone number</label><input id="ec" type="tel" placeholder="0772 123456" value="${K.esc(prettyPhone(S.user.emergencyContact || ''))}">
       <p class="error" id="err"></p>
       <button class="btn btn-primary btn-block btn-lg" id="save">Save</button>`);
     K.$('#save', m.el).onclick = async () => {
       try {
         const out = await K.api('/me', { emergencyContact: K.$('#ec', m.el).value }, 'PATCH');
         S.user = out.user; K.toast('Emergency contact saved'); m.close();
-        const acc = document.querySelector('.page[data-tabpage="account"] .page-inner'); if (acc) drawAccount(acc);
+        after && after();
       } catch (e) { K.$('#err', m.el).textContent = e.message; }
     };
   }
