@@ -38,7 +38,7 @@ npm start
 
 Open http://localhost:3000. No database setup needed locally — it uses a built-in Postgres stored in `./data`.
 
-Default admin: phone **0700000000**, password **admin123** (change these with `ADMIN_PHONE` / `ADMIN_PASSWORD`).
+Local test admin: phone **0700000000**, password **admin123**. This account only exists on your own computer. On Railway the admin is whatever you set in `ADMIN_PHONE` and `ADMIN_PASSWORD` (changing `ADMIN_PASSWORD` and redeploying changes the password), and the test admin is deleted automatically.
 
 To test a full ride on one computer: open `/admin` in one browser, `/driver` in a second browser (or incognito), `/rider` in a third. Register a driver, approve them in admin, go online, then book from the rider app. If location is blocked, the driver menu has **Set location on map (testing)**.
 

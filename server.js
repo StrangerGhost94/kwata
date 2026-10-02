@@ -29,15 +29,43 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong. Please try again.' });
 });
 
+const DEFAULT_ADMIN_PHONE = '+256700000000';
+const DEFAULT_ADMIN_PASSWORD = 'admin123';
+
 async function seedAdmin() {
-  const phone = auth.normalizePhone(process.env.ADMIN_PHONE || '0700000000');
-  const password = process.env.ADMIN_PASSWORD || 'admin123';
-  if (!process.env.ADMIN_PASSWORD) console.warn('⚠️  Using default admin login 0700000000 / admin123 — set ADMIN_PHONE and ADMIN_PASSWORD.');
-  const existing = await db.one('SELECT id FROM users WHERE phone = $1', [phone]);
+  const live = !!process.env.DATABASE_URL;
+  const envPhone = process.env.ADMIN_PHONE && auth.normalizePhone(process.env.ADMIN_PHONE);
+  const envPass = process.env.ADMIN_PASSWORD;
+
+  if (envPhone && envPass) {
+    // The admin in Railway's variables is the source of truth: create it, or
+    // update its password if you change ADMIN_PASSWORD later.
+    const hash = await bcrypt.hash(envPass, 10);
+    const existing = await db.one('SELECT id FROM users WHERE phone = $1', [envPhone]);
+    if (existing) await db.query("UPDATE users SET role = 'admin', password_hash = $1, blocked = FALSE WHERE id = $2", [hash, existing.id]);
+    else await db.query("INSERT INTO users(name, phone, password_hash, role) VALUES ('Kwata Admin', $1, $2, 'admin')", [envPhone, hash]);
+    console.log(`Admin account ready for ${envPhone}`);
+  } else if (live) {
+    console.warn('⚠️  ADMIN_PHONE and ADMIN_PASSWORD are not set, so no admin account was created.');
+  }
+
+  // Remove the public test admin from any live database.
+  if (live || envPhone) {
+    const def = await db.one("SELECT id, password_hash FROM users WHERE phone = $1 AND role = 'admin'", [DEFAULT_ADMIN_PHONE]);
+    if (def && def.id && (!envPhone || envPhone !== DEFAULT_ADMIN_PHONE) && await bcrypt.compare(DEFAULT_ADMIN_PASSWORD, def.password_hash)) {
+      try { await db.query('DELETE FROM users WHERE id = $1', [def.id]); }
+      catch { await db.query("UPDATE users SET blocked = TRUE, role = 'rider' WHERE id = $1", [def.id]); }
+      console.log('Removed the default test admin account.');
+    }
+    return;
+  }
+
+  // Local development only: a known test admin so you can try the console.
+  const existing = await db.one('SELECT id FROM users WHERE phone = $1', [DEFAULT_ADMIN_PHONE]);
   if (!existing) {
     await db.query("INSERT INTO users(name, phone, password_hash, role) VALUES ('Kwata Admin', $1, $2, 'admin')",
-      [phone, await bcrypt.hash(password, 10)]);
-    console.log(`Admin account created for ${phone}`);
+      [DEFAULT_ADMIN_PHONE, await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 10)]);
+    console.log('Local test admin: 0700000000 / admin123');
   }
 }
 
