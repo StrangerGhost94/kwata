@@ -510,7 +510,8 @@
       <button class="menu-item" data-a="docs"><span class="ic">${K.ic('idcard')}</span><span class="grow">Documents<br><span class="small muted">ID, driving permit, vehicle, photo</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="manual"><span class="ic">${K.ic('pin')}</span><span class="grow">${S.manual ? 'Use phone GPS' : 'Set position on map'}<br><span class="small muted">For testing without GPS</span></span></button>
       <a class="menu-item" href="tel:${K.esc(S.config.supportPhone)}"><span class="ic">${K.ic('help')}</span><span class="grow">Driver support</span>${K.ic('chev', 'sm')}</a>
-      <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>`;
+      <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
+      <p class="tiny faint" style="text-align:center;margin-top:18px">Kwata Driver 1.0 · ${K.screen.view || innerHeight}/${K.screen.full || '–'}/${K.screen.inset ?? '–'}/${K.screen.pad ?? '–'}</p>`;
     K.$('#ph', el).onchange = async (ev) => {
       const f = ev.target.files[0]; if (!f) return;
       try { await K.api('/driver/documents', { kind: 'photo', image: await K.compressImage(f, 800) }); S.hasPhoto = true; S.photoV = Date.now(); K.toast('Photo updated'); drawProfile(el); topbar(); }

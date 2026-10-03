@@ -211,15 +211,22 @@
   // happens, don't add home-bar spacing on top, or the bottom bar floats up.
   const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   if (standalone) document.documentElement.classList.add('standalone');
+  // Normal case: the app reaches the bottom edge, so keep the standard home-bar spacing.
+  // iOS 26 bug case: the app's view is shorter than the full screen (the "large
+  // viewport", 100lvh). Only then is the home-bar strip outside the app, and only
+  // then do we drop the extra spacing. Never guess from screen.height.
+  K.screen = {};
   function fitInstalled() {
-    if (!standalone) return;
     try {
-      const portrait = innerHeight >= innerWidth;
-      const screenH = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-      const cutOff = innerHeight < screenH - 20; // the app doesn't reach the bottom edge
-      document.documentElement.style.setProperty('--sab', cutOff ? '0px' : 'env(safe-area-inset-bottom, 0px)');
+      const probe = (h) => { const d = document.createElement('div'); d.style.cssText = `position:absolute;top:0;left:0;width:1px;height:${h};visibility:hidden;pointer-events:none`; document.body.appendChild(d); const v = d.offsetHeight; d.remove(); return v; };
+      const lvh = probe('100lvh') || innerHeight, inset = probe('env(safe-area-inset-bottom)');
+      const short = standalone ? Math.max(0, lvh - innerHeight) : 0;
+      const pad = Math.max(0, inset - short);
+      document.documentElement.style.setProperty('--sab', pad + 'px');
+      K.screen = { view: innerHeight, full: lvh, inset, pad, standalone };
     } catch {}
   }
+  if (!document.body) document.addEventListener('DOMContentLoaded', fitInstalled);
   fitInstalled();
   addEventListener('resize', fitInstalled);
   addEventListener('orientationchange', () => setTimeout(fitInstalled, 300));
