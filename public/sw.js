@@ -1,6 +1,6 @@
 // Kwata service worker: opens instantly from the home screen and shows a
 // friendly screen when there's no connection. Bump VERSION on each release.
-const VERSION = 'kwata-v7';
+const VERSION = 'kwata-v9';
 const SHELL = [
   '/', '/driver', '/offline.html', '/css/app.css', '/js/common.js', '/js/rider.js', '/js/driver.js',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
@@ -21,6 +21,15 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;            // maps, payments: straight to network
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return; // live data is never cached
+
+  // Our own app code and styles: always the latest when online, so updates show on the very next open.
+  if (url.pathname.startsWith('/js/') || url.pathname.startsWith('/css/') || url.pathname.endsWith('.json')) {
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then((res) => {
+      if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
+      return res;
+    }).catch(() => caches.match(req)));
+    return;
+  }
 
   if (req.mode === 'navigate') {
     // Pages: fresh from the network when online, cached copy (or offline screen) when not.
