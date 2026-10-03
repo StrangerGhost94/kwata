@@ -25,7 +25,7 @@
   --shadow-card: 0 1px 2px rgba(0,0,0,.04), 0 6px 20px rgba(0,0,0,.06);
   --shadow-sheet: 0 -6px 28px rgba(0,0,0,.10);
   --shadow-pop: 0 6px 20px rgba(0,0,0,.14);
-  --font: 'Inter', ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', Roboto, sans-serif;
   --r: 14px; --r-lg: 22px; --r-pill: 999px;
   color-scheme: light;
   --sab: env(safe-area-inset-bottom, 0px);
@@ -616,3 +616,94 @@ body[data-app="rider"], body[data-app="driver"] { -webkit-text-size-adjust: 100%
    position and nothing scrolls or slides: the app shell is pinned to the screen. */
 html.standalone, html.standalone body { height: 100%; overscroll-behavior: none; }
 html.standalone .app { position: fixed; inset: 0; }
+
+/* =====================================================================
+   iOS 26 "Liquid Glass"
+   Frosted, translucent surfaces with a soft specular edge that let the
+   map show through: floating capsule tab bar, glass chips and buttons
+   over the map, dark glass banners, rounder sheets, capsule buttons.
+   ===================================================================== */
+:root {
+  --glass: rgba(255, 255, 255, .58);
+  --glass-strong: rgba(255, 255, 255, .82);
+  --glass-dark: rgba(22, 22, 24, .62);
+  --glass-edge: rgba(255, 255, 255, .7);
+  --glass-blur: blur(22px) saturate(185%);
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .06);
+  --r-sheet: 30px;
+}
+.glass, .tabbar, .hello-chip, .fab, .pill-chip, .drv-head {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(255,255,255,.25);
+  border: 1px solid var(--glass-edge);
+}
+.fab:hover { background: var(--glass-strong); }
+/* the specular "liquid" highlight */
+.tabbar::before, .hello-chip::before, .drv-head::before, .trip-banner::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.55) 0%, rgba(255,255,255,0) 42%, rgba(255,255,255,0) 70%, rgba(255,255,255,.18) 100%);
+  mix-blend-mode: soft-light;
+}
+.hello-chip, .drv-head { position: relative; }
+
+/* Floating capsule tab bar */
+.tabbar {
+  left: 14px; right: 14px; bottom: max(10px, calc(var(--sab) - 6px));
+  border-radius: 999px; padding: 5px; gap: 2px; border-top: 1px solid var(--glass-edge);
+}
+.tabbar button { border-radius: 999px; padding: 7px 0 6px; transition: background .25s, color .2s, transform .15s; }
+.tabbar button:active { transform: scale(.94); }
+.tabbar button[aria-current="page"] { background: rgba(255,255,255,.75); box-shadow: 0 1px 4px rgba(0,0,0,.08), inset 0 0 0 1px rgba(0,0,0,.03); color: var(--ink); }
+.tabbar button[aria-current="page"] svg { color: #A27C00; }
+@media (min-width: 760px) { .tabbar { left: 50%; right: auto; width: 380px; transform: translateX(-50%); } }
+
+/* Glass over the map */
+.fab { color: var(--ink); }
+.hello-chip { padding: 5px 16px 5px 5px; }
+.trip-banner {
+  background: var(--glass-dark); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255,255,255,.12); border-radius: 24px; box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255,255,255,.18);
+}
+.trip-banner .round { background: rgba(255,255,255,.12); }
+#toast {
+  background: var(--glass-dark); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 11px 20px;
+}
+
+/* Sheets & modals: rounder, frosted */
+.sheet {
+  background: var(--glass-strong); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-top: 1px solid var(--glass-edge);
+  box-shadow: 0 -10px 34px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.9);
+}
+.sheet-foot { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.sheet-foot::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(255,255,255,0), var(--glass-strong) 28%); }
+@media (min-width: 760px) { .sheet { border-radius: var(--r-sheet); } }
+.modal { border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: rgba(255,255,255,.9); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%); }
+@media (min-width: 760px) { .modal { border-radius: var(--r-sheet); } }
+.overlay { background: rgba(0,0,0,.28); }
+
+/* Capsule buttons & iOS controls */
+.btn { border-radius: 999px; }
+.btn-sm { border-radius: 999px; }
+.btn-primary, .btn-brand, .btn-gold { box-shadow: 0 6px 16px rgba(255,196,0,.35), inset 0 1px 0 rgba(255,255,255,.45); }
+.btn-danger { box-shadow: 0 6px 16px rgba(229,50,45,.28), inset 0 1px 0 rgba(255,255,255,.25); }
+.btn-go { box-shadow: 0 6px 16px rgba(18,161,80,.28), inset 0 1px 0 rgba(255,255,255,.25); }
+.act { border-radius: 999px; }
+.search-bar { border-radius: 999px; background: rgba(118,118,128,.12); }
+.seg-tabs { background: rgba(118,118,128,.12); border-radius: 999px; padding: 3px; gap: 2px; display: inline-flex; }
+.seg-tabs button { background: transparent; padding: 7px 16px; }
+.seg-tabs button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+.opt { border-radius: 18px; }
+.page-title { font-size: 2.1rem; letter-spacing: -.025em; }
+
+/* Content scrolls under the floating tab bar, like iOS 26 */
+.page { padding-bottom: calc(110px + var(--sab)); }
+
+/* Browsers without backdrop blur: fall back to solid surfaces */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar, .hello-chip, .fab, .pill-chip, .drv-head, .sheet, .modal { background: #fff; }
+  .trip-banner, #toast { background: #141416; }
+}
+#toast { background: rgba(22,22,24,.88); top: calc(64px + env(safe-area-inset-top)); }

@@ -150,7 +150,7 @@
   function render() {
     const inTrip = !!S.trip;
     K.$('#tabs').classList.toggle('hidden', inTrip);
-    sheet.style.bottom = inTrip ? '' : (K.$('#tabs').offsetHeight || 58) + 'px';
+    K.underTabs(sheet, !inTrip);
     topbar();
     sheet.classList.remove('sheet-enter'); void sheet.offsetWidth; sheet.classList.add('sheet-enter');
     if (S.trip) (S.trip.status === 'completed' ? vDone : vTrip)();

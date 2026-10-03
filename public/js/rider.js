@@ -172,7 +172,7 @@
     K.$('#cpin').classList.toggle('hidden', !['pickup', 'droppin'].includes(v));
     K.$('#tabs').classList.toggle('hidden', v !== 'home');
     sheet.classList.toggle('home-card', v === 'home');
-    sheet.style.bottom = v === 'home' ? (K.$('#tabs').offsetHeight || 58) + 'px' : '';
+    K.underTabs(sheet, v === 'home');
     topbar();
     sheet.classList.remove('sheet-enter'); void sheet.offsetWidth; sheet.classList.add('sheet-enter');
     ({ home: vHome, choose: vChoose, pickup: vPickup, droppin: vDropPin, searching: vSearching, trip: vTrip, done: vDone, none: vNone })[v]();
@@ -301,7 +301,7 @@
     S.view = 'choose';
     K.$('#tabs').classList.add('hidden');
     sheet.classList.remove('home-card');
-    sheet.style.bottom = '';
+    K.underTabs(sheet, false);
     topbar();
     sheet.innerHTML = `<div class="grabber"></div><h2>Choose a ride</h2><div class="bar indet"><i></i></div>`;
     S.route = await K.route(S.pickup, S.drop);

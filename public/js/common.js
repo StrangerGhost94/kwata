@@ -638,6 +638,10 @@
     new MutationObserver(() => { if (off) set(0, true); }).observe(sheet, { childList: true });
   };
 
+  // Space the floating glass tab bar takes at the bottom (content scrolls under it).
+  K.tabSpace = () => { const t = document.getElementById('tabs'); if (!t || t.classList.contains('hidden')) return 0; return Math.max(0, innerHeight - t.getBoundingClientRect().top) + 8; };
+  K.underTabs = (sheet, on) => { sheet.style.bottom = ''; sheet.style.paddingBottom = on ? K.tabSpace() + 'px' : ''; };
+
   K.SERVICE_LABEL = { boda: 'Boda', car: 'Car', comfort: 'Comfort', parcel: 'Parcel', airport: 'Airport' };
   K.PAY_LABEL = { cash: 'Cash', wallet: 'Kwata Wallet', momo: 'Mobile Money', card: 'Card' };
   K.PAY_ICON = { cash: 'cash', wallet: 'wallet', momo: 'momo', card: 'card' };
