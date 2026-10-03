@@ -35,6 +35,9 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; }
+#root { min-height: 100%; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { overscroll-behavior-y: none; }
 body { font: 16px/1.45 var(--font); color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased; }
 h1, h2, h3 { margin: 0 0 .35em; letter-spacing: -.02em; line-height: 1.15; }
 h1 { font-size: 1.75rem; font-weight: 800; }
@@ -128,7 +131,7 @@ input::placeholder { color: var(--ink-3); }
 .onboard .btn-link { color: #fff; }
 
 /* ---------- Auth & simple pages ---------- */
-.onb { min-height: 100%; display: flex; flex-direction: column; background: var(--bg); padding: calc(14px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); max-width: 480px; margin: 0 auto; }
+.onb { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); padding: calc(14px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); max-width: 480px; margin: 0 auto; }
 .onb-top { display: flex; align-items: center; min-height: 44px; margin: 0 -10px 14px; }
 .onb h1 { font-size: 1.6rem; margin-bottom: 4px; }
 .onb .lead { color: var(--ink-2); margin-bottom: 18px; font-size: .95rem; }
@@ -404,7 +407,7 @@ input::placeholder { color: var(--ink-3); }
 .badge.warn { background: var(--brand-soft); color: #8A6A00; }
 .badge.bad { background: var(--stop-soft); color: var(--stop); }
 .plate-tag { display: inline-block; font-weight: 800; letter-spacing: .03em; background: var(--surface); padding: 3px 7px; border-radius: 6px; }
-#toast { position: fixed; left: 50%; top: calc(76px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 4000; background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 12px; font-weight: 600; max-width: 92vw; box-shadow: var(--shadow-pop); animation: toastIn .25s ease; }
+#toast { position: fixed; left: 50%; top: calc(10px + env(safe-area-inset-top)); pointer-events: none; text-align: center; font-size: .92rem; width: max-content; transform: translateX(-50%); z-index: 4000; background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 12px; font-weight: 600; max-width: 92vw; box-shadow: var(--shadow-pop); animation: toastIn .25s ease; }
 @keyframes toastIn { from { transform: translate(-50%, -12px); opacity: 0; } }
 .install { display: flex; align-items: center; gap: 12px; background: var(--dark); color: #fff; border-radius: 14px; padding: 10px 10px 10px 12px; margin-bottom: 12px; }
 .install img { width: 38px; height: 38px; border-radius: 10px; flex: none; }
@@ -450,3 +453,140 @@ input::placeholder { color: var(--ink-3); }
 .stat-row { display: flex; gap: 10px; margin: 12px 0; }
 .stat { flex: 1; background: var(--surface); border-radius: 12px; padding: 12px 14px; }
 .stat b { display: block; font-size: 1.15rem; font-weight: 800; }
+
+/* ---------- Layout that fits every phone ---------- */
+/* Primary buttons live in a footer pinned to the bottom of the screen (thumb zone). */
+.onb-foot { position: sticky; bottom: 0; z-index: 2; background: var(--bg); margin: auto -22px calc(-22px - env(safe-area-inset-bottom)); padding: 12px 22px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 4px; }
+.onb-foot .fine { margin-top: 8px; }
+.sheet-foot { position: sticky; bottom: 0; z-index: 2; background: var(--card); margin: 10px -18px calc(-18px - env(safe-area-inset-bottom)); padding: 10px 18px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 8px; }
+.sheet-foot.line { border-top: 1px solid var(--line); }
+.sheet-foot .btn-link { min-height: 36px; }
+@media (min-width: 760px) { .sheet-foot { margin-bottom: -18px; padding-bottom: 16px; border-radius: 0 0 var(--r-lg) var(--r-lg); } }
+.pin-code { white-space: nowrap; flex: none; }
+.driver-card .grow > b, .drv-head b, .trip-banner b, .trip-banner small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drv-head { min-width: 0; max-width: calc(100vw - 86px); }
+.drv-head > span:nth-child(2) { min-width: 0; flex: 1; }
+.topbar > .drv-head, .topbar > .hello-chip { flex: 0 1 auto; min-width: 0; }
+.trip-banner .grow { min-width: 0; }
+.opt .meta { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opt .grow { min-width: 0; }
+.stop > span:last-child { min-width: 0; }
+.payrow .grow { min-width: 0; }
+.req .req-card { overflow-y: auto; max-height: calc(100dvh - 230px); }
+.req .btns .btn { min-height: 58px; font-size: 1.08rem; }
+
+/* Narrow phones (iPhone SE, small Androids) */
+@media (max-width: 360px) {
+  h1 { font-size: 1.5rem; } .onb h1 { font-size: 1.4rem; }
+  .onb { padding-left: 16px; padding-right: 16px; } .onb-foot { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+  .sheet { padding-left: 14px; padding-right: 14px; } .sheet-foot { margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; }
+  .svc-row { gap: 6px; } .svc-ic { font-size: .76rem; }
+  .opt { padding: 8px 10px; gap: 10px; } .opt .art { width: 48px; height: 32px; } .opt .price { font-size: .92rem; }
+  .pin-code span { width: 28px; height: 34px; margin-left: 4px; font-size: 1.15rem; }
+  .act-row { gap: 8px; } .stats3 b { font-size: 1rem; }
+  .photo { width: 48px; height: 48px; }
+  .hello-chip b { font-size: .88rem; }
+  .slide h1 { font-size: 1.7rem; }
+}
+/* Short screens: tighten vertical rhythm so the map and buttons both fit */
+@media (max-height: 700px) {
+  .sheet { max-height: 80vh; max-height: 80dvh; padding-top: 6px; }
+  .sheet .grabber { margin-bottom: 8px; }
+  .svc-row { margin: 10px 0 4px; } .svc-ic .tile { aspect-ratio: 1.35; }
+  .saved-row { margin: 8px 0 0; } .section-label { margin: 12px 0 6px; }
+  .promo { padding: 10px 12px; margin-top: 8px; }
+  .opts { gap: 6px; } .opt { padding-top: 7px; padding-bottom: 7px; }
+  .payrow { padding: 10px 2px; }
+  .ring-wrap { width: 112px; height: 112px; margin: 10px auto; } .ring-wrap .center { width: 70px; height: 70px; } .ring-wrap .center svg { width: 50px; height: 34px; }
+  .eta-line { margin: 10px 0 6px; } .pin-box { margin: 10px 0; padding: 8px 12px; }
+  .check-big { width: 60px; height: 60px; margin: 4px auto 8px; } .check-big svg { width: 30px; height: 30px; }
+  .fare-card { padding: 12px; margin: 10px 0; } .fare-card .amt { font-size: 1.6rem; }
+  .stars { margin: 4px 0 8px; } .stars button svg { width: 32px; height: 32px; }
+  .illu { width: 116px; height: 116px; margin: 18px auto 18px; }
+  .onb .lead { margin-bottom: 12px; } label { margin-top: 10px; }
+  input, select { padding: 12px 14px; } .phone-field input { padding: 12px 0; }
+  .stats3 { padding: 8px 0; margin-bottom: 10px; } .earn-card { padding-bottom: 6px; }
+  .online-banner { padding: 9px 12px; margin-bottom: 8px; }
+  .req h2 { margin: 4px 0 10px; } .req .req-card { padding: 14px; }
+  .btn-lg { min-height: 52px; }
+}
+
+/* ---------- Fit every phone: full-height screens, bottom-anchored actions ---------- */
+#root { min-height: 100%; }
+.onb { min-height: 100vh; min-height: 100dvh; }
+.app { height: 100vh; height: 100dvh; inset: 0 0 auto 0; }
+.sheet { max-height: 86vh; max-height: 86dvh; }
+.page { height: 100vh; height: 100dvh; bottom: auto; }
+/* Primary actions stay pinned to the bottom of a sheet even when its content scrolls */
+.sheet-foot { position: sticky; bottom: calc(-18px - env(safe-area-inset-bottom)); z-index: 3; background: var(--card);
+  margin: 6px -18px calc(-18px - env(safe-area-inset-bottom)); padding: 10px 18px calc(14px + env(safe-area-inset-bottom));
+  box-shadow: 0 -12px 14px -12px rgba(0,0,0,.18); }
+.sheet-foot > * + * { margin-top: 8px; }
+.onb .sticky-cta { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 2px; margin-top: 8px; }
+/* The home card keeps a slice of map visible */
+.sheet.home-card { max-height: calc(100dvh - 150px); }
+
+/* Short phones (iPhone SE, small Androids): tighten spacing so the map stays visible */
+@media (max-height: 760px) {
+  h1 { font-size: 1.5rem; }
+  .onb { padding-top: calc(8px + env(safe-area-inset-top)); }
+  .onb-top { margin-bottom: 6px; }
+  .onb .lead { margin-bottom: 10px; }
+  label { margin: 10px 0 5px; }
+  input, select { padding: 12px 14px; }
+  .phone-field input { padding: 12px 0; }
+  .illu { width: 120px; height: 120px; margin: 18px auto 16px; }
+  .btn-lg { min-height: 52px; }
+  .sheet { padding-top: 6px; }
+  .sheet .grabber { margin-bottom: 8px; }
+  .opts { gap: 6px; }
+  .opt { padding: 7px 10px; }
+  .opt .art { width: 50px; height: 32px; }
+  .payrow { padding: 9px 2px; }
+  .svc-row { margin: 10px 0 4px; }
+  .svc-ic .tile { aspect-ratio: 1.35; }
+  .saved-row { margin: 8px 0 0; }
+  .promo { padding: 10px 12px; margin-top: 8px; }
+  .promo svg { width: 60px; height: 40px; }
+  .section-label { margin: 12px 0 6px; }
+  .more-row { padding: 8px 12px; }
+  .photo { width: 48px; height: 48px; }
+  .eta-line { margin: 10px 0 6px; font-size: 1rem; }
+  .bar { margin-bottom: 10px; }
+  .act { min-height: 42px; }
+  .pin-box { margin: 8px 0; padding: 8px 12px; }
+  .pin-code span { width: 30px; height: 36px; }
+  .stops { margin: 6px 0; } .stop { padding: 4px 0; }
+  .fare-row { padding-top: 8px; }
+  .ring-wrap { width: 120px; height: 120px; margin: 10px auto; }
+  .ring-wrap .center { width: 74px; height: 74px; }
+  .check-big { width: 60px; height: 60px; margin: 4px auto 8px; } .check-big svg { width: 30px; height: 30px; }
+  .fare-card { padding: 12px; margin: 10px 0; } .fare-card .amt { font-size: 1.6rem; }
+  .stars { margin: 4px 0 8px; } .stars button svg { width: 32px; height: 32px; }
+  .stats3 { padding: 8px 0; margin-bottom: 10px; }
+  .earn-card b { font-size: 1.4rem; }
+  .req .req-card { padding: 14px; }
+  .req h2 { margin: 4px 0 10px; }
+  .slider { height: 54px; } .slider .knob { width: 44px; height: 44px; }
+}
+/* Very narrow phones (320–360px wide) */
+@media (max-width: 360px) {
+  .sheet { padding-left: 14px; padding-right: 14px; }
+  .sheet-foot { margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; }
+  .onb { padding-left: 16px; padding-right: 16px; }
+  .opt .price, .opt .name { font-size: .92rem; }
+  .svc-ic { font-size: .76rem; }
+  .pin-code span { width: 28px; margin-left: 4px; }
+  .hello-chip b { font-size: .88rem; }
+}
+/* Tablets and desktops: centred phone-width auth screens, floating sheets */
+@media (min-width: 760px) {
+  .onb { max-width: 440px; }
+  .sheet-foot { margin-bottom: -18px; padding-bottom: 14px; }
+}
+@media (min-width: 760px) {
+  .req { align-items: center; }
+  .req > * { width: 100%; max-width: 440px; }
+  .req .spacer { display: none; }
+  .req .btns { margin-top: 18px; }
+}

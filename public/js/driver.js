@@ -172,10 +172,10 @@
         <div><b>★ ${S.user.rating || '–'}</b><span>Rating</span></div>
         <div><b>${K.ugx(e.balance).replace('UGX ', '')}</b><span>Balance (UGX)</span></div>
       </div>
-      ${S.online
+      <div class="sheet-foot">${S.online
         ? `<button class="btn btn-go btn-block btn-lg" id="off">${K.ic('power')} Go Offline</button>`
         : `<button class="btn btn-primary btn-block btn-lg" id="on">${K.ic('power')} Go Online</button>
-           <p class="tiny muted" style="text-align:center;margin:8px 0 0">You keep ${100 - S.config.commissionPct}% of every fare.</p>`}
+           <p class="tiny muted" style="text-align:center;margin:6px 0 0">You keep ${100 - S.config.commissionPct}% of every fare.</p>`}</div>
       ${S.manual ? '<p class="tiny faint" style="text-align:center;margin-top:8px">Tap the map to set your position.</p>' : ''}`;
     K.$('#earn').onclick = () => openTab('earnings');
     const on = K.$('#on'); if (on) on.onclick = () => setOnline(true);
@@ -289,16 +289,16 @@
         <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
       </div>
-      <div class="fare-row" style="margin-bottom:12px"><span class="muted">${t.paymentMethod === 'cash' ? 'Collect in cash' : 'Fare'}</span><b>${K.ugx(t.fare)}</b></div>
+      <div class="fare-row"><span class="muted">${t.paymentMethod === 'cash' ? 'Collect in cash' : 'Fare'}</span><b>${K.ugx(t.fare)}</b></div>
       ${t.status === 'arrived' ? `
         <label for="pin" style="text-align:center">Ask the ${customer(t)} for their 4-digit PIN</label>
         <input id="pin" class="pin-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="····" aria-label="Trip PIN">` : ''}
-      <p class="error" id="err"></p>
+      <div class="sheet-foot"><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
       <div id="action"></div>
-      <div class="row" style="margin-top:10px">
+      <div class="row" style="margin-top:6px">
         <button class="btn btn-ghost btn-sm fill" id="sos">${K.ic('shield', 'sm')} Safety</button>
         ${toPickup ? '<button class="btn btn-ghost btn-sm fill" id="cancel" style="color:var(--stop)">Cancel trip</button>' : ''}
-      </div>`;
+      </div></div>`;
     const action = K.$('#action');
     if (t.status === 'accepted') K.slider(action, { label: 'Slide when you arrive', onDone: () => step('arrived') });
     else if (t.status === 'arrived') {
@@ -351,8 +351,8 @@
         </div>
         ${!t.driverRated ? `<h3>Rate ${K.esc(K.first(t.rider.name))}</h3>
           <div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${n} stars" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>` : ''}
-        <button class="btn btn-primary btn-block btn-lg" id="next">${S.online ? 'Find next trip' : 'Done'}</button>
-      </div>`;
+      </div>
+      <div class="sheet-foot"><button class="btn btn-primary btn-block btn-lg" id="next">${S.online ? 'Find next trip' : 'Done'}</button></div>`;
     sheet.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => {
       S.rating = +b.dataset.n;
       sheet.querySelectorAll('[data-n]').forEach((x) => x.classList.toggle('on', +x.dataset.n <= S.rating));

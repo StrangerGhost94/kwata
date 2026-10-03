@@ -355,8 +355,8 @@
       <button class="payrow" id="pickRow" style="padding-bottom:4px"><span class="dot-pick" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Pickup</span><span class="ellipsis" id="pickLabel" style="display:block">${K.esc(S.pickup.address)}</span></span><span class="small muted">Change</span></button>
       ${S.service === 'parcel' ? `<button class="payrow" id="parcelRow"><span class="paylogo wallet">${K.ic('gift', 'sm')}</span><span class="grow">${S.parcel ? `Package for ${K.esc(S.parcel.recipientName)}` : 'Add delivery details'}</span>${K.ic('chev', 'sm')}</button>` : ''}
       <button class="payrow" id="payRow">${P.logo}<span class="grow">${P.name}${p === 'wallet' ? ` · ${K.ugx(S.user.walletBalance)}` : ''}${['mtn', 'airtel'].includes(p) ? `<span class="tiny muted" style="display:block;font-weight:500">${prettyPhone(S.user.payPhone)}</span>` : ''}</span>${K.ic('chev', 'sm')}</button>
-      <p class="error" id="err" style="margin:0 0 8px"></p>
-      <button class="btn btn-primary btn-block btn-lg" id="request">Request ${K.esc(svcName(sel.id))}</button>`;
+      <div class="sheet-foot"><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
+      <button class="btn btn-primary btn-block btn-lg" id="request">Request ${K.esc(svcName(sel.id))}</button></div>`;
     sheet.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => {
       if (b.dataset.s === S.service) return;
       setService(b.dataset.s); showRoute(); render();
@@ -391,7 +391,7 @@
       <h2 style="text-align:center">Adjust your pickup</h2>
       <p class="small muted" style="text-align:center">Move the map to put the pin where you’ll wait</p>
       <div class="lrow" style="cursor:default"><span class="ic">${K.ic('pin')}</span><span class="grow"><span class="t ellipsis" id="pinAddr" style="display:block">${K.esc(S.pickup.address)}</span></span></div>
-      <button class="btn btn-primary btn-block btn-lg" id="confirm" style="margin-top:8px">Confirm pickup</button>`;
+      <div class="sheet-foot"><button class="btn btn-primary btn-block btn-lg" id="confirm">Confirm pickup</button></div>`;
     K.$('#confirm').onclick = () => {
       if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
       S.pickup.short = null;
@@ -404,7 +404,7 @@
       <div class="grabber"></div>
       <h2 style="text-align:center">Set your destination</h2>
       <div class="lrow" style="cursor:default"><span class="ic">${K.ic('flag')}</span><span class="grow"><span class="t ellipsis" id="pinAddr" style="display:block">Move the map to your destination</span></span></div>
-      <button class="btn btn-primary btn-block btn-lg" id="confirm" style="margin-top:8px">Confirm destination</button>`;
+      <div class="sheet-foot"><button class="btn btn-primary btn-block btn-lg" id="confirm">Confirm destination</button></div>`;
     onPinMove();
     K.$('#confirm').onclick = () => { if (S.pinDrop) chooseDrop(S.pinDrop); };
   }
@@ -436,8 +436,8 @@
           <div class="center">${K.artFor(t.service)}</div>
         </div>
         <p class="small muted">${K.ugx(t.fare)} · ${PAY[payOfTrip(t)].name}</p>
-        <button class="btn btn-outline btn-block btn-lg" id="cancel">Cancel</button>
-      </div>`;
+      </div>
+      <div class="sheet-foot"><button class="btn btn-outline btn-block btn-lg" id="cancel">Cancel</button></div>`;
     K.$('#cancel').onclick = cancelTrip;
   }
 
@@ -447,7 +447,7 @@
       <div class="finding"><div class="illu" style="width:110px;height:110px;margin:6px auto 16px"><span style="width:80px;height:54px;display:block">${K.artFor(S.trip ? S.trip.service : S.service)}</span></div>
       <h2>No ${S.trip ? who(S.trip) : 'driver'}s free right now</h2>
       <p class="muted">Everyone nearby is busy. Try again in a minute or choose another ride type.</p></div>
-      <div class="row" style="margin-top:12px"><button class="btn fill" id="home">Back</button><button class="btn btn-primary fill" id="again">Try again</button></div>`;
+      <div class="sheet-foot"><div class="row"><button class="btn fill" id="home">Back</button><button class="btn btn-primary fill" id="again">Try again</button></div></div>`;
     K.$('#home').onclick = reset;
     K.$('#again').onclick = () => prepareQuote();
   }
@@ -479,7 +479,7 @@
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
         </div>
         <div class="fare-row"><span class="muted">Total fare</span><b>${K.ugx(t.fare)}</b></div>
-        <div class="row" style="margin-top:14px"><button class="btn fill" id="share">${K.ic('share', 'sm')} Share trip</button><button class="btn btn-danger-soft fill" id="sos">${K.ic('sos', 'sm')} SOS</button></div>`;
+        <div class="sheet-foot"><div class="row"><button class="btn fill" id="share">${K.ic('share', 'sm')} Share trip</button><button class="btn btn-danger-soft fill" id="sos" style="margin-top:0">${K.ic('sos', 'sm')} SOS</button></div></div>`;
       K.$('#share').onclick = shareTrip;
       K.$('#sos').onclick = sos;
     } else {
@@ -498,8 +498,8 @@
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Drop-off</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
         </div>
-        <div class="fare-row" style="margin-bottom:14px"><span class="row" style="gap:8px">${PAY[payOfTrip(t)].logo}<span class="muted">${PAY[payOfTrip(t)].name}</span></span><b>${K.ugx(t.fare)}</b></div>
-        <button class="btn btn-danger btn-block btn-lg" id="cancel">Cancel ride</button>`;
+        <div class="fare-row"><span class="row" style="gap:8px">${PAY[payOfTrip(t)].logo}<span class="muted">${PAY[payOfTrip(t)].name}</span></span><b>${K.ugx(t.fare)}</b></div>
+        <div class="sheet-foot"><button class="btn btn-danger btn-block btn-lg" id="cancel">Cancel ride</button></div>`;
       K.$('#cancel').onclick = cancelTrip;
     }
     K.$('#chatBtn').onclick = openChat;
@@ -544,13 +544,15 @@
           <div class="amt">${K.ugx(t.fare)}</div>
           <span class="row" style="justify-content:center;gap:8px;margin-top:6px">${P.logo}<span class="small bold">${P.name}</span></span>
         </div>
-        ${needsPay ? `<button class="btn btn-primary btn-block btn-lg" id="pay">Pay ${K.ugx(t.fare)}</button><p class="error" id="err"></p>` : ''}
         ${!t.riderRated ? `
           <h3 style="margin-top:6px">Rate your ${who(t)}</h3>
           <div class="row" style="justify-content:center;gap:8px">${photo(d, 'photo')}<span style="text-align:left"><b>${K.esc(d.name || '')}</b><br><span class="small muted">${K.esc(d.plate || '')}</span></span></div>
-          <div class="stars" role="radiogroup" aria-label="Rate your ${who(t)}">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${n} star${n > 1 ? 's' : ''}" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>
-          <button class="btn ${needsPay ? '' : 'btn-primary'} btn-block btn-lg" id="rate" ${S.rating ? '' : 'disabled'}>Rate ${who(t)}</button>` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}
-        <button class="btn btn-link btn-block" id="details">View details</button>
+          <div class="stars" role="radiogroup" aria-label="Rate your ${who(t)}">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${n} star${n > 1 ? 's' : ''}" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>` : ''}
+        <button class="btn btn-link btn-block" id="details" style="min-height:36px">View details</button>
+      </div>
+      <div class="sheet-foot">
+        ${needsPay ? `<p class="error" id="err" style="margin:0 0 6px;min-height:0"></p><button class="btn btn-primary btn-block btn-lg" id="pay">Pay ${K.ugx(t.fare)}</button>` : ''}
+        ${!t.riderRated ? `<button class="btn ${needsPay ? '' : 'btn-primary'} btn-block btn-lg" id="rate" ${S.rating ? '' : 'disabled'}>Rate ${who(t)}</button>` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}
       </div>`;
     sheet.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => {
       S.rating = +b.dataset.n;
