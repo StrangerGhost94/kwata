@@ -611,15 +611,8 @@ body[data-app="rider"], body[data-app="driver"] { -webkit-text-size-adjust: 100%
 .illu > .art-img { width: 66%; height: 66%; }
 .slide .art .art-img { filter: drop-shadow(0 20px 26px rgba(0,0,0,.55)); }
 
-/* ---------- Installed app (home screen): full screen, top to bottom ----------
-   With the status bar drawn over the app, iOS reports a viewport that is short by
-   the status-bar height. 100lvh is the real full screen, so the shell, overlays and
-   splash are sized from it instead of the (short) fixed viewport. */
-html.standalone { height: 100vh; height: 100lvh; }
-html.standalone body { position: relative; min-height: 100vh; min-height: 100lvh; }
-html.standalone .app,
-html.standalone .overlay,
-html.standalone .req,
-html.standalone .splash,
-html.standalone .onboard { position: absolute; top: 0; left: 0; right: 0; bottom: auto; height: 100vh; height: 100lvh; }
-html.standalone .onb { min-height: 100vh; min-height: 100lvh; }
+/* ---------- Installed app (home screen) ----------
+   The map runs under the clock and battery. Everything else keeps its normal
+   position and nothing scrolls or slides: the app shell is pinned to the screen. */
+html.standalone, html.standalone body { height: 100%; overscroll-behavior: none; }
+html.standalone .app { position: fixed; inset: 0; }

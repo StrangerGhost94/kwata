@@ -205,10 +205,24 @@
     return { el: ov.firstElementChild, close };
   };
 
-  // ---------- installed app: draw under the status bar AND reach the bottom ----------
-  // iOS shortens installed apps by the status-bar height when they draw under it.
-  // The large-viewport unit (100lvh) gives the full screen back; see app.css.
-  if (navigator.standalone === true || matchMedia('(display-mode: standalone)').matches) document.documentElement.classList.add('standalone');
+  // ---------- installed app ----------
+  // With the map drawn under the status bar, iOS 26 stops the app a little above the
+  // home bar (that strip is outside the app and can't be drawn on). When that
+  // happens, don't add home-bar spacing on top, or the bottom bar floats up.
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  if (standalone) document.documentElement.classList.add('standalone');
+  function fitInstalled() {
+    if (!standalone) return;
+    try {
+      const portrait = innerHeight >= innerWidth;
+      const screenH = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+      const cutOff = innerHeight < screenH - 20; // the app doesn't reach the bottom edge
+      document.documentElement.style.setProperty('--sab', cutOff ? '0px' : 'env(safe-area-inset-bottom, 0px)');
+    } catch {}
+  }
+  fitInstalled();
+  addEventListener('resize', fitInstalled);
+  addEventListener('orientationchange', () => setTimeout(fitInstalled, 300));
 
   // ---------- screen info (open any page with ?debug=screen to see it) ----------
   // The app runs edge to edge with a normal status bar, so the standard
