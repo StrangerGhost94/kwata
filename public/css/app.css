@@ -709,7 +709,7 @@ html.standalone .app { position: fixed; inset: 0; }
 #toast { background: rgba(22,22,24,.88); top: calc(64px + env(safe-area-inset-top)); }
 /* Pill sits as low as the screen allows: just above the home bar, or right at
    the bottom edge when iOS has already cut the app short. */
-.tabbar { bottom: max(6px, calc(var(--sab) - 6px)); }
+.tabbar { bottom: max(8px, calc(var(--sab) - 4px)); }
 
 /* =====================================================================
    Brand: speed-K wordmark, premium splash, photo welcome screens
@@ -977,4 +977,25 @@ html.standalone .auth2 { min-height: 100%; }
 @media (min-width: 760px) {
   .home .quick > *, .home .svc-strip > *, .home #forYou > *, .home #installHost > * { opacity: 1; transform: none; }
   .app .topbar { opacity: 1; transform: none; }
+}
+
+/* =====================================================================
+   Native-app frame: standard status bar, menu bar docked to the bottom
+   edge (it fills the home-bar area, so there's no white strip), and the
+   screen itself never scrolls, bounces or zooms. Only lists inside it scroll.
+   ===================================================================== */
+body[data-app="rider"], body[data-app="driver"] { position: fixed; inset: 0; overflow: hidden; touch-action: pan-x pan-y; }
+html:has(body[data-app="rider"]), html:has(body[data-app="driver"]) { overflow: hidden; height: 100%; }
+body[data-app="rider"] .app, body[data-app="driver"] .app { position: fixed; inset: 0; overflow: hidden; }
+input, select, textarea { font-size: max(16px, 1em); }
+
+
+/* Home: the sheet is a floating card that stops just above the floating pill,
+   so the bottom of the screen is only the map and the pill (no white panel). */
+.sheet-dock { position: absolute; inset: 0; z-index: 600; pointer-events: none; }
+.sheet-dock > .sheet { pointer-events: auto; }
+@media (max-width: 759px) {
+  .sheet-dock.floating { bottom: var(--dock-b, 96px); clip-path: inset(-100vh 8px 0 8px round 0 0 30px 30px); }
+  .sheet-dock.floating > .sheet { left: 8px; right: 8px; border-radius: 30px; max-height: calc(100% - 64px - env(safe-area-inset-top));
+    box-shadow: 0 -6px 26px rgba(0,0,0,.10); border: .5px solid rgba(0,0,0,.06); }
 }
