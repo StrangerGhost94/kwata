@@ -63,6 +63,8 @@
     tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3.6 15 1.7 1.7 0 0 0 2 14H2a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 3.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    eyeOff: '<path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
     power: '<path d="M12 3v9M6.3 7.3a8 8 0 1 0 11.4 0"/>',
   };
   K.ic = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${name === 'star' && cls.includes('fill') ? P.star : P[name] || ''}</svg>`;
@@ -78,7 +80,7 @@
   // ---------- brand: pin logo & night skyline ----------
   K.logo = (pin = '#FFC400', k = '#141414', size = 64) => `<svg class="pin" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
     <path d="M32 3C19.3 3 9 13.1 9 25.6 9 42 32 61 32 61s23-19 23-35.4C55 13.1 44.7 3 32 3z" fill="${pin}"/>
-    <path d="M25.5 14v23M25.5 27.5 37.5 14M29.5 23.5l9 13.5" stroke="${k}" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+    <g transform="translate(13.5 12.5) scale(.265)" fill="${k}"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg>`;
   // The speed-K: three speed lines and a forward-leaning K (as on the Kwata delivery box).
   K.markSvg = (cls = '') => `<svg class="wm-k ${cls}" viewBox="0 0 140 100" aria-hidden="true">
     <defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs>
@@ -342,16 +344,35 @@
   const phoneField = (id, val = '') => `<div class="phone-field"><span class="cc">🇺🇬 +256 ${K.ic('chevDown', 'sm')}</span><input id="${id}" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7XX XXX XXX" value="${K.esc(val)}" required></div>`;
   const toLocal = (raw) => { const d = String(raw || '').replace(/\D/g, ''); return d.startsWith('256') ? d : d.startsWith('0') ? d : '0' + d; };
 
+  const GOOGLE_G = '<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+  const pwField = (id, auto, ph = '') => `<div class="pw-field"><input id="${id}" name="password" type="password" autocomplete="${auto}" minlength="6" placeholder="${ph}" required><button type="button" class="eye" aria-label="Show password">${K.ic('eye')}</button></div>`;
+
   K.authScreen = function (root, { role, onDone }) {
     let draft = {}, dir = 'fwd';
     K.ready();
+    // Auth layout: photo header with the logo, white card that slides up with the form.
     const shell = (inner, back) => {
-      root.innerHTML = `<div class="onb ${dir === 'back' ? 'nav-back' : 'nav-fwd'}">${back ? `<div class="onb-top"><button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button></div>` : '<div style="height:20px"></div>'}${inner}</div>`;
+      root.innerHTML = `<div class="auth2 ${dir === 'back' ? 'nav-back' : 'nav-fwd'}">
+        <div class="auth-hero"><img src="/img/onboarding.jpg" alt="" decoding="async"><div class="auth-shade"></div>
+          ${back ? `<button class="glass-back" data-back aria-label="Back">${K.ic('back')}</button>` : ''}
+          <div class="auth-logo">${K.wordmark(role === 'driver')}</div></div>
+        <div class="auth-card">${inner}</div></div>`;
       dir = 'fwd';
       const b = root.querySelector('[data-back]'); if (b) b.onclick = () => { dir = 'back'; back(); };
-      const f = root.querySelector('form'); if (f) setTimeout(() => { const i = f.querySelector('input'); i && i.focus({ preventScroll: true }); }, 80);
+      root.querySelectorAll('.pw-field .eye').forEach((eye) => eye.onclick = () => {
+        const i = eye.previousElementSibling, show = i.type === 'password';
+        i.type = show ? 'text' : 'password'; eye.innerHTML = K.ic(show ? 'eyeOff' : 'eye'); eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      });
+      root.querySelectorAll('[data-google]').forEach((g) => g.onclick = () => K.toast('Google sign-in is coming soon. Use your phone number for now.', 4000));
+      // Only jump into the first box on computers. On phones it opened the keyboard and
+      // pushed the typing box over the opening animation.
+      if (matchMedia('(pointer: fine)').matches && !document.querySelector('#splash')) {
+        const f = root.querySelector('form'); if (f) setTimeout(() => { const i = f.querySelector('input'); i && i.focus({ preventScroll: true }); }, 500);
+      }
     };
-    const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.textContent = on ? 'Please wait…' : btn.dataset.label; };
+    const google = (label) => role === 'admin' ? '' : `<button type="button" class="btn btn-google btn-block btn-lg" data-google>${GOOGLE_G}<span>${label}</span></button>
+      <div class="or"><span>or with your phone number</span></div>`;
+    const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.innerHTML = on ? '<span class="spin"></span>Please wait…' : btn.dataset.label; };
     const finish = async (out) => {
       K.session.set(out);
       if (role === 'rider') await K.askLocation(root);
@@ -389,28 +410,28 @@
     }
 
     function becomeDriver() {
-      shell(`<div class="grow" style="display:flex;flex-direction:column">
-        <div class="illu" style="width:190px;height:130px;border-radius:24px;margin:10px auto 22px">${K.ART.boda}</div>
-        <h1>Become a driver</h1><p class="lead">Join drivers earning with Kwata. Keep 88% of every fare.</p>
-        <ul class="checklist"><li>Quick registration</li><li>Flexible hours</li><li>Secure payments to Mobile Money</li></ul>
+      shell(`<div class="auth-body">
+        <h1>Become a driver</h1><p class="lead">Join drivers earning with Kwata.</p>
+        <ul class="checklist"><li>Keep 88% of every fare</li><li>Work the hours you choose</li><li>Cash out to Mobile Money any time</li><li>Quick registration, verified in 24 hours</li></ul>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" id="go">Continue</button>
-        <p class="fine">Already have an account? <button data-li>Log In</button></p></div>`, driverWelcome);
+        <p class="fine">Already driving with Kwata? <button data-li>Log In</button></p></div>`, driverWelcome);
       root.querySelector('#go').onclick = driverForm;
       root.querySelector('[data-li]').onclick = logIn;
     }
 
     function signUp() {
-      shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
-        <h1>Create your account</h1><p class="lead">Get started in seconds</p>
-        <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" placeholder="John Doe" value="${K.esc(draft.name || '')}" required>
+      shell(`<form id="f" novalidate class="auth-body">
+        <h1>Create your account</h1><p class="lead">It takes less than a minute.</p>
+        ${google('Sign up with Google')}
+        <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" placeholder="e.g. Grace Nalubega" value="${K.esc(draft.name || '')}" required>
         <label for="ph">Phone number</label>${phoneField('ph', draft.phone)}
-        <label for="pw">Password</label><input id="pw" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="At least 6 characters" required>
+        <label for="pw">Password</label>${pwField('pw', 'new-password', 'At least 6 characters')}
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
-        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Create account">Create account</button>
         <p class="fine">Already have an account? <button type="button" data-li>Log In</button></p>
-        <p class="fine" style="margin-top:4px">By continuing you agree to Kwata’s terms and privacy policy.</p>
+        <p class="fine tiny" style="margin-top:2px">By continuing you agree to Kwata’s <a href="/about#terms">Terms</a> and <a href="/about#privacy">Privacy Policy</a>.</p>
       </form>`, onboarding);
       const f = root.querySelector('#f');
       root.querySelector('[data-li]').onclick = logIn;
@@ -418,6 +439,7 @@
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
         draft = { name: f.nm.value.trim(), phone: f.ph.value.trim() };
+        if (!draft.name) { err.textContent = 'Enter your name.'; return; }
         busy(f, true);
         try { await finish(await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw.value, role: 'rider' })); }
         catch (ex) { err.innerHTML = /already has an account/.test(ex.message) ? `This number already has an account. <a href="#" data-li2>Log in instead</a>` : K.esc(ex.message); busy(f, false); const l = err.querySelector('[data-li2]'); if (l) l.onclick = (ev) => { ev.preventDefault(); logIn(); }; }
@@ -425,11 +447,12 @@
     }
 
     function driverForm() {
-      shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
+      shell(`<form id="f" novalidate class="auth-body">
         <h1>Your details</h1><p class="lead">We’ll check these before your first trip.</p>
+        ${google('Sign up with Google')}
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" required>
         <label for="ph">Phone number</label>${phoneField('ph')}
-        <label for="pw">Create a password</label><input id="pw" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="At least 6 characters" required>
+        <label for="pw">Create a password</label>${pwField('pw', 'new-password', 'At least 6 characters')}
         <label for="vt">What do you drive?</label><select id="vt" name="vehicleType"><option value="boda">Boda boda (motorcycle)</option><option value="car">Car</option></select>
         <div class="row"><div class="fill"><label for="pl">Number plate</label><input id="pl" name="plate" placeholder="UFA 123X" required></div>
           <div class="fill"><label for="co">Colour</label><input id="co" name="vehicleColor" placeholder="Red"></div></div>
@@ -452,19 +475,24 @@
     }
 
     function logIn() {
-      shell(`<form id="f" novalidate class="grow" style="display:flex;flex-direction:column">
+      shell(`<form id="f" novalidate class="auth-body">
         <h1>${role === 'driver' ? 'Welcome back, driver' : role === 'admin' ? 'Kwata Operations' : 'Welcome back'}</h1>
-        <p class="lead">Log in with your phone number</p>
+        <p class="lead">${role === 'admin' ? 'Staff sign in' : 'Log in to continue'}</p>
+        ${google('Continue with Google')}
         <label for="ph">Phone number</label>${phoneField('ph', draft.phone)}
-        <label for="pw">Password</label><input id="pw" name="password" type="password" autocomplete="current-password" required>
+        <label for="pw">Password</label>${pwField('pw', 'current-password')}
+        <div class="row" style="justify-content:flex-end;margin-top:8px"><button type="button" class="link-btn" data-forgot>Forgot password?</button></div>
         <p class="error" role="alert"></p>
-        <p class="small muted">Forgot your password? Call Kwata support and we’ll reset it.</p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Log In">Log In</button>
-        ${role === 'admin' ? '' : `<p class="fine">${role === 'driver' ? 'New driver?' : 'New to Kwata?'} <button type="button" data-su>${role === 'driver' ? 'Become a driver' : 'Create account'}</button></p>`}
+        ${role === 'admin' ? '' : `<p class="fine">${role === 'driver' ? 'New driver?' : 'New to Kwata?'} <button type="button" data-su>${role === 'driver' ? 'Become a driver' : 'Create an account'}</button></p>`}
       </form>`, role === 'rider' ? onboarding : role === 'driver' ? driverWelcome : null);
       const f = root.querySelector('#f');
       const su = root.querySelector('[data-su]'); if (su) su.onclick = role === 'driver' ? becomeDriver : signUp;
+      root.querySelector('[data-forgot]').onclick = () => K.modal(`<h2>Forgot your password?</h2>
+        <p class="muted">Call Kwata support from the number you signed up with. We’ll confirm it’s you and set a new password.</p>
+        <a class="btn btn-primary btn-block btn-lg" href="tel:+256700000000">Call support</a>
+        <button class="btn btn-block" style="margin-top:8px" data-close>Close</button>`);
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';

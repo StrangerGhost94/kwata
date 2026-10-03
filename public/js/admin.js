@@ -10,7 +10,7 @@
 
   async function start() {
     root.innerHTML = `<div class="shell"><nav class="side" aria-label="Admin sections">
-      <div class="logo">Kwata</div>
+      <div class="logo" style="display:flex;align-items:center;gap:8px"><svg width="34" height="24" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg><span>Kwata</span></div>
       ${TABS.map(([id, n]) => `<button data-t="${id}">${n}<span class="count hidden" id="c-${id}"></span></button>`).join('')}
       <button id="out" style="margin-top:20px">Sign out</button></nav><main id="main"></main></div>`;
     root.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tab = b.dataset.t; location.hash = tab; show(); });

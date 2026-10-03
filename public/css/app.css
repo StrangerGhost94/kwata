@@ -799,3 +799,37 @@ html.standalone .app { position: fixed; inset: 0; }
   -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 16%, #000 56%, transparent 90%); mask-image: linear-gradient(180deg, transparent 0%, #000 16%, #000 56%, transparent 90%); }
 .onboard.hero::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 52%; z-index: 1; pointer-events: none; background: linear-gradient(180deg, rgba(5,6,10,0) 0%, rgba(5,6,10,.7) 38%, rgba(5,6,10,.92) 100%); }
 .wm-tag i { margin: 0 .62em 0 .3em; }
+
+/* ---------- Log in / sign up: photo header + white card ---------- */
+.auth2 { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: #07090E; }
+html.standalone .auth2 { min-height: 100%; }
+.auth-hero { position: relative; height: 31vh; min-height: 210px; max-height: 300px; flex: none; overflow: hidden; }
+.auth-hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 42%; animation: drift 24s ease-in-out infinite alternate; }
+.auth-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(4,8,16,.82) 0%, rgba(4,8,16,.35) 45%, rgba(4,8,16,.55) 100%); }
+.auth-logo { position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 22px); display: grid; place-items: center; font-size: 46px; }
+.auth-logo .wm-tag { font-size: .2em; }
+.glass-back { position: absolute; z-index: 2; left: 14px; top: calc(env(safe-area-inset-top) + 12px); width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: #fff; cursor: pointer;
+  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28); -webkit-backdrop-filter: blur(16px) saturate(180%); backdrop-filter: blur(16px) saturate(180%); }
+.auth-card { position: relative; flex: 1; display: flex; flex-direction: column; background: var(--bg); margin-top: -28px; border-radius: 28px 28px 0 0;
+  padding: 26px 22px calc(18px + var(--sab)); box-shadow: 0 -10px 30px rgba(0,0,0,.25); }
+.auth-body { flex: 1; display: flex; flex-direction: column; width: 100%; max-width: 440px; margin: 0 auto; }
+.auth-body h1 { font-size: 1.65rem; margin-bottom: 2px; }
+.auth-body .lead { color: var(--ink-2); margin: 0 0 16px; font-size: .95rem; }
+.auth-body .spacer { flex: 1; min-height: 18px; }
+.auth-body .fine { font-size: .86rem; color: var(--ink-2); text-align: center; margin: 12px 0 0; }
+.auth-body .fine a, .auth-body .fine button, .link-btn { color: var(--ink); font-weight: 700; background: none; border: 0; cursor: pointer; text-decoration: none; padding: 0; font-size: inherit; }
+.link-btn { font-size: .88rem; color: #8A6A00; }
+.auth-body .checklist { margin: 6px 0; }
+.btn-google { background: #fff; color: var(--ink); border: 1.5px solid #E3E3E8; box-shadow: 0 1px 2px rgba(0,0,0,.05); gap: 10px; font-weight: 700; }
+.btn-google:hover { background: #FAFAFB; }
+.or { display: flex; align-items: center; gap: 12px; margin: 16px 0 2px; color: var(--ink-3); font-size: .8rem; font-weight: 600; }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.pw-field { position: relative; }
+.pw-field input { padding-right: 52px; }
+.pw-field .eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border: 0; background: none; color: var(--ink-2); border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
+.auth2 input, .auth2 select, .auth2 .phone-field { border-radius: 14px; background: #F7F7F9; border-color: #ECECF0; }
+.auth2 .phone-field input { background: transparent; }
+.auth2 input:focus, .auth2 .phone-field:focus-within { background: #fff; }
+.spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(0,0,0,.2); border-top-color: currentColor; animation: spin .7s linear infinite; display: inline-block; }
+@media (max-height: 720px) { .auth-hero { height: 24vh; min-height: 160px; } .auth-logo { font-size: 38px; top: calc(env(safe-area-inset-top) + 14px); } .auth-body .lead { margin-bottom: 10px; } }
+@media (min-width: 760px) { .auth-card { border-radius: 28px; margin: -28px auto 24px; width: 480px; flex: none; } }
