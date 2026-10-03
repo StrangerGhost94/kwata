@@ -999,3 +999,13 @@ input, select, textarea { font-size: max(16px, 1em); }
   .sheet-dock.floating > .sheet { left: 8px; right: 8px; border-radius: 30px; max-height: calc(100% - 64px - env(safe-area-inset-top));
     box-shadow: 0 -6px 26px rgba(0,0,0,.10); border: .5px solid rgba(0,0,0,.06); }
 }
+
+/* Bottom safe area: no separate strip under the floating pill. A soft fade behind the pill
+   runs to the very bottom edge (through env(safe-area-inset-bottom)) and ends in the same
+   colour iOS/Android use for the area outside the app, so it all reads as one surface.
+   The pill itself stays clear of the Home Indicator. */
+.dock-edge { position: absolute; left: 0; right: 0; bottom: 0; z-index: 849; pointer-events: none;
+  height: calc(max(8px, var(--sab) - 4px) + 36px);
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--edge, #F8F5F0) 70%, transparent) 45%, var(--edge, #F8F5F0) 100%); }
+.tabbar.hidden + .dock-edge { display: none; }
+@media (min-width: 760px) { .dock-edge { display: none; } }

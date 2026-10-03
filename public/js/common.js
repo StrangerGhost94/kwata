@@ -271,10 +271,17 @@
       const splash = q('#splash:not(.out)') || q('.splash');
       if (q('#req') || q('.onboard') || splash) c = STRIP.dark;
       else if (q('.page:not(.hidden)') || q('.onb')) c = STRIP.page;
-      else if (q('#sheet.collapsed') || (q('#map') && !q('#sheet'))) c = STRIP.map;
+      else if (q('#sheet.collapsed') || q('.sheet-dock.floating') || (q('#map') && !q('#sheet'))) c = STRIP.map;
       else if (q('#sheet')) c = STRIP.sheet;
-      document.documentElement.style.backgroundColor = c;
-      document.body.style.backgroundColor = c;
+      // The floating pill sits on a soft fade that runs down through the home-bar area and ends in
+      // exactly this colour, so whatever iOS/Android paint below the app joins the fade seamlessly.
+      const tabs = q('#tabs');
+      if (tabs) {
+        if (!(tabs.nextElementSibling && tabs.nextElementSibling.classList.contains('dock-edge'))) { const e = document.createElement('div'); e.className = 'dock-edge'; e.setAttribute('aria-hidden', 'true'); tabs.after(e); }
+        if (!tabs.classList.contains('hidden') && c !== STRIP.dark) c = q('.page:not(.hidden)') ? STRIP.page : STRIP.map;
+      }
+      document.documentElement.style.setProperty('--edge', c);
+      if (document.documentElement.style.backgroundColor !== c) { document.documentElement.style.backgroundColor = c; document.body.style.backgroundColor = c; }
     });
   }
   new MutationObserver(syncStrip).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
@@ -789,7 +796,17 @@
 
   // Space the floating glass tab bar takes at the bottom (content scrolls under it).
   K.tabSpace = () => { const t = document.getElementById('tabs'); if (!t || t.classList.contains('hidden')) return 0; return Math.max(0, innerHeight - t.getBoundingClientRect().top) + 8; };
-  K.underTabs = (sheet, on) => { sheet.style.bottom = ''; sheet.style.paddingBottom = on ? K.tabSpace() + 'px' : ''; };
+  K.underTabs = (sheet, on) => {
+    // Wrap the sheet once in a "dock" that can end above the floating tab pill.
+    let dock = sheet.parentElement;
+    if (!dock.classList.contains('sheet-dock')) { dock = document.createElement('div'); dock.className = 'sheet-dock'; sheet.before(dock); dock.appendChild(sheet); }
+    sheet.style.bottom = '';
+    const floating = on && innerWidth < 760;
+    dock.classList.toggle('floating', floating);
+    if (floating) { dock.style.setProperty('--dock-b', Math.max(0, K.tabSpace() + 2) + 'px'); sheet.style.paddingBottom = '16px'; }
+    else sheet.style.paddingBottom = on ? K.tabSpace() + 'px' : '';
+  };
+  addEventListener('resize', () => { const s = document.getElementById('sheet'); const d = s && s.parentElement; if (d && d.classList.contains('floating')) d.style.setProperty('--dock-b', Math.max(0, K.tabSpace() + 2) + 'px'); });
 
   // Skeleton placeholders (soft shimmering shapes) instead of "Loading…" text.
   K.skeleton = (kind = 'list', n = 4) => {
