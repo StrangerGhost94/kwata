@@ -1,6 +1,6 @@
 // Kwata service worker: opens instantly from the home screen and shows a
 // friendly screen when there's no connection. Bump VERSION on each release.
-const VERSION = 'kwata-v25';
+const VERSION = 'kwata-v26';
 const SHELL = [
   '/', '/driver', '/offline.html', '/css/app.css', '/js/common.js', '/js/rider.js', '/js/driver.js',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
@@ -27,7 +27,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(req, { cache: 'no-cache' }).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
       return res;
-    }).catch(() => caches.match(req)));
+    }).catch(() => caches.match(req, { ignoreSearch: true })));
     return;
   }
 

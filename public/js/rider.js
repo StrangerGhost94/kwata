@@ -296,7 +296,8 @@
       const app = K.$('#app'); if (app) { app.style.setProperty('--open', k.toFixed(3)); app.style.setProperty('--low', low.toFixed(3)); }
     };
     sheet.onSnap = () => { if (S.view === 'home' && S.gps && !S.mapTouched) centerOn(S.gps, map.getZoom(), true); };
-    sheet._keep = true; sheet.snapTo('mid', false); sheet._keep = false;
+    if (typeof sheet.snap !== 'function') sheet.snap = () => 'full';
+    if (typeof sheet.snapTo === 'function') { sheet._keep = true; sheet.snapTo('mid', false); sheet._keep = false; }
   }
   function leaveHomeSheet() {
     sheet.restSnap = null; sheet.snapPoints = null; sheet.onSheetMove = null; sheet.onSnap = null;

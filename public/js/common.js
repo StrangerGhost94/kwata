@@ -675,43 +675,116 @@
   };
 
   // Bottom sheet you can drag down to reveal the map (and back up), with snap.
+  // Bottom sheet with iOS-style physics: drag from anywhere on it, flick to snap, rubber-band at the ends.
+  // Snap points are offsets (px pushed down). sheet.snapPoints = () => ({ full: 0, mid: n, peek: n }) can be set per screen.
   K.draggableSheet = function (sheet) {
     if (sheet._drag) return;
     sheet._drag = true;
-    let startY = 0, startOff = 0, off = 0, dragging = false, moved = false;
-    // Collapsed, the sheet still shows its top (grabber + first row) above the floating tab bar.
-    const peek = () => Math.max(0, sheet.offsetHeight - 132 - (parseFloat(sheet.style.paddingBottom) || 0));
-    const set = (v, anim) => {
-      off = Math.max(0, Math.min(peek(), v));
-      sheet.style.transition = anim ? 'transform .3s cubic-bezier(.2,.8,.2,1)' : 'none';
-      sheet.style.transform = off ? `translateY(${off}px)` : '';
-      sheet.classList.toggle('collapsed', off > 0);
+    let off = 0, snap = 'full', anim = false;
+    const tabsPad = () => parseFloat(sheet.style.paddingBottom) || 0;
+    const defaults = () => ({ full: 0, peek: Math.max(0, sheet.offsetHeight - 132 - tabsPad()) });
+    const points = () => { const p = (sheet.snapPoints && sheet.snapPoints()) || defaults(); for (const k in p) p[k] = innerWidth >= 760 ? 0 : Math.max(0, Math.round(p[k])); return p; };
+    const maxOff = () => Math.max(...Object.values(points()));
+    const paint = (v, animate) => {
+      off = v;
+      sheet.style.transition = animate ? 'transform .52s cubic-bezier(.32,.72,0,1)' : 'none';
+      sheet.style.transform = Math.abs(off) > 0.5 ? `translate3d(0,${off}px,0)` : '';
+      sheet.classList.toggle('collapsed', snap === 'peek' && off > 0);
+      sheet.classList.toggle('lifted', off > 1);
+      if (off > 1 && sheet.scrollTop) sheet.scrollTop = 0;
+      if (sheet.onSheetMove) sheet.onSheetMove(off, points());
     };
-    sheet.collapse = () => set(peek(), true);
-    sheet.expand = () => set(0, true);
+    const go = (name, animate = true) => {
+      const p = points(); if (!(name in p)) name = 'full';
+      const changed = name !== snap; snap = name;
+      paint(p[name], animate);
+      if (changed && sheet.onSnap) sheet.onSnap(name);
+    };
+    sheet.snapTo = go;
+    sheet.snap = () => snap;
+    sheet.resnap = () => go(snap, false);
+    sheet.collapse = () => go('peek');
+    sheet.expand = () => go('full');
+
+    const nearest = (v, vel) => {
+      const p = points(), list = Object.entries(p).sort((x, y) => x[1] - y[1]);
+      // A quick flick moves one stop in that direction; otherwise land on the closest stop to where it would coast.
+      if (Math.abs(vel) > 0.35) {
+        if (vel > 0) return (list.find((e) => e[1] > v + 2) || list[list.length - 1])[0];
+        return ([...list].reverse().find((e) => e[1] < v - 2) || list[0])[0];
+      }
+      const proj = v + vel * 160;
+      return list.reduce((best, e) => (Math.abs(e[1] - proj) < Math.abs(best[1] - proj) ? e : best))[0];
+    };
+    const rubber = (v) => {
+      const max = maxOff();
+      if (v < 0) return -Math.min(28, Math.pow(-v, 0.7));
+      if (v > max) return max + Math.pow(v - max, 0.7);
+      return v;
+    };
+
+    // ---- touch (phones) ----
+    let t0 = null;
+    sheet.addEventListener('touchstart', (e) => {
+      if (innerWidth >= 760 || e.touches.length > 1) { t0 = null; return; }
+      const t = e.touches[0];
+      t0 = { x: t.clientX, y: t.clientY, off, mode: null, grab: !!(e.target.closest && e.target.closest('.grabber')), samples: [[performance.now(), t.clientY]] };
+      if (anim) paint(off, false);
+    }, { passive: true });
+    sheet.addEventListener('touchmove', (e) => {
+      if (!t0) return;
+      const t = e.touches[0], dx = t.clientX - t0.x, dy = t.clientY - t0.y;
+      if (!t0.mode) {
+        if (Math.abs(dx) < 7 && Math.abs(dy) < 7) return;
+        if (Math.abs(dx) > Math.abs(dy)) t0.mode = 'none';                       // sideways: let carousels scroll
+        else if (off > 1 || (sheet.scrollTop <= 0 && dy > 0)) { t0.mode = 'sheet'; t0.y = t.clientY; t0.off = off; }
+        else t0.mode = 'none';                                                 // scrolling the open sheet's content
+      }
+      if (t0.mode !== 'sheet') return;
+      if (e.cancelable) e.preventDefault();
+      t0.samples.push([performance.now(), t.clientY]); if (t0.samples.length > 6) t0.samples.shift();
+      paint(rubber(t0.off + (t.clientY - t0.y)), false);
+    }, { passive: false });
+    const touchEnd = () => {
+      if (!t0) return;
+      const s = t0.samples, mode = t0.mode, grab = t0.grab; t0 = null;
+      if (!mode && grab) { go(snap === 'full' ? (sheet.restSnap || 'peek') : 'full'); return; } // tap the handle to toggle
+      if (mode !== 'sheet') return;
+      const a = s[0], b = s[s.length - 1], dt = Math.max(1, b[0] - a[0]);
+      const vel = performance.now() - b[0] > 90 ? 0 : (b[1] - a[1]) / dt;
+      go(nearest(Math.max(0, Math.min(maxOff(), off)), vel));
+    };
+    sheet.addEventListener('touchend', touchEnd);
+    sheet.addEventListener('touchcancel', touchEnd);
+
+    // ---- mouse (desktop testing): drag by the handle ----
+    let m0 = null;
     sheet.addEventListener('pointerdown', (e) => {
-      if (innerWidth >= 760) return;
-      const r = sheet.getBoundingClientRect();
-      if (e.clientY - r.top > 34) return; // only the handle area
-      dragging = true; moved = false; startY = e.clientY; startOff = off;
+      if (e.pointerType === 'touch' || innerWidth >= 760) return;
+      if (e.clientY - sheet.getBoundingClientRect().top > 34) return;
+      m0 = { y: e.clientY, off, moved: false, samples: [[performance.now(), e.clientY]] };
       sheet.setPointerCapture(e.pointerId);
     });
     sheet.addEventListener('pointermove', (e) => {
-      if (!dragging) return;
-      const d = e.clientY - startY;
-      if (Math.abs(d) > 4) moved = true;
-      set(startOff + d);
+      if (!m0) return;
+      if (Math.abs(e.clientY - m0.y) > 4) m0.moved = true;
+      m0.samples.push([performance.now(), e.clientY]); if (m0.samples.length > 6) m0.samples.shift();
+      paint(rubber(m0.off + e.clientY - m0.y), false);
     });
-    const end = () => {
-      if (!dragging) return;
-      dragging = false;
-      if (!moved) { set(off > 0 ? 0 : peek(), true); return; }
-      set(off > peek() * 0.35 ? peek() : 0, true);
+    const mouseEnd = () => {
+      if (!m0) return;
+      const { moved, samples: s } = m0; m0 = null;
+      if (!moved) { go(snap === 'full' ? (sheet.restSnap || 'peek') : 'full'); return; }
+      const a = s[0], b = s[s.length - 1];
+      go(nearest(Math.max(0, Math.min(maxOff(), off)), (b[1] - a[1]) / Math.max(1, b[0] - a[0])));
     };
-    sheet.addEventListener('pointerup', end);
-    sheet.addEventListener('pointercancel', end);
-    // Any new content opens the sheet again.
-    new MutationObserver(() => { if (off) set(0, true); }).observe(sheet, { childList: true });
+    sheet.addEventListener('pointerup', mouseEnd);
+    sheet.addEventListener('pointercancel', mouseEnd);
+    sheet.addEventListener('transitionstart', () => { anim = true; });
+    sheet.addEventListener('transitionend', () => { anim = false; });
+    // Size changes (content loading in) keep the sheet at the same stop; new screens reset to the screen's resting stop.
+    if (window.ResizeObserver) new ResizeObserver(() => go(snap, false)).observe(sheet);
+    new MutationObserver(() => { if (sheet._keep) return; go(sheet.restSnap || 'full', true); }).observe(sheet, { childList: true });
   };
 
   // Space the floating glass tab bar takes at the bottom (content scrolls under it).
