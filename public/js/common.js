@@ -79,6 +79,16 @@
   K.logo = (pin = '#FFC400', k = '#141414', size = 64) => `<svg class="pin" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
     <path d="M32 3C19.3 3 9 13.1 9 25.6 9 42 32 61 32 61s23-19 23-35.4C55 13.1 44.7 3 32 3z" fill="${pin}"/>
     <path d="M25.5 14v23M25.5 27.5 37.5 14M29.5 23.5l9 13.5" stroke="${k}" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+  // The speed-K: three speed lines and a forward-leaning K (as on the Kwata delivery box).
+  K.markSvg = (cls = '') => `<svg class="wm-k ${cls}" viewBox="0 0 140 100" aria-hidden="true">
+    <defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs>
+    <g class="wm-lines" fill="url(#kg)"><path class="l1" d="M14 18H46L43 28H11Z"/><path class="l2" d="M6 38H42L39 48H3Z"/><path class="l3" d="M14 58H38L35 68H11Z"/></g>
+    <g class="wm-body" fill="url(#kg)"><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg>`;
+  K.wordmark = (driver) => `<div class="wm" aria-label="Kwata${driver ? ' Driver' : ''}">
+    <div class="wm-row">${K.markSvg()}<span class="wm-t">wata</span></div>
+    ${driver ? '<div class="wm-sub">DRIVER</div>' : ''}
+    <div class="wm-tag">${(driver ? ['EARN', 'DRIVE', 'GROW'] : ['FAST', 'SAFE', 'LOCAL']).join('<i>•</i>')}</div></div>`;
+
   K.skyline = function (seed = 7) {
     let x = seed; const rnd = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
     let blds = '', wins = '', px = -10;
@@ -191,11 +201,25 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), ms);
   };
 
+  // iOS-style navigation: pages slide in from the right and back out to the right.
+  K.reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  K.pop = (el, after) => {
+    if (!el || el._popping) return; el._popping = true;
+    el.classList.remove('push-in'); el.classList.add('push-out');
+    setTimeout(() => { el.remove(); after && after(); }, K.reduced() ? 0 : 330);
+  };
+
   K.modal = function (html, { drawer = false, onClose } = {}) {
     const ov = document.createElement('div');
     ov.className = 'overlay';
     ov.innerHTML = `<div class="${drawer ? 'drawer' : 'modal'}" role="dialog" aria-modal="true">${html}</div>`;
-    const close = () => { ov.remove(); document.removeEventListener('keydown', esc); onClose && onClose(); };
+    let closed = false;
+    const close = () => {
+      if (closed) return; closed = true;
+      document.removeEventListener('keydown', esc);
+      ov.classList.add('closing');
+      setTimeout(() => { ov.remove(); onClose && onClose(); }, K.reduced() ? 0 : 260);
+    };
     const esc = (e) => { if (e.key === 'Escape') close(); };
     ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-close]')) close(); });
     document.addEventListener('keydown', esc);
@@ -231,6 +255,29 @@
   addEventListener('resize', fitInstalled);
   addEventListener('orientationchange', () => setTimeout(fitInstalled, 300));
 
+  // ---------- the strip below the app (iOS 26) ----------
+  // When iOS cuts the installed app short, the band under it takes the page's
+  // background colour. Keep that colour matched to whatever is at the bottom of
+  // the screen, so the band blends in: dark screens, the map, or the white sheet.
+  const STRIP = { dark: '#0E0E10', map: '#F8F5F0', sheet: '#FDFCFB', page: '#FFFFFF' };
+  let stripRaf;
+  function syncStrip() {
+    cancelAnimationFrame(stripRaf);
+    stripRaf = requestAnimationFrame(() => {
+      const q = (sel) => document.querySelector(sel);
+      let c = STRIP.page;
+      const splash = q('#splash:not(.out)') || q('.splash');
+      if (q('#req') || q('.onboard') || splash) c = STRIP.dark;
+      else if (q('.page:not(.hidden)') || q('.onb')) c = STRIP.page;
+      else if (q('#sheet.collapsed') || (q('#map') && !q('#sheet'))) c = STRIP.map;
+      else if (q('#sheet')) c = STRIP.sheet;
+      document.documentElement.style.backgroundColor = c;
+      document.body.style.backgroundColor = c;
+    });
+  }
+  new MutationObserver(syncStrip).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  syncStrip();
+
   // ---------- screen info (open any page with ?debug=screen to see it) ----------
   // The app runs edge to edge with a normal status bar, so the standard
   // env(safe-area-inset-bottom) spacing lands exactly like native iPhone apps.
@@ -243,12 +290,11 @@
 
   // ---------- launch splash ----------
   const T0 = performance.now();
-  (function () { const sky = document.querySelector('#splash .sky'); if (sky && !sky.firstChild) sky.innerHTML = K.skyline(APP === 'driver' ? 11 : 7); })();
   K.ready = function () {
     const sp = document.getElementById('splash');
     if (!sp || sp.classList.contains('out')) return;
-    const wait = Math.max(0, 1150 - (performance.now() - T0));
-    setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 400); }, wait);
+    const wait = Math.max(0, 2100 - (performance.now() - T0)); // let the logo animation finish
+    setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 800); }, wait);
   };
 
   // ---------- installable app ----------
@@ -276,10 +322,7 @@
   };
 
   // ---------- onboarding, sign up & log in (mockup screens 1–4, 14–16) ----------
-  K.splashMarkup = (driver) => `<div class="sky">${K.skyline(driver ? 11 : 7)}</div>
-    <div class="splash-logo">${K.logo('#FFC400', '#141414', 84)}
-      <div class="splash-word">Kwata${driver ? '<small>Driver</small>' : ''}</div>
-      <div class="splash-tag">${driver ? 'Earn. Drive. Grow.' : 'Move. Deliver. Connect.'}</div></div>`;
+  K.splashMarkup = (driver) => `<div class="splash-glow"></div><div class="splash-logo">${K.wordmark(driver)}</div>`;
 
   // Shrink a photo in the browser so uploads are quick on mobile data.
   K.compressImage = (file, max = 1280, quality = 0.8) => new Promise((resolve, reject) => {
@@ -300,11 +343,12 @@
   const toLocal = (raw) => { const d = String(raw || '').replace(/\D/g, ''); return d.startsWith('256') ? d : d.startsWith('0') ? d : '0' + d; };
 
   K.authScreen = function (root, { role, onDone }) {
-    let draft = {};
+    let draft = {}, dir = 'fwd';
     K.ready();
     const shell = (inner, back) => {
-      root.innerHTML = `<div class="onb onb-enter">${back ? `<div class="onb-top"><button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button></div>` : '<div style="height:20px"></div>'}${inner}</div>`;
-      const b = root.querySelector('[data-back]'); if (b) b.onclick = back;
+      root.innerHTML = `<div class="onb ${dir === 'back' ? 'nav-back' : 'nav-fwd'}">${back ? `<div class="onb-top"><button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button></div>` : '<div style="height:20px"></div>'}${inner}</div>`;
+      dir = 'fwd';
+      const b = root.querySelector('[data-back]'); if (b) b.onclick = () => { dir = 'back'; back(); };
       const f = root.querySelector('form'); if (f) setTimeout(() => { const i = f.querySelector('input'); i && i.focus({ preventScroll: true }); }, 80);
     };
     const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.textContent = on ? 'Please wait…' : btn.dataset.label; };
@@ -315,33 +359,31 @@
     };
 
     // Rider onboarding slides
-    function onboarding() {
-      const slides = [
-        ['Rides, deliveries and more.', 'Fast. Safe. Reliable. Boda, car or parcel, in a few taps.', K.ART.boda],
-        ['Send anything across Kampala.', 'Documents, food, phones. Your parcel is tracked all the way.', K.ART.parcel],
-        ['Safer from the first metre.', 'Every trip starts with your PIN, and family can follow along live.', K.ART.comfort],
-      ];
-      root.innerHTML = `<div class="onboard">
-        <div class="slides" id="sl">${slides.map(([h, p, art], i) => `<div class="slide">
-          <div class="art"><svg viewBox="0 0 390 420" preserveAspectRatio="xMidYMid slice">
-            <foreignObject width="390" height="420"><div xmlns="http://www.w3.org/1999/xhtml" style="width:390px;height:420px;position:relative">
-              <div style="position:absolute;inset:0">${K.skyline(3 + i * 5)}</div>
-              <div style="position:absolute;left:50%;bottom:40px;transform:translateX(-50%);width:300px;height:180px;filter:drop-shadow(0 18px 24px rgba(0,0,0,.55))">${art}</div>
-            </div></foreignObject></svg></div>
-          <h1>${h}</h1><p>${p}</p></div>`).join('')}</div>
-        <div class="dots">${slides.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>
-        <div class="cta"><button class="btn btn-primary btn-block btn-lg" id="go">Get Started</button><button class="btn btn-link" id="li">Log In</button></div></div>`;
+    // Welcome screens: the Kwata rider photo, the wordmark, and swipeable text.
+    const hero = (driver, slides, ctaLabel) => {
+      root.innerHTML = `<div class="onboard hero">
+        <div class="hero-photo"><img src="/img/onboarding.jpg" alt="" decoding="async"></div>
+        <div class="hero-logo">${K.wordmark(driver)}</div>
+        <div class="slides" id="sl">${slides.map(([a, b2, p]) => `<div class="slide"><h1>${a}<br><span>${b2}</span></h1><p>${p}</p></div>`).join('')}</div>
+        ${slides.length > 1 ? `<div class="dots">${slides.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
+        <div class="cta"><button class="btn btn-primary btn-block btn-lg" id="go">${ctaLabel}</button><button class="btn btn-link" id="li">Log In</button></div></div>`;
       const sl = root.querySelector('#sl'), dots = root.querySelectorAll('.dots i');
       sl.addEventListener('scroll', () => { const i = Math.round(sl.scrollLeft / sl.clientWidth); dots.forEach((d, j) => d.classList.toggle('on', i === j)); }, { passive: true });
+    };
+    function onboarding() {
+      hero(false, [
+        ['Rides & deliveries,', 'made simple.', 'Boda, car or parcel across Kampala. Kwata gets you there fast, safe and reliable.'],
+        ['Send anything,', 'tracked all the way.', 'Documents, food, phones. Follow your parcel live from pickup to the door.'],
+        ['Safer from', 'the first metre.', 'Every trip starts with your PIN, and family can follow along live.'],
+      ], 'Get Started');
       const seen = () => { try { localStorage.setItem('kwata_onboarded', '1'); } catch {} };
       root.querySelector('#go').onclick = () => { seen(); signUp(); };
       root.querySelector('#li').onclick = () => { seen(); logIn(); };
     }
 
-    // Driver welcome = splash with buttons (screen 14)
+    // Driver welcome (screen 14)
     function driverWelcome() {
-      root.innerHTML = `<div class="splash" style="position:fixed">${K.splashMarkup(true)}
-        <div class="splash-cta"><button class="btn btn-primary btn-block btn-lg" id="go">Get Started</button><button class="btn btn-link" id="li">Log In</button></div></div>`;
+      hero(true, [['Your boda,', 'your income.', 'Pick up rides and deliveries near you, keep 88% of every fare, and cash out to Mobile Money.']], 'Get Started');
       root.querySelector('#go').onclick = becomeDriver;
       root.querySelector('#li').onclick = logIn;
     }
@@ -448,7 +490,7 @@
     try { state = (await navigator.permissions.query({ name: 'geolocation' })).state; } catch {}
     let asked = false; try { asked = !!localStorage.getItem('kwata_loc_asked'); } catch {}
     if (state !== 'prompt' || asked || !navigator.geolocation) return resolve();
-    root.innerHTML = `<div class="onb onb-enter" style="text-align:center">
+    root.innerHTML = `<div class="onb nav-fwd" style="text-align:center">
       <div class="illu">${K.ic('pin').replace('class="i "', 'class="i" style="width:64px;height:64px;stroke-width:1.6"')}</div>
       <h1>Allow location access</h1>
       <p class="lead" style="max-width:30ch;margin:0 auto">We need your location to find the nearest drivers and give you the best service.</p>
@@ -469,7 +511,7 @@
       try { info = await K.api('/driver/documents'); } catch {}
       const kinds = Object.keys(info.kinds);
       const allDone = kinds.every((k) => info.uploaded[k]);
-      root.innerHTML = `<div class="onb onb-enter">${back ? `<div class="onb-top"><button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button></div>` : '<div style="height:20px"></div>'}
+      root.innerHTML = `<div class="onb nav-fwd">${back ? `<div class="onb-top"><button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button></div>` : '<div style="height:20px"></div>'}
         <h1>Verify your identity</h1><p class="lead">Upload the required documents to get verified.</p>
         ${kinds.map((k) => `<label class="doc ${info.uploaded[k] ? 'done' : ''}" for="f-${k}" style="margin:0 0 10px">
           <span class="ic">${K.ic(ICON[k] || 'camera')}</span><span class="grow"><span style="display:block">${K.esc(info.kinds[k])}</span><span class="tiny muted" style="font-weight:500">${HINT[k] || ''}</span></span>
@@ -604,7 +646,8 @@
     if (sheet._drag) return;
     sheet._drag = true;
     let startY = 0, startOff = 0, off = 0, dragging = false, moved = false;
-    const peek = () => Math.max(0, sheet.offsetHeight - 132);
+    // Collapsed, the sheet still shows its top (grabber + first row) above the floating tab bar.
+    const peek = () => Math.max(0, sheet.offsetHeight - 132 - (parseFloat(sheet.style.paddingBottom) || 0));
     const set = (v, anim) => {
       off = Math.max(0, Math.min(peek(), v));
       sheet.style.transition = anim ? 'transform .3s cubic-bezier(.2,.8,.2,1)' : 'none';

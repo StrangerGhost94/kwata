@@ -422,7 +422,7 @@
     S.chatOpen = true; S.unread = 0;
     const r = S.trip.rider;
     const page = document.createElement('div');
-    page.className = 'page page-enter'; page.style.zIndex = 870;
+    page.className = 'page push-in'; page.style.zIndex = 870;
     page.style.paddingBottom = 'calc(12px + env(safe-area-inset-bottom))';
     page.innerHTML = `<div class="page-inner chat">
       <div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Close chat">${K.ic('back')}</button>
@@ -433,7 +433,7 @@
       <form class="chat-input" id="cf"><input id="ci" placeholder="Message ${K.esc(K.first(r.name))}" autocomplete="off" aria-label="Message"><button class="btn btn-primary icon-btn" aria-label="Send">${K.ic('send')}</button></form></div>`;
     root.querySelector('#app').appendChild(page);
     const send = (text) => sock.emit('chat:send', { tripId: S.trip.id, text }, (res) => { if (!res.ok) K.toast(res.error || 'Message not sent'); });
-    K.$('[data-x]', page).onclick = () => { page.remove(); S.chatOpen = false; if (S.trip && S.trip.status !== 'completed') vTrip(); };
+    K.$('[data-x]', page).onclick = () => { S.chatOpen = false; K.pop(page, () => { if (S.trip && S.trip.status !== 'completed') vTrip(); }); };
     page.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => send(b.dataset.q));
     K.$('#cf', page).onsubmit = (e) => { e.preventDefault(); const v = K.$('#ci', page).value.trim(); if (v) { send(v); K.$('#ci', page).value = ''; } };
     drawChat();
@@ -453,7 +453,7 @@
     document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
     if (tab === 'home') { if (!S.trip && sheet) vHome(); return; }
     const page = document.createElement('div');
-    page.className = 'page'; page.dataset.tabpage = tab;
+    page.className = 'page tab-in'; page.dataset.tabpage = tab;
     page.innerHTML = '<div class="page-inner"><p class="muted">Loading…</p></div>';
     root.querySelector('#app').insertBefore(page, K.$('#tabs'));
     (tab === 'earnings' ? drawEarnings : drawProfile)(page.firstElementChild);
@@ -520,9 +520,9 @@
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => ({
       trips: openTrips,
       docs: () => {
-        const host = document.createElement('div'); host.className = 'page'; host.style.zIndex = 870; host.style.padding = 0;
+        const host = document.createElement('div'); host.className = 'page push-in'; host.style.zIndex = 870; host.style.padding = 0;
         root.querySelector('#app').appendChild(host);
-        K.verifyDocs(host, { onDone: () => host.remove(), back: () => host.remove() });
+        K.verifyDocs(host, { onDone: () => K.pop(host), back: () => K.pop(host) });
       },
       manual: () => { if (S.manual) { S.manual = false; startGps(); } else { S.manual = true; navigator.geolocation && navigator.geolocation.clearWatch(watchId); K.toast('Tap the map to move your position.'); } openTab('home'); },
       out: () => { if (S.online) setOnline(false); K.session.clear(); location.reload(); },

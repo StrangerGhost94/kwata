@@ -21,10 +21,14 @@
 </head>
 <body data-app="rider">
 <div id="splash" class="splash" aria-label="Loading Kwata">
-  <div class="sky"></div>
-  <div class="splash-logo"><svg class="pin" width="84" height="84" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 3C19.3 3 9 13.1 9 25.6 9 42 32 61 32 61s23-19 23-35.4C55 13.1 44.7 3 32 3z" fill="#FFC400"/><path d="M25.5 14v23M25.5 27.5 37.5 14M29.5 23.5l9 13.5" stroke="#141414" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-    <div class="splash-word">Kwata</div>
-    <div class="splash-tag">Move. Deliver. Connect.</div></div>
+  <div class="splash-glow"></div>
+  <div class="splash-logo"><div class="wm" aria-label="Kwata">
+    <div class="wm-row"><svg class="wm-k " viewBox="0 0 140 100" aria-hidden="true">
+    <defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs>
+    <g class="wm-lines" fill="url(#kg)"><path class="l1" d="M14 18H46L43 28H11Z"/><path class="l2" d="M6 38H42L39 48H3Z"/><path class="l3" d="M14 58H38L35 68H11Z"/></g>
+    <g class="wm-body" fill="url(#kg)"><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg><span class="wm-t">wata</span></div>
+    
+    <div class="wm-tag">FAST<i>•</i>SAFE<i>•</i>LOCAL</div></div></div>
 </div>
 <div id="root"></div>
 <script src="/vendor/leaflet/leaflet.js"></script>

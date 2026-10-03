@@ -220,7 +220,7 @@
     if (opts.preset) { chooseDrop(opts.preset); return; }
     const saveAs = opts.saveAs;
     const page = document.createElement('div');
-    page.className = 'page page-enter';
+    page.className = 'page push-in';
     page.style.zIndex = 870;
     page.innerHTML = `<div class="page-inner">
       <div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Close">${K.ic('back')}</button>
@@ -236,7 +236,7 @@
     let target = 'drop';
     const res = K.$('#res', page);
     const qDrop = K.$('#qDrop', page), qPick = K.$('#qPick', page);
-    const close = () => page.remove();
+    const close = () => K.pop(page);
     K.$('[data-x]', page).onclick = close;
 
     const rows = (items, iconFn) => items.map((p, i) => `<button class="lrow" data-i="${i}"><span class="ic">${K.ic(iconFn ? iconFn(p) : 'pin')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(p.name)}</span><span class="s ellipsis" style="display:block">${K.esc(p.address || '')}</span></span>${S.pickup && p.lat ? `<span class="tiny faint">${K.km(S.pickup, p).toFixed(1)} km</span>` : ''}</button>`).join('');
@@ -685,7 +685,7 @@
     S.chatOpen = true; S.unread = 0; updateUnread();
     const d = S.trip.driver;
     const page = document.createElement('div');
-    page.className = 'page page-enter'; page.id = 'chatPage'; page.style.zIndex = 870;
+    page.className = 'page push-in'; page.id = 'chatPage'; page.style.zIndex = 870;
     page.style.paddingBottom = 'calc(12px + env(safe-area-inset-bottom))';
     page.innerHTML = `<div class="page-inner chat">
       <div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Close chat">${K.ic('back')}</button>
@@ -696,7 +696,7 @@
       <form class="chat-input" id="cf"><input id="ci" placeholder="Message ${K.esc(K.first(d.name))}" autocomplete="off" aria-label="Message"><button class="btn btn-primary icon-btn" aria-label="Send">${K.ic('send')}</button></form></div>`;
     root.querySelector('#app').appendChild(page);
     const send = (text) => sock.emit('chat:send', { tripId: S.trip.id, text }, (r) => { if (!r.ok) K.toast(r.error || 'Message not sent'); });
-    K.$('[data-x]', page).onclick = () => { page.remove(); S.chatOpen = false; updateUnread(); };
+    K.$('[data-x]', page).onclick = () => { S.chatOpen = false; updateUnread(); K.pop(page); };
     page.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => send(b.dataset.q));
     K.$('#cf', page).onsubmit = (e) => { e.preventDefault(); const v = K.$('#ci', page).value.trim(); if (v) { send(v); K.$('#ci', page).value = ''; } };
     drawChat();
@@ -759,7 +759,7 @@
     document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
     if (tab === 'home') return;
     const page = document.createElement('div');
-    page.className = 'page'; page.dataset.tabpage = tab;
+    page.className = 'page tab-in'; page.dataset.tabpage = tab;
     page.innerHTML = '<div class="page-inner"><p class="muted">Loading…</p></div>';
     root.querySelector('#app').insertBefore(page, K.$('#tabs'));
     (tab === 'activity' ? drawActivity : drawAccount)(page.firstElementChild);
@@ -767,11 +767,11 @@
 
   function subPage(title, onBack) {
     const page = document.createElement('div');
-    page.className = 'page page-enter'; page.style.zIndex = 860;
+    page.className = 'page push-in'; page.style.zIndex = 860;
     page.innerHTML = `<div class="page-inner"><div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Back">${K.ic('back')}</button><h2>${title}</h2></div><div data-body></div></div>`;
     root.querySelector('#app').appendChild(page);
-    K.$('[data-x]', page).onclick = () => { page.remove(); onBack && onBack(); };
-    return { page, body: K.$('[data-body]', page), close: () => page.remove() };
+    K.$('[data-x]', page).onclick = () => K.pop(page, onBack);
+    return { page, body: K.$('[data-body]', page), close: () => K.pop(page) };
   }
 
   async function drawActivity(el, filter = 'all') {

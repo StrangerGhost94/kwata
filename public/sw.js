@@ -1,11 +1,11 @@
 // Kwata service worker: opens instantly from the home screen and shows a
 // friendly screen when there's no connection. Bump VERSION on each release.
-const VERSION = 'kwata-v18';
+const VERSION = 'kwata-v21';
 const SHELL = [
   '/', '/driver', '/offline.html', '/css/app.css', '/js/common.js', '/js/rider.js', '/js/driver.js',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
   '/vendor/maplibre/maplibre-gl.js', '/vendor/maplibre/maplibre-gl.css', '/vendor/maplibre-leaflet/leaflet-maplibre-gl.js',
-  '/icons/icon-192.png', '/icons/driver-192.png', '/img/vehicles/boda.png', '/img/vehicles/car.png', '/img/vehicles/comfort.png', '/img/vehicles/parcel.png', '/img/vehicles/airport.png', '/manifest.json', '/manifest-driver.json',
+  '/icons/icon-192.png', '/icons/driver-192.png', '/img/onboarding.jpg', '/img/vehicles/boda.png', '/img/vehicles/car.png', '/img/vehicles/comfort.png', '/img/vehicles/parcel.png', '/img/vehicles/airport.png', '/manifest.json', '/manifest-driver.json',
 ];
 
 self.addEventListener('install', (e) => {
