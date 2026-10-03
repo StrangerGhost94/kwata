@@ -28,7 +28,7 @@
   --font: 'Inter', ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --r: 14px; --r-lg: 22px; --r-pill: 999px;
   color-scheme: light;
-  --sab: max(0px, calc(env(safe-area-inset-bottom) - 14px));
+  --sab: max(0px, calc(env(safe-area-inset-bottom) - 30px));
   /* aliases used by older pages */
   --gold: var(--brand); --lake: var(--ink); --mist: var(--surface); --vest: var(--brand); --vest-ink: var(--brand-ink);
   --display: var(--font); --body: var(--font);
@@ -593,4 +593,5 @@ input::placeholder { color: var(--ink-3); }
 /* The app shell is pinned to the real screen edges (no vh maths, which iOS gets wrong in installed apps) */
 html, body { background: var(--bg); overscroll-behavior: none; }
 body[data-app="rider"], body[data-app="driver"] { -webkit-text-size-adjust: 100%; }
-.tabbar svg.i { width: 24px; height: 24px; }
+.tabbar svg.i { width: 26px; height: 26px; }
+.tabbar button { padding: 7px 0 4px; gap: 2px; font-size: .7rem; }

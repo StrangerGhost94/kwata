@@ -260,7 +260,7 @@
       const portrait = innerHeight >= innerWidth;
       const screenH = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
       const lost = standalone ? Math.max(0, screenH - innerHeight) : 0; // screen the page doesn't reach
-      const pad = Math.max(0, inset - lost - 14);
+      const pad = Math.max(0, inset - lost - 30); // matches Apple's own tab bars
       document.documentElement.style.setProperty('--sab', pad + 'px');
       K.screenInfo = { inset, lost, pad, standalone, innerHeight, screenH };
     } catch {}
