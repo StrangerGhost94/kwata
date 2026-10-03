@@ -833,3 +833,12 @@ html.standalone .auth2 { min-height: 100%; }
 .spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(0,0,0,.2); border-top-color: currentColor; animation: spin .7s linear infinite; display: inline-block; }
 @media (max-height: 720px) { .auth-hero { height: 24vh; min-height: 160px; } .auth-logo { font-size: 38px; top: calc(env(safe-area-inset-top) + 14px); } .auth-body .lead { margin-bottom: 10px; } }
 @media (min-width: 760px) { .auth-card { border-radius: 28px; margin: -28px auto 24px; width: 480px; flex: none; } }
+
+/* ---------- Skeleton placeholders ---------- */
+.sk { display: block; border-radius: 10px; background: linear-gradient(90deg, #EFEFF2 0%, #F7F7F9 40%, #EFEFF2 80%); background-size: 300% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+.sk-card { display: flex; gap: 12px; align-items: center; border: 1.5px solid var(--line); border-radius: 16px; padding: 12px 14px; margin-top: 12px; }
+.sk-ic { width: 46px; height: 46px; border-radius: 12px; flex: none; }
+.sk-chart { display: flex; align-items: flex-end; gap: 10px; height: 130px; margin-top: 22px; }
+.sk-chart .sk { flex: 1; border-radius: 6px 6px 2px 2px; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }

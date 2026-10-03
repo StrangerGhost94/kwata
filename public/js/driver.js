@@ -15,7 +15,7 @@
   const customer = (t) => (t.service === 'parcel' ? 'sender' : 'customer');
 
   async function start() {
-    root.innerHTML = '<div class="onb"><p class="muted" style="margin:auto">Loading…</p></div>';
+    root.innerHTML = '<div class="onb"></div>'; // the opening animation covers this moment
     let me0, config, docs;
     try { [me0, config, docs] = await Promise.all([K.api('/me'), K.api('/config'), K.api('/driver/documents').catch(() => ({ uploaded: {} }))]); }
     catch (e) { K.ready(); root.innerHTML = `<div class="onb"><p class="error">${K.esc(e.message)}</p><button class="btn btn-block" onclick="location.reload()">Try again</button></div>`; return; }
@@ -454,13 +454,15 @@
     if (tab === 'home') { if (!S.trip && sheet) vHome(); return; }
     const page = document.createElement('div');
     page.className = 'page tab-in'; page.dataset.tabpage = tab;
-    page.innerHTML = '<div class="page-inner"><p class="muted">Loading…</p></div>';
+    page.innerHTML = `<div class="page-inner">${K.skeleton(tab === 'earnings' ? 'earnings' : 'title-list')}</div>`;
     root.querySelector('#app').insertBefore(page, K.$('#tabs'));
     (tab === 'earnings' ? drawEarnings : drawProfile)(page.firstElementChild);
   }
 
-  async function drawEarnings(el) {
-    await loadEarnings();
+  // Earnings were loaded when the app opened: show them instantly, refresh in the background.
+  async function drawEarnings(el, fresh = false) {
+    if (!S.earnings || fresh) await loadEarnings();
+    else loadEarnings().then(() => { if (el.isConnected && !el._refreshed) { el._refreshed = true; drawEarnings(el, false); } });
     const e = S.earnings;
     if (!e) { el.innerHTML = '<p class="error">Couldn’t load earnings. Check your connection.</p>'; return; }
     const max = Math.max(1, ...e.days.map((d) => d.net));
@@ -530,8 +532,9 @@
   }
 
   async function openTrips() {
-    const m = K.modal('<p class="muted">Loading…</p>');
+    const m = K.modal(`<h2>Trip history</h2>${K.skeleton('list', 4)}`);
     const list = await K.api('/trips/history').catch(() => []);
+    if (!m.el.isConnected) return;
     m.el.innerHTML = `<h2>Trip history</h2>
       ${list.length ? list.map((t) => `<div class="trip-card"><span class="ic">${K.artFor(t.service)}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(String(t.drop.address).split(',')[0])}</span><span class="s">${K.when(t.createdAt)} · ${K.PAY_LABEL[t.paymentMethod]}</span></span>
         <span class="p">${t.status === 'completed' ? K.ugx(t.earning) : `<span class="badge bad">${t.status.replace('_', ' ')}</span>`}</span></div>`).join('') : '<p class="muted">Go online to get your first trip.</p>'}`;

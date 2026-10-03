@@ -54,7 +54,7 @@
     try {
       const [me, config, active, hist] = await Promise.all([K.api('/me'), K.api('/config'), K.api('/trips/active'), K.api('/trips/history').catch(() => [])]);
       S.user = me.user; S.config = config;
-      buildRecent(hist);
+      S.history = hist || []; buildRecent(hist);
       sock = K.socket(K.token());
       sock.on('trip:update', onTrip);
       sock.on('driver:location', (p) => { if (S.trip && p.tripId === S.trip.id) moveDriver(p); });
@@ -746,7 +746,7 @@
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
     clearRoute();
     K.api('/me').then((m) => { S.user = m.user; }).catch(() => {});
-    K.api('/trips/history').then((h) => { buildRecent(h); if (S.view === 'home') render(); }).catch(() => {});
+    K.api('/trips/history').then((h) => { S.history = h; buildRecent(h); if (S.view === 'home') render(); }).catch(() => {});
     if (S.gps) { S.pickup = { ...S.gps, address: 'Current location', short: 'Current location' }; map.setView([S.gps.lat, S.gps.lng], 16); setPickup(S.gps.lat, S.gps.lng, 'Current location'); }
     else if (S.pickup) map.setView([S.pickup.lat, S.pickup.lng], 16);
     render();
@@ -760,7 +760,7 @@
     if (tab === 'home') return;
     const page = document.createElement('div');
     page.className = 'page tab-in'; page.dataset.tabpage = tab;
-    page.innerHTML = '<div class="page-inner"><p class="muted">Loading…</p></div>';
+    page.innerHTML = `<div class="page-inner">${K.skeleton('title-list')}</div>`;
     root.querySelector('#app').insertBefore(page, K.$('#tabs'));
     (tab === 'activity' ? drawActivity : drawAccount)(page.firstElementChild);
   }
@@ -774,9 +774,18 @@
     return { page, body: K.$('[data-body]', page), close: () => K.pop(page) };
   }
 
-  async function drawActivity(el, filter = 'all') {
-    let list = [];
-    try { list = await K.api('/trips/history'); } catch (e) { el.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; return; }
+  // Shows saved trips instantly, then quietly refreshes from the server.
+  async function drawActivity(el, filter = 'all', fresh = false) {
+    if (!fresh && S.history) {
+      paintActivity(el, filter, S.history);
+      K.api('/trips/history').then((h) => { const changed = JSON.stringify(h) !== JSON.stringify(S.history); S.history = h; if (changed && el.isConnected) paintActivity(el, el.dataset.filter || filter, h); }).catch(() => {});
+      return;
+    }
+    try { S.history = await K.api('/trips/history'); } catch (e) { el.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; return; }
+    paintActivity(el, filter, S.history);
+  }
+  function paintActivity(el, filter, list) {
+    el.dataset.filter = filter;
     const shown = list.filter((t) => filter === 'all' || (filter === 'parcel' ? t.service === 'parcel' : t.service !== 'parcel'));
     const st = (t) => ({ completed: ['Completed', 'ok'], cancelled: ['Cancelled', 'bad'], no_drivers: ['No driver found', 'bad'] }[t.status] || [t.status.replace('_', ' '), 'warn']);
     el.innerHTML = `<div class="page-title">Activity</div>
@@ -787,7 +796,7 @@
           <span class="s" style="display:block">${K.when(t.createdAt)}</span><span class="badge ${st(t)[1]}" style="margin-top:4px">${st(t)[0]}</span></span>
         <span class="p">${K.ugx(t.fare)}</span></button>`).join('')
       : `<div class="empty"><div class="illu">${K.ART[filter === 'parcel' ? 'parcel' : 'boda']}</div><h3>No ${filter === 'parcel' ? 'deliveries' : 'trips'} yet</h3><p class="small">Your ${filter === 'parcel' ? 'deliveries' : 'rides and deliveries'} will show here.</p><button class="btn btn-primary" id="first">${filter === 'parcel' ? 'Send a parcel' : 'Book a ride'}</button></div>`}`;
-    el.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => drawActivity(el, b.dataset.f));
+    el.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => paintActivity(el, b.dataset.f, S.history || []));
     el.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => tripDetails(shown[+b.dataset.t]));
     const f = K.$('#first', el); if (f) f.onclick = () => { openTab('home'); if (filter === 'parcel') setService('parcel'); openSearch(); };
   }
@@ -862,8 +871,9 @@
   }
 
   async function openWallet(after) {
-    const m = K.modal('<p class="muted">Loading wallet…</p>');
-    const w = await K.api('/wallet');
+    const m = K.modal(`<h2>Kwata Wallet</h2><p class="money">${K.ugx(S.user.walletBalance)}</p>${K.skeleton('list', 3)}`);
+    let w; try { w = await K.api('/wallet'); } catch (e) { K.$('.sk-card', m.el) && (m.el.querySelectorAll('.sk-card').forEach((x) => x.remove())); return; }
+    if (!m.el.isConnected) return;
     m.el.innerHTML = `
       <h2>Kwata Wallet</h2>
       <p class="money">${K.ugx(w.balance)}</p>

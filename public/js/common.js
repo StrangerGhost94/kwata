@@ -713,6 +713,15 @@
   K.tabSpace = () => { const t = document.getElementById('tabs'); if (!t || t.classList.contains('hidden')) return 0; return Math.max(0, innerHeight - t.getBoundingClientRect().top) + 8; };
   K.underTabs = (sheet, on) => { sheet.style.bottom = ''; sheet.style.paddingBottom = on ? K.tabSpace() + 'px' : ''; };
 
+  // Skeleton placeholders (soft shimmering shapes) instead of "Loading…" text.
+  K.skeleton = (kind = 'list', n = 4) => {
+    const line = (w, h = 12, mt = 8) => `<i class="sk" style="width:${w};height:${h}px;margin-top:${mt}px"></i>`;
+    const card = () => `<div class="sk-card"><i class="sk sk-ic"></i><span class="grow">${line('62%', 13, 0)}${line('38%', 10)}</span><i class="sk" style="width:64px;height:14px"></i></div>`;
+    if (kind === 'title-list') return `${line('46%', 30, 6)}${line('58%', 34, 16)}${Array.from({ length: n }, card).join('')}`;
+    if (kind === 'earnings') return `${line('44%', 30, 6)}${line('52%', 34, 16)}${line('60%', 34, 18)}<div class="sk-chart">${[40, 65, 30, 80, 55, 20, 90].map((h) => `<i class="sk" style="height:${h}%"></i>`).join('')}</div>${Array.from({ length: 3 }, () => line('100%', 14, 18)).join('')}`;
+    return Array.from({ length: n }, card).join('');
+  };
+
   K.SERVICE_LABEL = { boda: 'Boda', car: 'Car', comfort: 'Comfort', parcel: 'Parcel', airport: 'Airport' };
   K.PAY_LABEL = { cash: 'Cash', wallet: 'Kwata Wallet', momo: 'Mobile Money', card: 'Card' };
   K.PAY_ICON = { cash: 'cash', wallet: 'wallet', momo: 'momo', card: 'card' };

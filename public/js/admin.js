@@ -34,7 +34,7 @@
     clearInterval(liveTimer);
     root.querySelectorAll('[data-t]').forEach((b) => b.setAttribute('aria-current', b.dataset.t === tab ? 'page' : 'false'));
     const main = K.$('#main');
-    main.innerHTML = '<p class="muted">Loading…</p>';
+    main.innerHTML = K.skeleton('title-list', 5);
     ({ overview, drivers, riders, trips, pricing, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
   }
 
@@ -102,7 +102,7 @@
   }
 
   async function showDocs(id, name, status) {
-    const m = K.modal('<p class="muted">Loading documents…</p>');
+    const m = K.modal(`<h2>${name}</h2><div class="doc-thumbs"><i class="sk" style="height:180px"></i><i class="sk" style="height:180px"></i></div>`);
     try {
       const docs = await K.api(`/admin/drivers/${id}/documents`);
       m.el.innerHTML = `<h2>${name}</h2><p class="small muted">Check that the name, photo and number plate match before approving.</p>
