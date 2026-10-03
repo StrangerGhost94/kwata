@@ -6,6 +6,7 @@ const auth = require('./auth');
 const rt = require('./realtime');
 const ledger = require('./ledger');
 const payments = require('./payments');
+const growth = require('./growth');
 const { getSettings, updateSettings, quote } = require('./pricing');
 const surge = require('./surge');
 const { haversineKm: haversine } = require('./pricing');
@@ -45,6 +46,7 @@ r.get('/config', wrap(async (req, res) => {
     commissionPct: s.commissionPct,
     supportPhone: s.supportPhone,
     minWithdrawal: s.minWithdrawal,
+    growth: { firstRide: s.growth.firstRide, referral: s.growth.referral, rewards: s.growth.rewards },
   });
 }));
 
@@ -99,8 +101,17 @@ async function createAccount(body, role, { approved = false } = {}) {
 r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
   const role = (req.body || {}).role || 'rider';
   if (!['rider', 'driver'].includes(role)) return bad(res, 'Invalid account type.');
+  let referrer = null;
+  if (role === 'rider' && req.body.inviteCode) {
+    referrer = await growth.userByReferral(req.body.inviteCode);
+    if (!referrer) return bad(res, 'That invite code isn’t valid. Check it, or leave it empty.');
+  }
   const out = await createAccount(req.body, role);
   if (out.error) return bad(res, out.error);
+  if (role === 'rider') {
+    if (referrer) await db.query('UPDATE users SET referred_by = $1 WHERE id = $2', [referrer.id, out.user.id]);
+    out.user.referral_code = await growth.ensureReferralCode(out.user);
+  }
   if (role === 'driver') rt.io.to('admin').emit('admin:new_driver', { id: out.user.id, name: out.user.name });
   res.json({ token: auth.sign(out.user), user: auth.publicUser(out.user) });
 }));
@@ -211,8 +222,16 @@ r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
     const near = rt.nearbyDrivers(pickup.lat, pickup.lng, o.id)[0];
     o.etaMin = near ? Math.max(2, Math.round(((near.km * 1.3) / 20) * 60)) : null;
   }
+  // Discounts (first ride or promo code). Kwata pays them; the driver still earns on the full fare.
+  const code = req.body.promoCode ? String(req.body.promoCode).trim().toUpperCase() : null;
+  for (const o of q.options) {
+    const d = await growth.discountFor(req.user.id, o.id, o.fare, code);
+    o.discount = d.discount || 0; o.payable = o.fare - o.discount; o.promoLabel = d.label || null; o.promoCode = d.code || null;
+    if (d.error || d.promoError) q.promoError = q.promoError || d.error || d.promoError;
+  }
+  q.promoCode = code;
   // Lock these prices for 2 minutes: booking within that time pays exactly this.
-  q.quoteId = surge.saveQuote({ userId: req.user.id, pickup, drop, km: q.distanceKm, options: q.options.map((o) => ({ id: o.id, fare: o.fare, durationMin: o.durationMin, surge: o.surge })) });
+  q.quoteId = surge.saveQuote({ userId: req.user.id, pickup, drop, km: q.distanceKm, promoCode: code, options: q.options.map((o) => ({ id: o.id, fare: o.fare, regularFare: o.regularFare, durationMin: o.durationMin, surge: o.surge })) });
   q.lockedForSec = 120;
   res.json(q);
 }));
@@ -251,26 +270,48 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   if (!svc || !svc.enabled) return bad(res, 'That ride type is not available.');
   if (!['cash', 'wallet', 'momo', 'card'].includes(paymentMethod)) return bad(res, 'Choose a payment method.');
 
-  const busy = await db.one(
-    "SELECT id FROM trips WHERE rider_id = $1 AND status IN ('requested','accepted','arrived','in_progress')", [req.user.id]);
-  if (busy) return bad(res, 'You already have a trip in progress.');
+  // Scheduled ride: between 20 minutes and 7 days ahead.
+  let scheduledFor = null;
+  if (req.body.scheduledFor) {
+    const when = new Date(req.body.scheduledFor);
+    const ahead = when.getTime() - Date.now();
+    if (!Number.isFinite(ahead) || ahead < 19 * 60e3 || ahead > 7 * 86400e3) return bad(res, 'Schedule between 20 minutes and 7 days from now.');
+    scheduledFor = when;
+  }
+  if (!scheduledFor) {
+    const busy = await db.one(
+      "SELECT id FROM trips WHERE rider_id = $1 AND status IN ('requested','accepted','arrived','in_progress')", [req.user.id]);
+    if (busy) return bad(res, 'You already have a trip in progress.');
+  } else {
+    const n = await db.one("SELECT COUNT(*)::int AS n FROM trips WHERE rider_id = $1 AND status = 'scheduled'", [req.user.id]);
+    if (n.n >= 3) return bad(res, 'You can have up to 3 scheduled rides.');
+  }
+  // Booking for someone else
+  let passengerJson = null;
+  if (req.body.passenger && req.body.passenger.name) {
+    const pp = auth.normalizePhone(req.body.passenger.phone);
+    if (!pp) return bad(res, 'Enter the passenger’s phone number so the driver can call them.');
+    passengerJson = JSON.stringify({ name: String(req.body.passenger.name).trim().slice(0, 60), phone: pp });
+  }
 
   // Upfront, locked price: use the quote the rider saw if it is still valid,
   // otherwise price it now and make sure the rider isn't surprised by a jump.
   let km, min, fare;
   const locked = surge.getQuote(req.body.quoteId, req.user.id);
   const lockedOpt = locked && haversine(locked.pickup, pickup) < 0.15 && haversine(locked.drop, drop) < 0.15 && locked.options.find((o) => o.id === service);
-  if (lockedOpt) { km = locked.km; min = lockedOpt.durationMin; fare = lockedOpt.fare; }
+  if (lockedOpt) { km = locked.km; min = lockedOpt.durationMin; fare = scheduledFor ? lockedOpt.regularFare : lockedOpt.fare; }
   else {
     const q = await quote(pickup, drop, distanceKm, durationMin);
     const o = q.options.find((x) => x.id === service);
-    km = q.distanceKm; min = o.durationMin; fare = o.fare;
+    km = q.distanceKm; min = o.durationMin; fare = scheduledFor ? o.regularFare : o.fare; // scheduled rides never surge
     const expected = Number(req.body.expectedFare);
     if (expected > 0 && fare > expected * 1.05 + 100) {
       return res.status(409).json({ error: `Prices have just changed. ${svc.name.replace('Kwata ', '')} is now UGX ${fare.toLocaleString()}.`, code: 'PRICE_CHANGED', fare });
     }
   }
-  if (paymentMethod === 'wallet' && req.user.wallet_balance < fare) {
+  const promo = await growth.discountFor(req.user.id, service, fare, req.body.promoCode || (locked && locked.promoCode));
+  const discount = promo.discount || 0;
+  if (paymentMethod === 'wallet' && req.user.wallet_balance < fare - discount) {
     return bad(res, `Your wallet has UGX ${req.user.wallet_balance.toLocaleString()}. Top up or choose another payment method.`);
   }
 
@@ -284,16 +325,18 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
 
   const pin = String(crypto.randomInt(1000, 10000));
   const share = crypto.randomBytes(12).toString('base64url');
+  const dropCode = service === 'parcel' ? String(crypto.randomInt(1000, 10000)) : null; // recipient gives this to the rider
   const t = await db.one(`
     INSERT INTO trips(rider_id, service, pickup_lat, pickup_lng, pickup_address, drop_lat, drop_lng, drop_address,
-      distance_km, duration_min, fare, payment_method, pin, share_token, parcel, notes)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+      distance_km, duration_min, fare, payment_method, pin, share_token, parcel, notes,
+      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
   [req.user.id, service, pickup.lat, pickup.lng, pickup.address, drop.lat, drop.lng, drop.address,
-    km, min, fare, paymentMethod, pin, share, parcelJson, notes ? String(notes).slice(0, 200) : null]);
+    km, min, fare, paymentMethod, pin, share, parcelJson, notes ? String(notes).slice(0, 200) : null,
+    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested']);
 
-  surge.recordRequest(service, pickup.lat, pickup.lng);
   if (req.body.quoteId) surge.dropQuote(req.body.quoteId);
-  rt.dispatch(t.id).catch(console.error);
+  if (!scheduledFor) { surge.recordRequest(service, pickup.lat, pickup.lng); rt.dispatch(t.id).catch(console.error); }
   const full = await rt.loadTrip(t.id);
   rt.io.to('admin').emit('admin:trip', rt.view(full, 'admin'));
   res.json(rt.view(full, 'rider'));
@@ -332,7 +375,7 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
   const role = req.user.role;
   const t = await ownTrip(req, res, role);
   if (!t) return;
-  const allowed = role === 'rider' ? ['requested', 'accepted', 'arrived'] : ['accepted', 'arrived'];
+  const allowed = role === 'rider' ? ['scheduled', 'requested', 'accepted', 'arrived'] : ['accepted', 'arrived'];
   if (!allowed.includes(t.status)) return bad(res, 'This trip can no longer be cancelled.');
   if (role === 'driver') {
     // Don't strand the rider: put the request back and find another driver.
@@ -387,7 +430,7 @@ r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
   if (!t) return;
   if (t.status !== 'completed' || t.payment_status === 'paid') return bad(res, 'Nothing to pay on this trip.');
   if (!['momo', 'card'].includes(t.payment_method)) return bad(res, 'This trip is paid in cash or wallet.');
-  const out = await payments.createCheckout({ user: req.user, amount: t.fare, purpose: 'trip', tripId: t.id, method: t.payment_method, baseUrl: baseUrl(req) });
+  const out = await payments.createCheckout({ user: req.user, amount: t.fare - (t.discount || 0), purpose: 'trip', tripId: t.id, method: t.payment_method, baseUrl: baseUrl(req) });
   if (out.demo) await rt.broadcast(t.id);
   res.json(out);
 }));
@@ -423,13 +466,77 @@ r.post('/trips/:id/complete', auth.requireAuth('driver'), wrap(async (req, res) 
   const t = await ownTrip(req, res, 'driver');
   if (!t) return;
   if (t.status !== 'in_progress') return bad(res, 'Start the trip first.');
+  if (t.drop_code && String((req.body || {}).code || '').trim() !== t.drop_code) {
+    return bad(res, 'Wrong delivery code. Ask the recipient for the 4-digit code the sender shared with them.');
+  }
+  let settled;
   await db.tx(async (tx) => {
     const fresh = await tx.one("UPDATE trips SET status = 'completed', completed_at = NOW() WHERE id = $1 AND status = 'in_progress' RETURNING *", [t.id]);
-    if (fresh) await ledger.settleCompletedTrip(tx, fresh);
+    if (fresh) settled = await ledger.settleCompletedTrip(tx, fresh);
   });
   rt.setDriverFree(req.user.id);
   await rt.broadcast(t.id);
+  if (settled && settled.referral && settled.referral.referrerReward) {
+    rt.notify(settled.referral.referrerId, 'toast', { text: `🎉 Your friend took their first Kwata trip. UGX ${settled.referral.referrerReward.toLocaleString()} added to your wallet.` });
+  }
   res.json({ ok: true });
+}));
+
+// ---------- Tips ----------
+r.post('/trips/:id/tip', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'rider');
+  if (!t) return;
+  if (t.status !== 'completed' || !t.driver_id) return bad(res, 'You can tip after the trip.');
+  if (t.tip) return bad(res, 'You already tipped on this trip. Thank you!');
+  const amount = Math.round(Number(req.body.amount));
+  const method = req.body.method === 'wallet' ? 'wallet' : 'cash';
+  if (!(amount >= 500 && amount <= 50000)) return bad(res, 'Tips are between UGX 500 and 50,000.');
+  let out;
+  await db.tx(async (tx) => { out = await ledger.tipDriver(tx, t, amount, method); });
+  if (out.error) return bad(res, out.error);
+  rt.notify(t.driver_id, 'toast', { text: `💛 ${String(req.user.name).split(' ')[0]} tipped you UGX ${amount.toLocaleString()}${method === 'cash' ? ' in cash' : ''}` });
+  await rt.broadcast(t.id);
+  res.json({ ok: true });
+}));
+
+// ---------- Scheduled rides ----------
+r.get('/trips/upcoming', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const { rows } = await db.query("SELECT id FROM trips WHERE rider_id = $1 AND status = 'scheduled' ORDER BY scheduled_for", [req.user.id]);
+  const out = [];
+  for (const row of rows) out.push(rt.view(await rt.loadTrip(row.id), 'rider'));
+  res.json(out);
+}));
+
+// ---------- Invite friends & Kwata Rewards ----------
+r.get('/me/growth', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const s = await getSettings();
+  const code = await growth.ensureReferralCode(req.user);
+  const friends = await db.one('SELECT COUNT(*)::int AS joined, COUNT(*) FILTER (WHERE referral_rewarded)::int AS rode FROM users WHERE referred_by = $1', [req.user.id]);
+  const earned = await db.one("SELECT COALESCE(SUM(amount),0)::int AS n FROM transactions WHERE user_id = $1 AND type = 'reward' AND note LIKE 'Invite reward%'", [req.user.id]);
+  const u = await db.one('SELECT points, lifetime_points FROM users WHERE id = $1', [req.user.id]);
+  res.json({
+    code, link: `${baseUrl(req)}/?ref=${code}`, friends, earned: earned.n,
+    referral: s.growth.referral, rewards: s.growth.rewards,
+    points: u.points, lifetimePoints: u.lifetime_points, tier: growth.tier(u.lifetime_points),
+    firstRide: s.growth.firstRide.enabled && await growth.firstRideEligible(req.user.id) ? s.growth.firstRide : null,
+  });
+}));
+
+r.post('/rewards/redeem', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const s = await getSettings();
+  const rw = s.growth.rewards;
+  if (!rw.enabled) return bad(res, 'Rewards are paused right now.');
+  let out;
+  await db.tx(async (tx) => {
+    const u = await tx.one('SELECT points FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
+    if (u.points < rw.redeemPoints) { out = { error: `You need ${rw.redeemPoints} points to redeem.` }; return; }
+    await tx.query('UPDATE users SET points = points - $1 WHERE id = $2', [rw.redeemPoints, req.user.id]);
+    await growth.credit(tx, req.user.id, rw.redeemValue, `Kwata Rewards: ${rw.redeemPoints} points`);
+    out = { ok: true, points: u.points - rw.redeemPoints };
+  });
+  if (out.error) return bad(res, out.error);
+  const u = await db.one('SELECT wallet_balance FROM users WHERE id = $1', [req.user.id]);
+  res.json({ ...out, walletBalance: u.wallet_balance });
 }));
 
 // ---------- Wallet ----------
@@ -604,6 +711,33 @@ r.get('/admin/trips', admin, wrap(async (req, res) => {
   const out = [];
   for (const row of rows) out.push(rt.view(await rt.loadTrip(row.id), 'admin'));
   res.json(out);
+}));
+
+r.get('/admin/promos', admin, wrap(async (req, res) => {
+  const { rows } = await db.query(`SELECT p.*, (SELECT COUNT(*)::int FROM trips t WHERE t.promo_code = p.code AND t.status IN ('requested','accepted','arrived','in_progress','completed','scheduled')) AS uses,
+    (SELECT COALESCE(SUM(discount),0)::int FROM trips t WHERE t.promo_code = p.code AND t.status = 'completed') AS spent FROM promos p ORDER BY created_at DESC`);
+  const fr = await db.one("SELECT COUNT(*)::int AS n, COALESCE(SUM(discount),0)::int AS spent FROM trips WHERE discount > 0 AND promo_code IS NULL AND status = 'completed'");
+  const ref = await db.one("SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::int AS spent FROM transactions WHERE type = 'reward'");
+  res.json({ promos: rows, firstRide: fr, rewardsPaid: ref });
+}));
+r.post('/admin/promos', admin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const code = String(b.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.length < 3 || code.length > 20) return bad(res, 'Codes are 3–20 letters or numbers.');
+  const kind = b.kind === 'flat' ? 'flat' : 'percent';
+  const value = Math.round(Number(b.value));
+  if (!(value > 0) || (kind === 'percent' && value > 100)) return bad(res, kind === 'percent' ? 'Enter a percentage from 1 to 100.' : 'Enter the amount off in UGX.');
+  const num = (v) => (v === '' || v == null ? null : Math.max(0, Math.round(Number(v)) || 0));
+  if (await db.one('SELECT code FROM promos WHERE code = $1', [code])) return bad(res, 'That code already exists.');
+  await db.query(`INSERT INTO promos(code, kind, value, max_discount, min_fare, max_uses, per_user, first_ride_only, services, expires_at, note)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+  [code, kind, value, num(b.maxDiscount), num(b.minFare) || 0, num(b.maxUses), Math.max(1, num(b.perUser) || 1), !!b.firstRideOnly,
+    Array.isArray(b.services) && b.services.length ? b.services.join(',') : null, b.expiresAt ? new Date(b.expiresAt) : null, b.note ? String(b.note).slice(0, 120) : null]);
+  res.json({ ok: true, code });
+}));
+r.post('/admin/promos/:code/active', admin, wrap(async (req, res) => {
+  await db.query('UPDATE promos SET active = $1 WHERE code = $2', [!!(req.body || {}).active, String(req.params.code).toUpperCase()]);
+  res.json({ ok: true });
 }));
 
 r.get('/admin/settings', admin, wrap(async (req, res) => res.json(await getSettings())));

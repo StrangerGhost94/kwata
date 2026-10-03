@@ -1,7 +1,7 @@
 // Kwata admin console
 (function () {
   const root = document.getElementById('root');
-  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['safety', 'Safety'], ['payouts', 'Payouts']];
+  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['safety', 'Safety'], ['payouts', 'Payouts']];
   let tab = location.hash.slice(1) || 'overview';
   let stats = {}, liveMap, liveLayer, liveTimer, sock;
 
@@ -35,7 +35,7 @@
     root.querySelectorAll('[data-t]').forEach((b) => b.setAttribute('aria-current', b.dataset.t === tab ? 'page' : 'false'));
     const main = K.$('#main');
     main.innerHTML = K.skeleton('title-list', 5);
-    ({ overview, drivers, riders, trips, pricing, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
+    ({ overview, drivers, riders, trips, pricing, promos, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
   }
 
   const badge = (s) => `<span class="badge ${({ approved: 'ok', completed: 'ok', paid: 'ok', pending: 'warn', requested: 'warn', accepted: 'warn', arrived: 'warn', in_progress: 'warn', suspended: 'bad', rejected: 'bad', cancelled: 'bad', no_drivers: 'bad' })[s] || ''}">${K.esc(String(s).replace('_', ' '))}</span>`;
@@ -234,6 +234,69 @@
         dynamic: { enabled: K.$('#dyn').checked, weather: K.$('#wx').checked, sensitivity: +K.$('#sens').value, maxBoda: +K.$('#mb').value, maxCar: +K.$('#mc').value } }, 'PUT');
       K.toast('Pricing saved. New requests use it right away.');
     };
+  }
+
+  async function promos(main) {
+    const [s, data] = await Promise.all([K.api('/admin/settings'), K.api('/admin/promos')]);
+    const g = s.growth;
+    const svcs = Object.entries(s.services);
+    main.innerHTML = `<h1>Promotions</h1>
+      <p class="muted" style="max-width:720px">Kwata pays for every discount and reward. Drivers always earn on the full fare.</p>
+      <div class="kpis" style="max-width:900px">
+        <div class="kpi"><span class="small muted">First-ride discounts given</span><b>${data.firstRide.n}</b><span class="small muted">${K.ugx(data.firstRide.spent)}</span></div>
+        <div class="kpi"><span class="small muted">Invite & points rewards paid</span><b>${data.rewardsPaid.n}</b><span class="small muted">${K.ugx(data.rewardsPaid.spent)}</span></div>
+        <div class="kpi"><span class="small muted">Active promo codes</span><b>${data.promos.filter((p) => p.active).length}</b><span class="small muted">${K.ugx(data.promos.reduce((a, p) => a + p.spent, 0))} spent</span></div>
+      </div>
+      <h2 style="margin-top:22px">Automatic offers</h2>
+      <div class="kpis" style="max-width:900px">
+        <div><label><input type="checkbox" id="fr-on" ${g.firstRide.enabled ? 'checked' : ''} style="width:auto"> First-ride discount</label>
+          <div class="row g-fields"><span><small>% off</small><input id="fr-p" type="number" min="0" max="100" value="${g.firstRide.percent}"></span><span><small>Up to (UGX)</small><input id="fr-m" type="number" min="0" step="500" value="${g.firstRide.max}"></span></div></div>
+        <div><label><input type="checkbox" id="rf-on" ${g.referral.enabled ? 'checked' : ''} style="width:auto"> Invite a friend</label>
+          <div class="row g-fields"><span><small>Inviter gets (UGX)</small><input id="rf-a" type="number" min="0" step="500" value="${g.referral.referrer}"></span><span><small>Friend gets (UGX)</small><input id="rf-b" type="number" min="0" step="500" value="${g.referral.friend}"></span></div></div>
+        <div><label><input type="checkbox" id="rw-on" ${g.rewards.enabled ? 'checked' : ''} style="width:auto"> Kwata Rewards</label>
+          <div class="row g-fields"><span><small>Points per UGX 1,000</small><input id="rw-e" type="number" min="0" value="${g.rewards.pointsPer1000}"></span><span><small>Points to redeem</small><input id="rw-p" type="number" min="1" value="${g.rewards.redeemPoints}"></span><span><small>Worth (UGX)</small><input id="rw-v" type="number" min="0" step="500" value="${g.rewards.redeemValue}"></span></div></div>
+      </div>
+      <button class="btn btn-primary" id="saveG">Save offers</button>
+      <h2 style="margin-top:26px">Promo codes</h2>
+      <form id="pf" class="card" style="max-width:900px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end">
+        <div><label for="p-code">Code</label><input id="p-code" placeholder="KAMPALA20" style="text-transform:uppercase" required></div>
+        <div><label for="p-kind">Type</label><select id="p-kind"><option value="percent">% off</option><option value="flat">UGX off</option></select></div>
+        <div><label for="p-val">Value</label><input id="p-val" type="number" min="1" placeholder="20" required></div>
+        <div><label for="p-max">Max discount (UGX)</label><input id="p-max" type="number" min="0" placeholder="optional"></div>
+        <div><label for="p-min">Min fare (UGX)</label><input id="p-min" type="number" min="0" placeholder="0"></div>
+        <div><label for="p-uses">Total uses</label><input id="p-uses" type="number" min="1" placeholder="unlimited"></div>
+        <div><label for="p-per">Uses per rider</label><input id="p-per" type="number" min="1" value="1"></div>
+        <div><label for="p-exp">Expires</label><input id="p-exp" type="date"></div>
+        <div><label for="p-svc">Ride type</label><select id="p-svc"><option value="">All</option>${svcs.map(([id, v]) => `<option value="${id}">${K.esc(v.name)}</option>`).join('')}</select></div>
+        <div><label><input type="checkbox" id="p-first" style="width:auto"> First rides only</label></div>
+        <div><button class="btn btn-primary btn-block" type="submit">Create code</button></div>
+        <p class="error" id="perr" style="grid-column:1/-1;margin:0"></p>
+      </form>
+      <div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Code</th><th>Offer</th><th>Rules</th><th>Used</th><th>Spent</th><th>Status</th><th></th></tr></thead><tbody>
+        ${data.promos.map((p) => `<tr><td><b>${K.esc(p.code)}</b>${p.note ? `<br><span class="small muted">${K.esc(p.note)}</span>` : ''}</td>
+          <td>${p.kind === 'flat' ? K.ugx(p.value) + ' off' : p.value + '% off'}${p.max_discount ? `<br><span class="small muted">max ${K.ugx(p.max_discount)}</span>` : ''}</td>
+          <td class="small">${[p.first_ride_only ? 'First rides' : '', p.min_fare ? 'Min ' + K.ugx(p.min_fare) : '', p.services ? p.services : '', p.per_user + '× per rider', p.expires_at ? 'Until ' + new Date(p.expires_at).toLocaleDateString('en-UG') : ''].filter(Boolean).join(' · ')}</td>
+          <td>${p.uses}${p.max_uses ? ' / ' + p.max_uses : ''}</td><td>${K.ugx(p.spent)}</td>
+          <td>${badge(p.active ? 'approved' : 'suspended').replace('approved', 'active').replace('suspended', 'off')}</td>
+          <td><button class="btn btn-sm" data-code="${K.esc(p.code)}" data-on="${!p.active}">${p.active ? 'Switch off' : 'Switch on'}</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No promo codes yet.</td></tr>'}
+      </tbody></table></div>`;
+    const v = (id) => K.$('#' + id).value;
+    K.$('#saveG').onclick = async () => {
+      await K.api('/admin/settings', { growth: {
+        firstRide: { enabled: K.$('#fr-on').checked, percent: +v('fr-p'), max: +v('fr-m') },
+        referral: { enabled: K.$('#rf-on').checked, referrer: +v('rf-a'), friend: +v('rf-b') },
+        rewards: { enabled: K.$('#rw-on').checked, pointsPer1000: +v('rw-e'), redeemPoints: +v('rw-p'), redeemValue: +v('rw-v') },
+      } }, 'PUT');
+      K.toast('Offers saved');
+    };
+    K.$('#pf').onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await K.api('/admin/promos', { code: v('p-code'), kind: v('p-kind'), value: +v('p-val'), maxDiscount: v('p-max'), minFare: v('p-min'), maxUses: v('p-uses'), perUser: v('p-per'), expiresAt: v('p-exp') ? v('p-exp') + 'T23:59:59' : null, services: v('p-svc') ? [v('p-svc')] : [], firstRideOnly: K.$('#p-first').checked });
+        K.toast('Promo code created'); promos(main);
+      } catch (err) { K.$('#perr').textContent = err.message; }
+    };
+    main.querySelectorAll('[data-code]').forEach((b) => b.onclick = async () => { await K.api(`/admin/promos/${b.dataset.code}/active`, { active: b.dataset.on === 'true' }); promos(main); });
   }
 
   async function safety(main) {

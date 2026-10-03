@@ -10,6 +10,8 @@
   let map, sock, sheet, routeLayer, labels = [], driverMarker, meMarker, nearby = new Map(), revTimer, phaseKm = null, routedPhase = null;
 
   const params = new URLSearchParams(location.search);
+  // Invite links: /?ref=CODE fills the invite code on sign-up.
+  if (params.get('ref')) { try { localStorage.setItem('kwata_ref', params.get('ref').toUpperCase().slice(0, 20)); } catch {} history.replaceState(null, '', location.pathname); }
   if (params.get('payment')) {
     history.replaceState(null, '', location.pathname);
     setTimeout(() => K.toast(params.get('payment') === 'success' ? 'Payment received' : 'Payment was not completed. Try again from your trip.'), 600);
@@ -54,6 +56,7 @@
     try {
       const [me, config, active, hist] = await Promise.all([K.api('/me'), K.api('/config'), K.api('/trips/active'), K.api('/trips/history').catch(() => [])]);
       S.user = me.user; S.config = config;
+      loadGrowth(); loadUpcoming();
       S.history = hist || []; buildRecent(hist);
       sock = K.socket(K.token());
       sock.on('trip:update', onTrip);
@@ -195,13 +198,16 @@
     sheet.innerHTML = `
       <div class="grabber"></div>
       <div id="installHost"></div>
+      ${(S.upcoming || []).map((u) => `<div class="sched-card"><span class="ic">${K.ic('clock')}</span><span class="grow"><b>${whenLabel(u.scheduledFor)}</b><span>${K.esc(svcName(u.service))} to ${K.esc(shorten(u.drop.address, 30))}</span></span><button class="btn btn-sm btn-ghost" data-cancel-sched="${u.id}">Cancel</button></div>`).join('')}
+      ${S.growth && S.growth.firstRide ? `<div class="offer-chip">${K.ic('gift', 'sm')}<span><b>${S.growth.firstRide.percent}% off your first ride</b> · up to ${K.ugx(S.growth.firstRide.max)}, applied automatically</span></div>` : ''}
       <button class="search-bar" id="whereBtn">${K.ic('search')}<span>Where are you going?</span></button>
       <div class="saved-row">${saved('home')}${saved('work')}</div>
       ${S.recent.length ? S.recent.slice(0, 2).map((r, i) => `<button class="lrow" data-recent="${i}"><span class="ic">${K.ic('clock')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(shorten(r.name, 40))}</span><span class="s">${K.esc(r.address)}</span></span></button>`).join('') : ''}
       <div class="svc-row">${main.map((id) => `<button class="svc-ic" data-svc="${id}"><span class="tile">${K.ART[id]}</span>${svcName(id)}</button>`).join('')}</div>
       ${ids.includes('airport') ? `<div class="section-label">More services</div>
         <button class="more-row" data-svc="airport"><span class="ic">${K.ic('plane')}</span><span class="grow">Airport transfer<br><span class="tiny muted" style="font-weight:500">Entebbe and long-distance trips</span></span>${K.ic('chev', 'sm')}</button>` : ''}
-      ${ids.includes('parcel') ? `<button class="promo" data-svc="parcel"><span class="grow"><b>Need to send a package?</b><span>Fast and reliable delivery across Kampala</span></span>${K.ART.parcel}</button>` : ''}`;
+      ${ids.includes('parcel') ? `<button class="promo" data-svc="parcel"><span class="grow"><b>Need to send a package?</b><span>Fast and reliable delivery across Kampala</span></span>${K.ART.parcel}</button>` : ''}
+      ${S.config.growth && S.config.growth.referral.enabled && S.config.growth.referral.referrer ? `<button class="promo invite" id="inviteBanner"><span class="grow"><b>Invite friends, get ${K.ugx(S.config.growth.referral.referrer)}</b><span>They get ${K.ugx(S.config.growth.referral.friend)} too, after their first trip</span></span><span class="gift">🎁</span></button>` : ''}`;
     K.installCard(K.$('#installHost'));
     K.$('#whereBtn').onclick = () => openSearch();
     sheet.querySelectorAll('[data-place]').forEach((b) => b.onclick = () => {
@@ -211,6 +217,8 @@
     });
     sheet.querySelectorAll('[data-recent]').forEach((b) => b.onclick = () => chooseDrop(S.recent[+b.dataset.recent]));
     sheet.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { setService(b.dataset.svc); openSearch(b.dataset.svc === 'airport' ? { preset: K.PLACES[0] } : {}); });
+    const ib = K.$('#inviteBanner'); if (ib) ib.onclick = () => openInvite();
+    sheet.querySelectorAll('[data-cancel-sched]').forEach((b) => b.onclick = () => cancelScheduled(+b.dataset.cancelSched));
   }
   function setService(id) { S.service = id; try { localStorage.setItem('kwata_service', id); } catch {} }
 
@@ -306,7 +314,7 @@
     sheet.innerHTML = `<div class="grabber"></div><h2>Choose a ride</h2><div class="bar indet"><i></i></div>`;
     S.route = await K.route(S.pickup, S.drop);
     try {
-      S.quote = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin });
+      S.quote = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, promoCode: S.promoCode || undefined });
       S.quote.at = Date.now();
       if (!S.quote.options.find((o) => o.id === S.service)) setService(S.quote.options[0].id);
       showRoute();
@@ -319,7 +327,7 @@
   async function refreshQuote() {
     if (S.view !== 'choose' || !S.route) return;
     try {
-      const q = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin });
+      const q = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, promoCode: S.promoCode || undefined });
       q.at = Date.now(); S.quote = q;
       if (S.view === 'choose') render();
     } catch {}
@@ -352,6 +360,80 @@
     return `↑ ${why} · fares ×${o.surge}`;
   };
 
+  // Scheduled rides are never surge-priced; discounts come off the price shown.
+  const baseOf = (o) => (S.when ? o.regularFare : o.fare);
+  const payOf = (o) => Math.max(0, baseOf(o) - (o.discount ? Math.min(o.discount, baseOf(o)) : 0));
+  const priceHtml = (o) => {
+    const base = baseOf(o), pay = payOf(o);
+    const was = pay < base ? base : (!S.when && o.surge > 1 && o.regularFare < o.fare ? o.regularFare : null);
+    return `${was ? `<span class="was">${K.ugx(was)}</span>` : ''}<span class="${pay < base ? 'deal-price' : ''}">${K.ugx(pay)}</span>`;
+  };
+  const whenLabel = (d) => {
+    const t = new Date(d), today = new Date(), tm = new Date(Date.now() + 86400e3);
+    const day = t.toDateString() === today.toDateString() ? 'Today' : t.toDateString() === tm.toDateString() ? 'Tomorrow' : t.toLocaleDateString('en-UG', { weekday: 'short', day: 'numeric', month: 'short' });
+    return `${day} ${t.toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' })}`;
+  };
+
+  // Schedule for later (20 min to 7 days ahead)
+  function openWhen() {
+    const pad = (n) => String(n).padStart(2, '0');
+    const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const min = new Date(Date.now() + 21 * 60e3), max = new Date(Date.now() + 7 * 86400e3);
+    const at = (h, m, addDays) => { const d = new Date(); d.setDate(d.getDate() + addDays); d.setHours(h, m, 0, 0); return d; };
+    const quick = [['In 30 min', new Date(Date.now() + 30 * 60e3)], ['In 1 hour', new Date(Date.now() + 60 * 60e3)], ['Tomorrow 6:00', at(6, 0, 1)], ['Tomorrow 8:00', at(8, 0, 1)]];
+    const m = K.modal(`<h2>When do you need it?</h2><p class="small muted">Scheduled rides are never surge-priced. We start finding your ${who({ service: S.service })} 10 minutes before.</p>
+      <div class="chips" style="flex-wrap:wrap">${quick.map(([l], i) => `<button class="chip" data-q="${i}">${l}</button>`).join('')}</div>
+      <label for="wt">Pick a date and time</label><input id="wt" type="datetime-local" min="${local(min)}" max="${local(max)}" value="${local(S.when ? new Date(S.when) : quick[0][1])}">
+      <p class="error" id="err"></p>
+      <button class="btn btn-primary btn-block btn-lg" id="set">Set pickup time</button>
+      ${S.when ? '<button class="btn btn-block" id="now" style="margin-top:8px">Ride now instead</button>' : ''}`);
+    m.el.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { K.$('#wt', m.el).value = local(quick[+b.dataset.q][1]); });
+    K.$('#set', m.el).onclick = () => {
+      const d = new Date(K.$('#wt', m.el).value);
+      if (!(d > min - 60e3) || d > max) { K.$('#err', m.el).textContent = 'Choose a time between 20 minutes and 7 days from now.'; return; }
+      S.when = d.toISOString(); m.close(); render();
+    };
+    const now = K.$('#now', m.el); if (now) now.onclick = () => { S.when = null; m.close(); render(); };
+  }
+
+  // Book for someone else
+  function openWho() {
+    const p = S.passenger || {};
+    const m = K.modal(`<h2>Who’s riding?</h2><p class="small muted">Book for a parent, a child or a guest. The ${who({ service: S.service })} will call them, and you can send them the trip details and PIN.</p>
+      <button class="pay-item ${S.passenger ? '' : 'on'}" id="me"><span class="avatar" style="width:34px;height:34px;font-size:.8rem">${K.initials(S.user.name)}</span><span class="grow"><b>Me</b><span>${K.esc(S.user.name)}</span></span></button>
+      <label for="pn">Someone else’s name</label><input id="pn" placeholder="e.g. Mama Sarah" value="${K.esc(p.name || '')}">
+      <label for="pp">Their phone number</label><input id="pp" type="tel" placeholder="0772 123456" value="${K.esc(p.phone || '')}">
+      <p class="error" id="err"></p>
+      <button class="btn btn-primary btn-block btn-lg" id="save">Book for them</button>`);
+    K.$('#me', m.el).onclick = () => { S.passenger = null; m.close(); render(); };
+    K.$('#save', m.el).onclick = () => {
+      const v = { name: K.$('#pn', m.el).value.trim(), phone: K.$('#pp', m.el).value.trim() };
+      if (v.name.length < 2 || v.phone.replace(/\D/g, '').length < 9) { K.$('#err', m.el).textContent = 'Add their name and a phone number the driver can call.'; return; }
+      S.passenger = v; m.close(); render();
+    };
+  }
+
+  // Promo codes
+  function openPromo() {
+    const m = K.modal(`<h2>Promo code</h2><p class="small muted">Got a code from Kwata or a friend? Add it here. One discount per trip: you always get the biggest one.</p>
+      <label for="pc">Code</label><input id="pc" autocapitalize="characters" placeholder="e.g. KAMPALA20" value="${K.esc(S.promoCode || '')}" style="text-transform:uppercase;letter-spacing:.06em;font-weight:700">
+      <p class="error" id="err"></p>
+      <button class="btn btn-primary btn-block btn-lg" id="apply">Apply</button>
+      ${S.promoCode ? '<button class="btn btn-block" id="rm" style="margin-top:8px">Remove code</button>' : ''}`);
+    K.$('#apply', m.el).onclick = async () => {
+      const code = K.$('#pc', m.el).value.trim().toUpperCase();
+      if (!code) return;
+      const btn = K.$('#apply', m.el); btn.disabled = true;
+      try {
+        const q = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, promoCode: code });
+        const ok = q.options.some((o) => o.promoCode === code);
+        if (!ok) { K.$('#err', m.el).textContent = q.promoError || 'That code doesn’t apply to this trip.'; btn.disabled = false; return; }
+        S.promoCode = code; q.at = Date.now(); q._shown = true; S.quote = q; m.close(); render(); K.toast('Promo applied 🎉');
+      } catch (e) { K.$('#err', m.el).textContent = e.message; btn.disabled = false; }
+    };
+    const rm = K.$('#rm', m.el); if (rm) rm.onclick = () => { S.promoCode = null; m.close(); refreshQuote(); };
+  }
+
   // Screen 6: choose a ride
   function vChoose() {
     const q = S.quote;
@@ -367,16 +449,21 @@
         <button class="opt" data-s="${o.id}" aria-pressed="${o.id === S.service}">
           <span class="art">${K.artFor(o.id, o.vehicle)}</span>
           <span class="grow"><span class="name" style="display:block">${K.esc(svcName(o.id))}</span>
-            <span class="meta">${meta(o)}</span>${o.surge > 1 ? `<span class="surge" style="display:block">${surgeText(o)}</span>` : ''}</span>
-          <span class="price">${o.surge > 1 && o.regularFare < o.fare ? `<span class="was">${K.ugx(o.regularFare)}</span>` : ''}${K.ugx(o.fare)}</span>
+            <span class="meta">${meta(o)}</span>${o.surge > 1 && !S.when ? `<span class="surge" style="display:block">${surgeText(o)}</span>` : ''}${o.discount ? `<span class="deal" style="display:block">${K.ic('tag', 'sm')} ${K.esc(o.promoLabel)}</span>` : ''}</span>
+          <span class="price">${priceHtml(o)}</span>
           <span class="tick">${K.ic('check', 'sm')}</span>
         </button>`).join('')}
       </div>
       <button class="payrow" id="pickRow" style="padding-bottom:4px"><span class="dot-pick" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Pickup</span><span class="ellipsis" id="pickLabel" style="display:block">${K.esc(S.pickup.address)}</span></span><span class="small muted">Change</span></button>
       ${S.service === 'parcel' ? `<button class="payrow" id="parcelRow"><span class="paylogo wallet">${K.ic('gift', 'sm')}</span><span class="grow">${S.parcel ? `Package for ${K.esc(S.parcel.recipientName)}` : 'Add delivery details'}</span>${K.ic('chev', 'sm')}</button>` : ''}
+      <div class="chip-row">
+        <button class="pill-opt ${S.when ? 'on' : ''}" id="whenBtn">${K.ic('clock', 'sm')}<span>${S.when ? K.esc(whenLabel(S.when)) : 'Now'}</span>${K.ic('chevDown', 'sm')}</button>
+        <button class="pill-opt ${S.passenger ? 'on' : ''}" id="whoBtn">${K.ic('person', 'sm')}<span>${S.passenger ? K.esc(K.first(S.passenger.name)) : 'For me'}</span>${K.ic('chevDown', 'sm')}</button>
+        <button class="pill-opt ${S.promoCode ? 'on' : ''}" id="promoBtn">${K.ic('tag', 'sm')}<span>${S.promoCode ? K.esc(S.promoCode) : 'Promo'}</span></button>
+      </div>
       <button class="payrow" id="payRow">${P.logo}<span class="grow">${P.name}${p === 'wallet' ? ` · ${K.ugx(S.user.walletBalance)}` : ''}${['mtn', 'airtel'].includes(p) ? `<span class="tiny muted" style="display:block;font-weight:500">${prettyPhone(S.user.payPhone)}</span>` : ''}</span>${K.ic('chev', 'sm')}</button>
       <div class="sheet-foot"><p class="tiny muted" style="margin:0;text-align:center">Upfront price · you pay what you see</p><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
-      <button class="btn btn-primary btn-block btn-lg" id="request">Request ${K.esc(svcName(sel.id))}</button></div>`;
+      <button class="btn btn-primary btn-block btn-lg" id="request">${S.when ? 'Schedule' : 'Request'} ${K.esc(svcName(sel.id))} · ${K.ugx(payOf(sel))}</button></div>`;
     sheet.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => {
       if (b.dataset.s === S.service) return;
       setService(b.dataset.s); showRoute(); render();
@@ -384,9 +471,13 @@
     K.$('#payRow').onclick = () => openPayments({ onPick: render });
     K.$('#pickRow').onclick = () => { S.view = 'pickup'; clearRoute(); map.setView([S.pickup.lat, S.pickup.lng], 18); render(); };
     const pr = K.$('#parcelRow'); if (pr) pr.onclick = openParcel;
+    K.$('#whenBtn').onclick = openWhen;
+    K.$('#whoBtn').onclick = openWho;
+    K.$('#promoBtn').onclick = openPromo;
+    if (q.promoError && S.promoCode && !q._shown) { q._shown = true; K.toast(q.promoError, 4500); }
     K.$('#request').onclick = () => {
       if (S.service === 'parcel' && !S.parcel) { openParcel(); return; }
-      if (p === 'wallet' && S.user.walletBalance < sel.fare) { K.toast('Not enough in your wallet. Top up or pick another way to pay.'); openPayments({ onPick: render }); return; }
+      if (p === 'wallet' && S.user.walletBalance < payOf(sel)) { K.toast('Not enough in your wallet. Top up or pick another way to pay.'); openPayments({ onPick: render }); return; }
       book();
     };
   }
@@ -434,7 +525,7 @@
     btn.disabled = true; btn.textContent = 'Requesting…'; err.textContent = '';
     if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
     const opt = S.quote.options.find((o) => o.id === S.service);
-    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && opt.fare };
+    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined };
     if (S.service === 'parcel') body.parcel = S.parcel;
     try { onTrip(await K.api('/trips', body)); }
     catch (e) {
@@ -460,7 +551,7 @@
           <svg class="ring" viewBox="0 0 150 150" aria-hidden="true"><circle cx="75" cy="75" r="68" fill="none" stroke="var(--surface-2)" stroke-width="7"/><circle cx="75" cy="75" r="68" fill="none" stroke="var(--brand)" stroke-width="7" stroke-linecap="round" stroke-dasharray="110 330"/></svg>
           <div class="center">${K.artFor(t.service)}</div>
         </div>
-        <p class="small muted">${K.ugx(t.fare)} · ${PAY[payOfTrip(t)].name}</p>
+        <p class="small muted">${K.ugx(t.payable)} · ${PAY[payOfTrip(t)].name}</p>
       </div>
       <div class="sheet-foot"><button class="btn btn-outline btn-block btn-lg" id="cancel">Cancel</button></div>`;
     K.$('#cancel').onclick = cancelTrip;
@@ -485,6 +576,48 @@
   const stars = (r, n) => `<span class="rating"><span class="star-ic">★</span><b>${r || 'New'}</b>${n ? ` (${n} trip${n > 1 ? 's' : ''})` : ''}</span>`;
   const pinDigits = (pin) => `<span class="pin-code" aria-label="PIN ${pin}">${String(pin).split('').map((d) => `<span>${d}</span>`).join('')}</span>`;
 
+  // ---------- trip extras: discount, passenger, parcel delivery code, tips ----------
+  const fareHtml = (t) => (t.discount ? `<span class="was" style="display:inline;margin-right:6px">${K.ugx(t.fare)}</span>${K.ugx(t.payable)}` : K.ugx(t.fare));
+  function extrasHtml(t) {
+    let h = '';
+    if (t.passenger) h += `<div class="extra-box"><span class="grow"><b>Riding: ${K.esc(t.passenger.name)}</b><br><span class="small muted">The ${who(t)} will call ${K.esc(K.first(t.passenger.name))} at pickup</span></span><button class="btn btn-sm btn-primary" data-sendpass>Send details</button></div>`;
+    if (t.dropCode && t.service === 'parcel' && t.parcel) h += `<div class="extra-box"><span class="grow"><b>Delivery code ${pinDigits(t.dropCode)}</b><br><span class="small muted">${K.esc(K.first(t.parcel.recipientName))} gives this to the rider to receive the parcel</span></span><button class="btn btn-sm btn-primary" data-sendcode>Send</button></div>`;
+    return h;
+  }
+  const sms = (phone, text) => { location.href = `sms:${phone}${/iphone|ipad/i.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(text)}`; };
+  function bindExtras(t) {
+    const link = location.origin + '/t/' + t.shareToken;
+    const d = t.driver || {};
+    const sp = sheet.querySelector('[data-sendpass]');
+    if (sp) sp.onclick = () => sms(t.passenger.phone, `Hi ${K.first(t.passenger.name)}, I booked you a Kwata ${svcName(t.service).toLowerCase()}.${d.name ? ` ${K.first(d.name)} is coming in ${d.vehicle || ''} ${d.plate || ''}.` : ''} Your PIN is ${t.pin}: tell it to the ${who(t)} to start. Follow live: ${link}`);
+    const sc = sheet.querySelector('[data-sendcode]');
+    if (sc) sc.onclick = () => sms(t.parcel.recipientPhone, `Hi ${K.first(t.parcel.recipientName)}, a Kwata parcel is on its way to you (${t.parcel.item}). Give the rider this delivery code when it arrives: ${t.dropCode}. Track it: ${link}`);
+  }
+  function tipHtml(t) {
+    if (!t.driver) return '';
+    if (t.tip) return `<p class="small" style="margin:4px 0 10px">💛 You tipped ${K.esc(K.first(t.driver.name))} ${K.ugx(t.tip)}. Thank you!</p>`;
+    return `<div class="tip-box"><b>Tip ${K.esc(K.first(t.driver.name))}?</b><span class="small muted"> 100% goes to your ${who(t)}</span>
+      <div class="tip-chips">${[500, 1000, 2000].map((a) => `<button class="chip" data-tip="${a}">${K.ugx(a)}</button>`).join('')}<button class="chip" data-tip="other">Other</button></div></div>`;
+  }
+  function bindTip(t) {
+    sheet.querySelectorAll('[data-tip]').forEach((b) => b.onclick = async () => {
+      let amount = b.dataset.tip === 'other' ? Math.round(Number(prompt('Tip amount in UGX', '3000'))) : +b.dataset.tip;
+      if (!amount) return;
+      const canWallet = S.user.walletBalance >= amount;
+      const m = K.modal(`<h2>Tip ${K.ugx(amount)}</h2><p class="small muted">How would you like to give it?</p>
+        ${canWallet ? `<button class="pay-item" data-m="wallet">${PAY.wallet.logo}<span class="grow"><b>From my Kwata Wallet</b><span>Sent to ${K.esc(K.first(t.driver.name))} instantly</span></span></button>` : ''}
+        <button class="pay-item" data-m="cash">${PAY.cash.logo}<span class="grow"><b>In cash</b><span>Hand it to ${K.esc(K.first(t.driver.name))} now</span></span></button>
+        <button class="btn btn-block" data-close style="margin-top:6px">Cancel</button>`);
+      m.el.querySelectorAll('[data-m]').forEach((x) => x.onclick = async () => {
+        try {
+          await K.api(`/trips/${t.id}/tip`, { amount, method: x.dataset.m });
+          if (x.dataset.m === 'wallet') S.user.walletBalance -= amount;
+          S.trip.tip = amount; S.trip.tipMethod = x.dataset.m; m.close(); K.toast('💛 Thank you for the tip!'); render();
+        } catch (e) { K.toast(e.message); }
+      });
+    });
+  }
+
   // Screens 8 & 9: rider found / on trip
   function vTrip() {
     const t = S.trip, d = t.driver;
@@ -503,7 +636,8 @@
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
         </div>
-        <div class="fare-row"><span class="muted">Total fare</span><b>${K.ugx(t.fare)}</b></div>
+        ${extrasHtml(t)}
+        <div class="fare-row"><span class="muted">Total fare</span><b>${fareHtml(t)}</b></div>
         <div class="sheet-foot"><div class="row"><button class="btn fill" id="share">${K.ic('share', 'sm')} Share trip</button><button class="btn btn-danger-soft fill" id="sos" style="margin-top:0">${K.ic('sos', 'sm')} SOS</button></div></div>`;
       K.$('#share').onclick = shareTrip;
       K.$('#sos').onclick = sos;
@@ -518,16 +652,18 @@
         <div class="eta-line"><span id="etaTxt">${arrived ? `Meet ${K.esc(K.first(d.name))} now` : mins ? `Arriving in ${mins} min` : 'On the way'}</span><span class="small muted" style="font-weight:600">${t.service === 'parcel' ? 'Parcel pickup' : 'Pickup'}</span></div>
         <div class="bar"><i id="etaBar" style="width:${pct}%"></i></div>
         <div class="act-row">${callBtn('act') || '<span></span>'}<button class="act" id="chatBtn">${K.ic('msg')} Message</button></div>
-        <div class="pin-box"><span><b>Your trip PIN</b><br><span class="small muted">Tell your ${who(t)} to start</span></span>${pinDigits(t.pin)}</div>
+        <div class="pin-box"><span><b>${t.passenger ? `${K.esc(K.first(t.passenger.name))}’s trip PIN` : 'Your trip PIN'}</b><br><span class="small muted">${t.passenger ? 'Send it to them below' : `Tell your ${who(t)} to start`}</span></span>${pinDigits(t.pin)}</div>
+        ${extrasHtml(t)}
         <div class="stops">
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Drop-off</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
         </div>
-        <div class="fare-row"><span class="row" style="gap:8px">${PAY[payOfTrip(t)].logo}<span class="muted">${PAY[payOfTrip(t)].name}</span></span><b>${K.ugx(t.fare)}</b></div>
+        <div class="fare-row"><span class="row" style="gap:8px">${PAY[payOfTrip(t)].logo}<span class="muted">${PAY[payOfTrip(t)].name}</span></span><b>${fareHtml(t)}</b></div>
         <div class="sheet-foot"><button class="btn btn-danger btn-block btn-lg" id="cancel">Cancel ride</button></div>`;
       K.$('#cancel').onclick = cancelTrip;
     }
     K.$('#chatBtn').onclick = openChat;
+    bindExtras(t);
     updateUnread();
     // route for this phase
     const phase = t.status === 'in_progress' ? 'drop' : 'pickup';
@@ -566,9 +702,12 @@
         <p class="small muted">${t.service === 'parcel' ? 'Your package has arrived' : 'You have arrived at your destination'}</p>
         <div class="fare-card">
           <span class="small muted">${t.paymentMethod === 'cash' ? 'Pay in cash' : needsPay ? 'Amount due' : 'Total paid'}</span>
-          <div class="amt">${K.ugx(t.fare)}</div>
+          <div class="amt">${K.ugx(t.payable)}</div>
+          ${t.discount ? `<span class="deal" style="display:block;margin-top:2px">${K.ic('tag', 'sm')} You saved ${K.ugx(t.discount)}${t.promoLabel ? ' · ' + K.esc(t.promoLabel) : ''}</span>` : ''}
           <span class="row" style="justify-content:center;gap:8px;margin-top:6px">${P.logo}<span class="small bold">${P.name}</span></span>
+          ${t.pointsEarned ? `<span class="points-pill">★ +${t.pointsEarned} Kwata Rewards point${t.pointsEarned > 1 ? 's' : ''}</span>` : ''}
         </div>
+        ${tipHtml(t)}
         ${!t.riderRated ? `
           <h3 style="margin-top:6px">Rate your ${who(t)}</h3>
           <div class="row" style="justify-content:center;gap:8px">${photo(d, 'photo')}<span style="text-align:left"><b>${K.esc(d.name || '')}</b><br><span class="small muted">${K.esc(d.plate || '')}</span></span></div>
@@ -576,7 +715,7 @@
         <button class="btn btn-link btn-block" id="details" style="min-height:36px">View details</button>
       </div>
       <div class="sheet-foot">
-        ${needsPay ? `<p class="error" id="err" style="margin:0 0 6px;min-height:0"></p><button class="btn btn-primary btn-block btn-lg" id="pay">Pay ${K.ugx(t.fare)}</button>` : ''}
+        ${needsPay ? `<p class="error" id="err" style="margin:0 0 6px;min-height:0"></p><button class="btn btn-primary btn-block btn-lg" id="pay">Pay ${K.ugx(t.payable)}</button>` : ''}
         ${!t.riderRated ? `<button class="btn ${needsPay ? '' : 'btn-primary'} btn-block btn-lg" id="rate" ${S.rating ? '' : 'disabled'}>Rate ${who(t)}</button>` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}
       </div>`;
     sheet.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => {
@@ -601,6 +740,7 @@
     };
     const dn = K.$('#done'); if (dn) dn.onclick = reset;
     K.$('#details').onclick = () => tripDetails(t);
+    bindTip(t);
   }
 
   function tripDetails(t) {
@@ -616,7 +756,12 @@
       ${d.name ? `<div class="kv"><span>${who(t) === 'rider' ? 'Rider' : 'Driver'}</span><b>${K.esc(d.name)} · ${K.esc(d.plate || '')}</b></div>` : ''}
       ${t.distanceKm ? `<div class="kv"><span>Distance</span><b>${Number(t.distanceKm).toFixed(1)} km</b></div>` : ''}
       <div class="kv"><span>Payment</span><b>${P.name}${t.paymentStatus === 'paid' ? ' · Paid' : t.paymentStatus === 'pending' && t.paymentMethod !== 'cash' ? ' · Not paid' : ''}</b></div>
-      <div class="big-total"><span class="bold">Total</span><b>${K.ugx(t.fare)}</b></div>
+      ${t.scheduledFor ? `<div class="kv"><span>Scheduled for</span><b>${whenLabel(t.scheduledFor)}</b></div>` : ''}
+      ${t.passenger ? `<div class="kv"><span>Passenger</span><b>${K.esc(t.passenger.name)}</b></div>` : ''}
+      <div class="kv"><span>Fare</span><b>${K.ugx(t.fare)}</b></div>
+      ${t.discount ? `<div class="kv"><span>${K.esc(t.promoLabel || 'Discount')}</span><b class="pos">−${K.ugx(t.discount)}</b></div>` : ''}
+      ${t.tip ? `<div class="kv"><span>Tip (${t.tipMethod === 'wallet' ? 'wallet' : 'cash'})</span><b>${K.ugx(t.tip)}</b></div>` : ''}
+      <div class="big-total"><span class="bold">You paid</span><b>${K.ugx(t.payable + (t.tip || 0))}</b></div>
       <button class="btn btn-block" style="margin-top:14px" data-close>Close</button>`);
   }
 
@@ -626,6 +771,10 @@
     if (S.trip && t.id < S.trip.id) return;
     const prev = S.trip && S.trip.status;
     S.trip = t;
+    if (t.status === 'scheduled') {
+      K.toast(`🕐 ${svcName(t.service)} scheduled for ${whenLabel(t.scheduledFor)}`, 4500);
+      S.trip = null; reset(); loadUpcoming(); return;
+    }
     if (t.status === 'requested') S.view = 'searching';
     else if (['accepted', 'arrived', 'in_progress'].includes(t.status)) S.view = 'trip';
     else if (t.status === 'completed') S.view = 'done';
@@ -742,6 +891,8 @@
 
   function reset() {
     S.view = 'home'; S.drop = null; S.quote = null; S.route = null; S.trip = null; S.rating = 0; S.parcel = null;
+    S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false;
+    loadGrowth();
     S.messages = []; S.unread = 0; routedPhase = null; phaseKm = null;
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
     clearRoute();
@@ -750,6 +901,58 @@
     if (S.gps) { S.pickup = { ...S.gps, address: 'Current location', short: 'Current location' }; map.setView([S.gps.lat, S.gps.lng], 16); setPickup(S.gps.lat, S.gps.lng, 'Current location'); }
     else if (S.pickup) map.setView([S.pickup.lat, S.pickup.lng], 16);
     render();
+  }
+
+  // ---------- growth: offers, upcoming rides, invite friends, rewards ----------
+  async function loadGrowth() { try { S.growth = await K.api('/me/growth'); if (S.view === 'home' && !document.querySelector('.page')) render(); } catch {} }
+  async function loadUpcoming() { try { S.upcoming = await K.api('/trips/upcoming'); if (S.view === 'home' && !document.querySelector('.page')) render(); } catch {} }
+  function cancelScheduled(id) {
+    const m = K.modal(`<h2>Cancel scheduled ride?</h2><p class="muted">There’s no charge for cancelling a scheduled ride.</p>
+      <button class="btn btn-danger btn-block btn-lg" id="yes">Cancel ride</button><button class="btn btn-block" style="margin-top:8px" data-close>Keep it</button>`);
+    K.$('#yes', m.el).onclick = async () => { try { await K.api(`/trips/${id}/cancel`, {}); m.close(); K.toast('Scheduled ride cancelled'); loadUpcoming(); } catch (e) { K.toast(e.message); } };
+  }
+
+  async function openInvite(onBack) {
+    const sp = subPage('Invite friends', onBack);
+    const draw = (g) => {
+      const rf = g.referral;
+      sp.body.innerHTML = `<div class="invite-hero"><div class="gift-big">🎁</div>
+          <h2>Give ${K.ugx(rf.friend)}, get ${K.ugx(rf.referrer)}</h2>
+          <p class="muted">Share your code. When a friend signs up with it and takes their first trip, you both get Kwata Wallet credit.</p></div>
+        <div class="code-box"><span class="tiny muted">Your invite code</span><b>${K.esc(g.code)}</b></div>
+        <button class="btn btn-primary btn-block btn-lg" id="share">${K.ic('share', 'sm')} Share my invite</button>
+        <div class="stats3" style="margin-top:18px"><div><b>${g.friends.joined}</b><span>Friends joined</span></div><div><b>${g.friends.rode}</b><span>Took a trip</span></div><div><b>${K.ugx(g.earned).replace('UGX ', '')}</b><span>Earned (UGX)</span></div></div>
+        <p class="tiny faint">Credit arrives in your wallet automatically and pays for your next trips. One reward per new friend.</p>`;
+      K.$('#share', sp.page).onclick = () => K.share(g.link, `Ride with me on Kwata! Use my code ${g.code} when you sign up and get ${K.ugx(rf.friend)} after your first trip.`);
+    };
+    sp.body.innerHTML = K.skeleton('list', 2);
+    if (S.growth) draw(S.growth);
+    try { S.growth = await K.api('/me/growth'); draw(S.growth); } catch (e) { if (!S.growth) sp.body.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; }
+  }
+
+  async function openRewards(onBack) {
+    const sp = subPage('Kwata Rewards', onBack);
+    const draw = (g) => {
+      const rw = g.rewards, t = g.tier;
+      const pct = Math.min(100, Math.round((g.points / rw.redeemPoints) * 100));
+      const tierPct = t.next ? Math.min(100, Math.round((g.lifetimePoints / t.at) * 100)) : 100;
+      sp.body.innerHTML = `<div class="rewards-card tier-${t.name.toLowerCase()}"><span class="tiny">${t.name} member</span><b>${g.points}</b><span>points</span>
+          <div class="bar" style="background:rgba(255,255,255,.25);margin:12px 0 4px"><i style="width:${pct}%;background:#fff"></i></div>
+          <span class="tiny">${g.points >= rw.redeemPoints ? 'Ready to redeem!' : `${rw.redeemPoints - g.points} more points for ${K.ugx(rw.redeemValue)}`}</span></div>
+        <button class="btn btn-primary btn-block btn-lg" id="redeem" ${g.points >= rw.redeemPoints ? '' : 'disabled'}>Redeem ${rw.redeemPoints} points for ${K.ugx(rw.redeemValue)}</button>
+        <h3 style="margin-top:20px">How it works</h3>
+        <div class="kv"><span>Earn</span><b>${rw.pointsPer1000} point for every UGX 1,000 you pay</b></div>
+        <div class="kv"><span>Redeem</span><b>${rw.redeemPoints} points = ${K.ugx(rw.redeemValue)} wallet credit</b></div>
+        <div class="kv"><span>${t.next ? `Next level: ${t.next}` : 'Top level'}</span><b>${t.next ? `${g.lifetimePoints}/${t.at} lifetime points` : 'You’re Gold ✨'}</b></div>
+        <div class="bar" style="margin-top:8px"><i style="width:${tierPct}%"></i></div>`;
+      K.$('#redeem', sp.page).onclick = async () => {
+        try { const out = await K.api('/rewards/redeem', {}); S.user.walletBalance = out.walletBalance; K.toast(`🎉 ${K.ugx(rw.redeemValue)} added to your wallet`); S.growth = await K.api('/me/growth'); draw(S.growth); }
+        catch (e) { K.toast(e.message); }
+      };
+    };
+    sp.body.innerHTML = K.skeleton('list', 2);
+    if (S.growth) draw(S.growth);
+    try { S.growth = await K.api('/me/growth'); draw(S.growth); } catch (e) { if (!S.growth) sp.body.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; }
   }
 
   // ---------- tabs: activity & account (screens 11–13) ----------
@@ -787,14 +990,14 @@
   function paintActivity(el, filter, list) {
     el.dataset.filter = filter;
     const shown = list.filter((t) => filter === 'all' || (filter === 'parcel' ? t.service === 'parcel' : t.service !== 'parcel'));
-    const st = (t) => ({ completed: ['Completed', 'ok'], cancelled: ['Cancelled', 'bad'], no_drivers: ['No driver found', 'bad'] }[t.status] || [t.status.replace('_', ' '), 'warn']);
+    const st = (t) => (t.status === 'scheduled' ? [`Scheduled · ${whenLabel(t.scheduledFor)}`, 'warn'] : { completed: ['Completed', 'ok'], cancelled: ['Cancelled', 'bad'], no_drivers: ['No driver found', 'bad'] }[t.status] || [t.status.replace('_', ' '), 'warn']);
     el.innerHTML = `<div class="page-title">Activity</div>
       <div class="seg-tabs">${[['all', 'All'], ['ride', 'Rides'], ['parcel', 'Deliveries']].map(([k, l]) => `<button data-f="${k}" aria-pressed="${k === filter}">${l}</button>`).join('')}</div>
       ${shown.length ? shown.map((t, i) => `<button class="trip-card" data-t="${i}" style="width:100%;cursor:pointer;text-align:left">
         <span class="ic">${K.artFor(t.service)}</span>
         <span class="grow"><span class="t ellipsis" style="display:block">${K.esc(shorten(t.drop.address, 34))}</span>
           <span class="s" style="display:block">${K.when(t.createdAt)}</span><span class="badge ${st(t)[1]}" style="margin-top:4px">${st(t)[0]}</span></span>
-        <span class="p">${K.ugx(t.fare)}</span></button>`).join('')
+        <span class="p">${K.ugx(t.payable ?? t.fare)}</span></button>`).join('')
       : `<div class="empty"><div class="illu">${K.ART[filter === 'parcel' ? 'parcel' : 'boda']}</div><h3>No ${filter === 'parcel' ? 'deliveries' : 'trips'} yet</h3><p class="small">Your ${filter === 'parcel' ? 'deliveries' : 'rides and deliveries'} will show here.</p><button class="btn btn-primary" id="first">${filter === 'parcel' ? 'Send a parcel' : 'Book a ride'}</button></div>`}`;
     el.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => paintActivity(el, b.dataset.f, S.history || []));
     el.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => tripDetails(shown[+b.dataset.t]));
@@ -808,6 +1011,8 @@
       <div class="profile-head"><span class="photo">${K.initials(u.name)}</span>
         <span class="grow"><b style="font-size:1.2rem;display:block">${K.esc(u.name)}</b><span class="small muted">${K.esc(prettyPhone(u.phone))}</span><br>
           <span class="verified">★ ${u.rating || 'New'} rider rating</span></span></div>
+      <button class="menu-item" data-a="invite"><span class="ic" style="background:var(--brand-soft)">🎁</span><span class="grow">Invite friends<br><span class="small muted">Get ${K.ugx((S.config.growth || { referral: {} }).referral.referrer || 0)} for each friend</span></span>${K.ic('chev', 'sm')}</button>
+      <button class="menu-item" data-a="rewards"><span class="ic" style="background:var(--brand-soft)">★</span><span class="grow">Kwata Rewards<br><span class="small muted">${S.growth ? `${S.growth.points} points · ${S.growth.tier.name}` : 'Earn points on every trip'}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="pay"><span class="ic">${K.ic('card')}</span><span class="grow">Payment methods<br><span class="small muted">${P.name}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="places"><span class="ic">${K.ic('pin')}</span><span class="grow">Saved places</span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="wallet"><span class="ic">${K.ic('wallet')}</span><span class="grow">Kwata Wallet<br><span class="small muted">${K.ugx(u.walletBalance)}</span></span>${K.ic('chev', 'sm')}</button>
@@ -819,6 +1024,8 @@
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => {
       const a = b.dataset.a;
       if (a === 'pay') openPayments({ onBack: redraw });
+      else if (a === 'invite') openInvite(redraw);
+      else if (a === 'rewards') openRewards(redraw);
       else if (a === 'places') openPlaces(redraw);
       else if (a === 'wallet') openWallet(redraw);
       else if (a === 'safety') openEmergency(redraw);

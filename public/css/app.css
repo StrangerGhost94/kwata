@@ -842,3 +842,43 @@ html.standalone .auth2 { min-height: 100%; }
 .sk-chart .sk { flex: 1; border-radius: 6px 6px 2px 2px; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+
+/* ---------- Growth features ---------- */
+.chip-row { display: flex; gap: 8px; margin: 10px 0 2px; overflow-x: auto; scrollbar-width: none; }
+.chip-row::-webkit-scrollbar { display: none; }
+.pill-opt { flex: none; display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--line); background: var(--bg); border-radius: 999px; padding: 8px 12px; font-weight: 700; font-size: .86rem; color: var(--ink); cursor: pointer; }
+.pill-opt.on { border-color: var(--brand); background: var(--brand-soft); }
+.pill-opt svg.i.sm { width: 16px; height: 16px; }
+.deal { color: var(--go); font-size: .76rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.deal svg.i.sm { width: 14px; height: 14px; }
+.deal-price { color: var(--go); }
+.extra-box { display: flex; align-items: center; gap: 10px; background: var(--surface); border-radius: 14px; padding: 10px 12px; margin: 8px 0; }
+.extra-box .pin-code { font-size: 1rem; vertical-align: middle; }
+.extra-box .pin-code span { width: 24px; height: 28px; margin-left: 3px; }
+.tip-box { background: var(--brand-soft); border-radius: 16px; padding: 12px 14px; margin: 4px 0 12px; text-align: left; }
+.tip-chips { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.tip-chips .chip { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.points-pill { display: inline-block; margin-top: 8px; background: #141414; color: var(--brand); font-weight: 800; font-size: .78rem; padding: 5px 12px; border-radius: 999px; }
+.sched-card { display: flex; align-items: center; gap: 12px; background: var(--dark); color: #fff; border-radius: 16px; padding: 10px 10px 10px 12px; margin-bottom: 10px; }
+.sched-card .ic { width: 38px; height: 38px; border-radius: 12px; background: rgba(255,255,255,.12); display: grid; place-items: center; color: var(--brand); flex: none; }
+.sched-card b { display: block; font-size: .95rem; }
+.sched-card span span, .sched-card .grow > span { font-size: .8rem; color: #C9C9CF; }
+.sched-card .btn-ghost { color: #fff; }
+.offer-chip { display: flex; align-items: center; gap: 8px; background: #E8F6EE; color: #0B6B35; border-radius: 12px; padding: 9px 12px; font-size: .84rem; margin-bottom: 10px; }
+.promo.invite { background: linear-gradient(135deg, #141414, #2A2410); color: #fff; }
+.promo.invite span { color: #D6D3C8; }
+.promo.invite .gift { font-size: 34px; color: inherit; }
+.invite-hero { text-align: center; padding: 6px 0 14px; }
+.gift-big { font-size: 64px; line-height: 1; margin-bottom: 8px; filter: drop-shadow(0 8px 14px rgba(0,0,0,.18)); }
+.code-box { display: flex; flex-direction: column; align-items: center; border: 2px dashed var(--brand); background: var(--brand-soft); border-radius: 16px; padding: 14px; margin-bottom: 14px; }
+.code-box b { font-size: 1.8rem; letter-spacing: .12em; font-weight: 900; }
+.rewards-card { border-radius: 22px; padding: 20px; color: #fff; margin-bottom: 14px; background: linear-gradient(135deg, #8C5A2B, #C08A4A); box-shadow: 0 12px 30px rgba(0,0,0,.18); }
+.rewards-card.tier-silver { background: linear-gradient(135deg, #6F7682, #AEB4BE); }
+.rewards-card.tier-gold { background: linear-gradient(135deg, #B8860B, #FFC400); color: #141414; }
+.rewards-card b { display: block; font-size: 3rem; font-weight: 900; letter-spacing: -.04em; line-height: 1; margin-top: 6px; }
+.rewards-card .tiny { opacity: .85; font-weight: 700; letter-spacing: .04em; }
+.was { text-decoration: line-through; color: var(--ink-3); font-weight: 600; font-size: .8em; }
+.fare-row b .was { display: inline; margin-right: 6px; }
+.g-fields { flex-wrap: wrap; align-items: flex-end; }
+.g-fields > span { flex: 1 1 90px; min-width: 90px; }
+.g-fields small { display: block; font-size: .72rem; color: var(--ink-2); margin: 6px 0 4px; font-weight: 600; }

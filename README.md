@@ -106,3 +106,18 @@ Fares are upfront and calibrated to Kampala (about 8–10% below Bolt's publishe
 - **Rain** – live weather from Open-Meteo adds a small boost (more for boda). Open-Meteo's free API is for non-commercial use; for production set `OPEN_METEO_KEY` (their commercial plan) or switch rain off in Admin → Pricing.
 - **Locked quotes** – every price shown is locked for 2 minutes; riders pay exactly what they accepted. If a lock expires and the price has risen more than 5%, the rider is shown the new price before booking.
 - **Admin → Pricing** – edit rates, fixed boost, surge on/off, sensitivity, caps, rain boost, and see live conditions.
+
+## Growth features (bring riders in, bring them back)
+
+- **First-ride discount** – automatic, default 50% off up to UGX 3,000 (Admin → Promotions).
+- **Promo codes** – % or UGX off, max discount, min fare, total uses, uses per rider, expiry, ride type, first-rides-only; switch on/off any time. One discount per trip: the rider always gets the bigger one.
+- **Invite friends** – every rider has a code and link (`/?ref=CODE`). When the friend finishes their first trip, both get wallet credit (default UGX 3,000 inviter / 2,000 friend).
+- **Kwata Rewards** – 1 point per UGX 1,000 paid; 100 points = UGX 2,000 wallet credit; Bronze / Silver / Gold levels.
+- **Tips** – after the trip, from the wallet (straight to the driver, no commission) or in cash.
+- **Scheduled rides** – 20 minutes to 7 days ahead, never surge-priced, dispatch starts 10 minutes before (`SCHEDULE_LEAD_MIN`).
+- **Book for someone else** – the driver sees and calls the passenger; the booker can text them the PIN and live link.
+- **Parcel delivery code** – the recipient gives a 4-digit code to the rider; the delivery can't be completed without it.
+
+Money rule: `fare` is the full price; the rider pays `fare − discount`; Kwata covers the discount, so the driver always earns on the full fare (cash trips: the discount is added to the driver's balance).
+
+Tests: `node test/e2e.js` and `SCHEDULE_LEAD_MIN=30 node test/growth.js` (start the server with the same variable).

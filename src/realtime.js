@@ -45,6 +45,10 @@ function view(t, role) {
     parcel: t.parcel ? JSON.parse(t.parcel) : null, notes: t.notes,
     createdAt: t.created_at, acceptedAt: t.accepted_at, startedAt: t.started_at, completedAt: t.completed_at,
     cancelledBy: t.cancelled_by,
+    discount: t.discount || 0, payable: t.fare - (t.discount || 0), promoLabel: t.promo_label || null,
+    tip: t.tip || 0, tipMethod: t.tip_method || null,
+    scheduledFor: t.scheduled_for || null,
+    passenger: t.passenger ? JSON.parse(t.passenger) : null,
     driver: t.driver_id ? {
       id: t.driver_id, name: t.driver_name, rating: rating(t.d_rs, t.d_rc), trips: t.d_trips,
       photo: t.d_photo ? `/api/drivers/${t.driver_id}/photo` : null,
@@ -55,6 +59,9 @@ function view(t, role) {
   if (role === 'public') {
     v.rider = { name: (t.rider_name || '').split(' ')[0] };
     delete v.fare; delete v.paymentMethod; delete v.paymentStatus; delete v.parcel; delete v.notes;
+    delete v.discount; delete v.payable; delete v.promoLabel; delete v.tip; delete v.tipMethod;
+    if (v.passenger) v.rider = { name: String(v.passenger.name).split(' ')[0] };
+    delete v.passenger;
     if (v.driver) v.driver = { name: t.driver_name, plate: t.plate, vehicle: v.driver.vehicle, vehicleType: t.vehicle_type, photo: v.driver.photo, location: v.driver.location };
     return v;
   }
@@ -63,11 +70,15 @@ function view(t, role) {
   const live2 = ACTIVE.includes(t.status);
   if (role === 'rider') {
     v.pin = t.pin; v.shareToken = t.share_token; v.riderRated = t.rider_rating != null;
+    v.dropCode = t.drop_code || null; v.pointsEarned = t.points_earned || 0;
     if (v.driver && live2) v.driver.phone = t.driver_phone;
   }
   if (role === 'driver') {
     v.commission = t.commission; v.earning = t.fare - t.commission; v.driverRated = t.driver_rating != null;
     if (live2) v.rider.phone = t.rider_phone;
+    // Booked for someone else: the driver meets and calls the passenger.
+    if (v.passenger) { v.bookedBy = v.rider.name; v.rider = { ...v.rider, name: v.passenger.name, phone: live2 ? v.passenger.phone : undefined }; }
+    v.needsDropCode = !!t.drop_code;
   }
   if (role === 'admin') {
     v.commission = t.commission; v.pin = undefined;

@@ -26,6 +26,12 @@ const DEFAULTS = {
   supportPhone: '+256 700 000000',
   // Dynamic pricing (see src/surge.js). Caps keep fares affordable in Kampala.
   dynamic: { enabled: true, sensitivity: 0.35, maxBoda: 1.8, maxCar: 2.0, weather: true },
+  // Growth: what makes people try Kwata, invite friends and come back. Kwata pays for these.
+  growth: {
+    firstRide: { enabled: true, percent: 50, max: 3000 },       // first trip: 50% off, up to UGX 3,000
+    referral: { enabled: true, referrer: 3000, friend: 2000 },  // wallet credit once the friend finishes a first trip
+    rewards: { enabled: true, pointsPer1000: 1, redeemPoints: 100, redeemValue: 2000 }, // ~2% back
+  },
 };
 
 let cache = null;
@@ -38,6 +44,8 @@ async function getSettings() {
     try { s[r.key] = JSON.parse(r.value); } catch { /* ignore bad rows */ }
   }
   s.dynamic = { ...DEFAULTS.dynamic, ...(s.dynamic || {}) };
+  const g = s.growth || {};
+  s.growth = { firstRide: { ...DEFAULTS.growth.firstRide, ...(g.firstRide || {}) }, referral: { ...DEFAULTS.growth.referral, ...(g.referral || {}) }, rewards: { ...DEFAULTS.growth.rewards, ...(g.rewards || {}) } };
   // make sure new default services appear even if older settings were saved
   for (const [k, v] of Object.entries(DEFAULT_SERVICES)) {
     s.services[k] = { ...v, ...(s.services[k] || {}) };
@@ -59,7 +67,7 @@ async function getSettings() {
 
 async function updateSettings(patch) {
   const current = await getSettings();
-  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'supportPhone', 'dynamic'];
+  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'supportPhone', 'dynamic', 'growth'];
   for (const key of allowed) {
     if (patch[key] === undefined) continue;
     let value = patch[key];
@@ -75,6 +83,15 @@ async function updateSettings(patch) {
         if (svc.enabled !== undefined) clean.enabled = !!svc.enabled;
         value[id] = { ...value[id], ...clean };
       }
+    } else if (key === 'growth') {
+      const num = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+      const cur = current.growth, g = value || {};
+      const fr = { ...cur.firstRide, ...(g.firstRide || {}) }, rf = { ...cur.referral, ...(g.referral || {}) }, rw = { ...cur.rewards, ...(g.rewards || {}) };
+      value = {
+        firstRide: { enabled: !!fr.enabled, percent: num(fr.percent, 0, 100, 50), max: num(fr.max, 0, 100000, 3000) },
+        referral: { enabled: !!rf.enabled, referrer: num(rf.referrer, 0, 100000, 3000), friend: num(rf.friend, 0, 100000, 2000) },
+        rewards: { enabled: !!rw.enabled, pointsPer1000: num(rw.pointsPer1000, 0, 100, 1), redeemPoints: num(rw.redeemPoints, 1, 100000, 100), redeemValue: num(rw.redeemValue, 0, 100000, 2000) },
+      };
     } else if (key === 'dynamic') {
       const d = { ...current.dynamic };
       if (value.enabled !== undefined) d.enabled = !!value.enabled;

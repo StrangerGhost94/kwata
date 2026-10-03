@@ -239,7 +239,8 @@
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination · ${o.distanceKm.toFixed(1)} km, ${Math.round(o.durationMin)} min</small><b class="ellipsis">${K.esc(o.drop.address)}</b></span></div>
         </div>
         <div class="est"><small>You earn</small><b>${K.ugx(o.earning)}</b>
-          <span class="small muted" style="display:block">Fare ${K.ugx(o.fare)} · ${o.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[o.paymentMethod]}</span></div>
+          <span class="small muted" style="display:block">${o.paymentMethod === 'cash' && o.discount ? `Collect ${K.ugx(o.payable)} cash · Kwata pays the ${K.ugx(o.discount)} discount` : `Fare ${K.ugx(o.fare)} · ${o.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[o.paymentMethod]}`}</span>
+          ${o.bookedBy ? `<span class="small muted" style="display:block">Booked by ${K.esc(K.first(o.bookedBy))} for ${K.esc(o.rider.name)}</span>` : ''}</div>
       </div>
       <div class="spacer" style="flex:1"></div>
       <div class="btns"><button class="btn btn-danger btn-lg" id="no">Decline</button><button class="btn btn-primary btn-lg" id="yes">Accept</button></div>`;
@@ -297,7 +298,7 @@
       <div class="grabber"></div>
       <div class="driver-card"><span class="photo">${K.initials(r.name)}</span>
         <span class="grow"><b style="display:block">${K.esc(r.name)}</b><span class="rating"><span class="star-ic">★</span><b>${r.rating || 'New'}</b>${r.trips ? ` (${r.trips} trips)` : ''}</span>
-          <span class="small muted" style="display:block">${K.esc(K.SERVICE_LABEL[t.service])} · ${t.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[t.paymentMethod]}</span></span>
+          <span class="small muted" style="display:block">${K.esc(K.SERVICE_LABEL[t.service])} · ${t.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[t.paymentMethod]}${t.bookedBy ? ` · booked by ${K.esc(K.first(t.bookedBy))}` : ''}</span></span>
         ${r.phone ? `<a class="round go" href="tel:${K.esc(r.phone)}" aria-label="Call ${customer(t)}">${K.ic('phone')}</a>` : ''}
         <button class="round brand" id="chatBtn" aria-label="Message ${customer(t)}">${K.ic('msg')}${S.unread ? '<span class="dot"></span>' : ''}</button></div>
       ${parcel}
@@ -305,7 +306,10 @@
         <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
       </div>
-      <div class="fare-row"><span class="muted">${t.paymentMethod === 'cash' ? 'Collect in cash' : 'Fare'}</span><b>${K.ugx(t.fare)}</b></div>
+      <div class="fare-row"><span class="muted">${t.paymentMethod === 'cash' ? 'Collect in cash' : 'Fare'}</span><b>${K.ugx(t.paymentMethod === 'cash' ? t.payable : t.fare)}</b></div>
+      ${t.discount ? `<p class="tiny muted" style="margin:6px 0 0">${t.paymentMethod === 'cash' ? `The ${customer(t)} has a ${K.ugx(t.discount)} discount. Kwata adds it to your balance, so you still earn on the full ${K.ugx(t.fare)}.` : `Promo applied for the ${customer(t)}. You still earn on the full ${K.ugx(t.fare)}.`}</p>` : ''}
+      ${t.status === 'in_progress' && t.needsDropCode ? `<label for="dcode" style="text-align:center">Ask the recipient for the delivery code</label>
+        <input id="dcode" class="pin-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="····" aria-label="Delivery code">` : ''}
       ${t.status === 'arrived' ? `
         <label for="pin" style="text-align:center">Ask the ${customer(t)} for their 4-digit PIN</label>
         <input id="pin" class="pin-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="····" aria-label="Trip PIN">` : ''}
@@ -321,7 +325,11 @@
       action.innerHTML = '<button class="btn btn-primary btn-block btn-lg" id="start">Start trip</button>';
       K.$('#start').onclick = () => step('start', { pin: K.$('#pin').value });
       const pin = K.$('#pin'); pin.oninput = () => { pin.value = pin.value.replace(/\D/g, ''); if (pin.value.length === 4) K.$('#start').focus(); };
-    } else if (t.status === 'in_progress') K.slider(action, { label: t.service === 'parcel' ? 'Slide to complete delivery' : 'Slide to complete trip', cls: 'dark', onDone: () => step('complete') });
+    } else if (t.status === 'in_progress') K.slider(action, { label: t.service === 'parcel' ? 'Slide to complete delivery' : 'Slide to complete trip', cls: 'dark', onDone: () => {
+      const dc = K.$('#dcode');
+      if (dc && dc.value.trim().length !== 4) { K.$('#err').textContent = 'Enter the 4-digit delivery code from the recipient.'; const a = K.$('#action'); a.reset && a.reset(); dc.focus(); return; }
+      step('complete', dc ? { code: dc.value.trim() } : {});
+    } });
     K.$('#chatBtn').onclick = openChat;
     K.$('#sos').onclick = safety;
     const c = K.$('#cancel'); if (c) c.onclick = cancelTrip;
@@ -362,8 +370,9 @@
         <h2>${t.service === 'parcel' ? 'Delivery complete' : 'Trip complete'}</h2>
         <div class="fare-card">
           ${t.paymentMethod === 'cash'
-            ? `<span class="small muted">Collect cash</span><div class="amt">${K.ugx(t.fare)}</div><span class="small muted">You earned ${K.ugx(t.earning)}</span>`
+            ? `<span class="small muted">Collect cash</span><div class="amt">${K.ugx(t.payable)}</div><span class="small muted">You earned ${K.ugx(t.earning)}${t.discount ? ` (includes ${K.ugx(t.discount)} discount paid by Kwata)` : ''}</span>`
             : `<span class="small muted">You earned</span><div class="amt">${K.ugx(t.earning)}</div><span class="small muted">${t.paymentStatus === 'paid' ? 'Added to your balance' : 'Added once the ' + customer(t) + ' pays by ' + K.PAY_LABEL[t.paymentMethod]}</span>`}
+          ${t.tip ? `<span class="points-pill">💛 Tip ${K.ugx(t.tip)}${t.tipMethod === 'cash' ? ' in cash' : ''}</span>` : ''}
         </div>
         ${!t.driverRated ? `<h3>Rate ${K.esc(K.first(t.rider.name))}</h3>
           <div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${n} stars" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>` : ''}

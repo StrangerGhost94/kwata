@@ -84,12 +84,35 @@ async function resumeDispatch() {
   for (const r of rows) setTimeout(() => rt.dispatch(r.id).catch(console.error), 5000);
 }
 
+// Scheduled rides: start looking for a driver 10 minutes before pickup time.
+async function activateScheduled() {
+  const leadMin = Number(process.env.SCHEDULE_LEAD_MIN) || 10;
+  const { rows } = await db.query("SELECT id, rider_id, scheduled_for FROM trips WHERE status = 'scheduled' AND scheduled_for <= $1", [new Date(Date.now() + leadMin * 60e3)]);
+  for (const t of rows) {
+    const busy = await db.one("SELECT id FROM trips WHERE rider_id = $1 AND status IN ('requested','accepted','arrived','in_progress')", [t.rider_id]);
+    if (busy) {
+      if (new Date(t.scheduled_for).getTime() < Date.now() - 15 * 60e3) {
+        await db.query("UPDATE trips SET status = 'cancelled', cancelled_by = 'system', cancel_reason = 'Rider was on another trip' WHERE id = $1", [t.id]);
+        rt.notify(t.rider_id, 'toast', { text: 'Your scheduled ride was cancelled because you were on another trip.' });
+      }
+      continue;
+    }
+    const ok = await db.one("UPDATE trips SET status = 'requested', created_at = NOW() WHERE id = $1 AND status = 'scheduled' RETURNING id", [t.id]);
+    if (!ok) continue;
+    rt.notify(t.rider_id, 'toast', { text: '🕐 Your scheduled ride: finding you a driver now' });
+    await rt.broadcast(t.id);
+    rt.dispatch(t.id).catch(console.error);
+  }
+}
+
 (async () => {
   const kind = await db.connect();
   await seedAdmin();
   const server = http.createServer(app);
   rt.init(server);
   await resumeDispatch();
+  setInterval(() => activateScheduled().catch(console.error), 30e3);
+  setTimeout(() => activateScheduled().catch(console.error), 5000);
   const port = process.env.PORT || 3000;
   server.listen(port, () => console.log(`🚀 Kwata running on http://localhost:${port} (database: ${kind})`));
 })().catch((e) => { console.error(e); process.exit(1); });

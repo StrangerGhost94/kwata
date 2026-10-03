@@ -427,6 +427,9 @@
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" placeholder="e.g. Grace Nalubega" value="${K.esc(draft.name || '')}" required>
         <label for="ph">Phone number</label>${phoneField('ph', draft.phone)}
         <label for="pw">Password</label>${pwField('pw', 'new-password', 'At least 6 characters')}
+        ${(() => { let ref = ''; try { ref = localStorage.getItem('kwata_ref') || ''; } catch {} return ref
+          ? `<label for="ic">Invite code</label><input id="ic" name="inviteCode" value="${K.esc(ref)}" style="text-transform:uppercase;font-weight:700;letter-spacing:.05em">`
+          : `<button type="button" class="link-btn" id="icToggle" style="align-self:flex-start;margin-top:12px">Have an invite code?</button><div id="icWrap" class="hidden"><label for="ic">Invite code</label><input id="ic" name="inviteCode" placeholder="e.g. GRACE123" style="text-transform:uppercase;font-weight:700;letter-spacing:.05em"></div>`; })()}
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Create account">Create account</button>
@@ -435,13 +438,15 @@
       </form>`, onboarding);
       const f = root.querySelector('#f');
       root.querySelector('[data-li]').onclick = logIn;
+      const it = root.querySelector('#icToggle'); if (it) it.onclick = () => { it.remove(); root.querySelector('#icWrap').classList.remove('hidden'); root.querySelector('#ic').focus(); };
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
         draft = { name: f.nm.value.trim(), phone: f.ph.value.trim() };
         if (!draft.name) { err.textContent = 'Enter your name.'; return; }
+        const inviteCode = f.ic && f.ic.value.trim() ? f.ic.value.trim().toUpperCase() : undefined;
         busy(f, true);
-        try { await finish(await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw.value, role: 'rider' })); }
+        try { const out = await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw.value, role: 'rider', inviteCode }); try { localStorage.removeItem('kwata_ref'); } catch {} await finish(out); }
         catch (ex) { err.innerHTML = /already has an account/.test(ex.message) ? `This number already has an account. <a href="#" data-li2>Log in instead</a>` : K.esc(ex.message); busy(f, false); const l = err.querySelector('[data-li2]'); if (l) l.onclick = (ev) => { ev.preventDefault(); logIn(); }; }
       };
     }
