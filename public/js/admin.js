@@ -183,7 +183,7 @@
     const s = await K.api('/admin/settings');
     const ids = Object.keys(s.services);
     main.innerHTML = `<h1>Pricing</h1>
-      <p class="muted">Fare = (base + per km × distance + per minute × time) × busy multiplier, never below the minimum. Rounded up to the nearest UGX 500.</p>
+      <p class="muted">Fare = (base + per km × distance + per minute × time) × busy multiplier, never below the minimum. Rounded to the nearest UGX 100 (nearest 500 above UGX 20,000). Default rates are set about 8–10% below Bolt’s Kampala prices.</p>
       <div class="table-wrap"><table class="price"><thead><tr><th>Ride type</th><th>Base</th><th>Per km</th><th>Per min</th><th>Minimum</th><th>Busy ×</th><th>On</th></tr></thead><tbody>
       ${ids.map((id) => { const v = s.services[id]; return `<tr data-id="${id}"><td>${v.icon} <b>${K.esc(v.name)}</b></td>
         ${['base', 'perKm', 'perMin', 'minFare'].map((f) => `<td><input type="number" min="0" step="50" data-f="${f}" value="${v[f]}" aria-label="${f}"></td>`).join('')}

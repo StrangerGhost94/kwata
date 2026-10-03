@@ -1,17 +1,25 @@
 // Services, fares and platform settings. Admins can change these live.
 const db = require('./db');
 
+// Fares are calibrated against what riders actually pay in Kampala today.
+// Bolt's published Kampala route prices (Oct 2026) fit this formula almost exactly:
+//   Motorbike ≈ 700 + 620/km + 29/min   Car ≈ 4,250 + 1,800/km + 84/min   XL ≈ 2,700 + 2,270/km + 107/min
+// Kwata sits about 8–10% below Bolt for riders, while our lower commission
+// (12% vs Bolt's 15–20%) means drivers still take home about the same per trip.
+//   fare = max(minFare, base + perKm × road km + perMin × trip minutes) × surge
+const PRICING_VERSION = 2;
 const DEFAULT_SERVICES = {
-  boda:    { name: 'Kwata Boda',    icon: '🏍️', vehicle: 'boda', seats: 1, base: 1500,  perKm: 700,  perMin: 50,  minFare: 2500,  surge: 1, enabled: true, blurb: 'Beat the jam. Helmet provided.' },
-  car:     { name: 'Kwata Car',     icon: '🚗', vehicle: 'car',  seats: 4, base: 3000,  perKm: 1400, perMin: 100, minFare: 7000,  surge: 1, enabled: true, blurb: 'Affordable everyday rides.' },
-  comfort: { name: 'Kwata Comfort', icon: '🚙', vehicle: 'car',  seats: 4, base: 5000,  perKm: 2000, perMin: 150, minFare: 12000, surge: 1, enabled: true, blurb: 'Newer cars, AC, top-rated drivers.' },
-  parcel:  { name: 'Kwata Parcel',  icon: '📦', vehicle: 'boda', seats: 0, base: 2000,  perKm: 800,  perMin: 0,   minFare: 3000,  surge: 1, enabled: true, blurb: 'Send packages across town.' },
-  airport: { name: 'Kwata Airport', icon: '✈️', vehicle: 'car',  seats: 4, base: 15000, perKm: 1500, perMin: 0,   minFare: 50000, surge: 1, enabled: true, blurb: 'Entebbe & long-distance trips.' },
+  boda:    { name: 'Kwata Boda',    icon: '🏍️', vehicle: 'boda', seats: 1, base: 700,  perKm: 570,  perMin: 26, minFare: 2000,  surge: 1, enabled: true, blurb: 'Beat the jam. Helmet provided.' },
+  car:     { name: 'Kwata Car',     icon: '🚗', vehicle: 'car',  seats: 4, base: 3800, perKm: 1650, perMin: 75, minFare: 6000,  surge: 1, enabled: true, blurb: 'Affordable everyday rides.' },
+  comfort: { name: 'Kwata Comfort', icon: '🚙', vehicle: 'car',  seats: 4, base: 4500, perKm: 2050, perMin: 95, minFare: 9000,  surge: 1, enabled: true, blurb: 'Newer cars, AC, top-rated drivers.' },
+  parcel:  { name: 'Kwata Parcel',  icon: '📦', vehicle: 'boda', seats: 0, base: 1000, perKm: 600,  perMin: 20, minFare: 2500,  surge: 1, enabled: true, blurb: 'Send packages across town.' },
+  airport: { name: 'Kwata Airport', icon: '✈️', vehicle: 'car',  seats: 4, base: 8000, perKm: 1750, perMin: 50, minFare: 25000, surge: 1, enabled: true, blurb: 'Entebbe & long-distance trips.' },
 };
 
 const DEFAULTS = {
   services: DEFAULT_SERVICES,
-  commissionPct: 12,      // Uber took ~25%. Lower commission = happier drivers.
+  pricingVersion: PRICING_VERSION,
+  commissionPct: 12,      // Bolt 15–20%, SafeBoda 15%, Faras 10%. Low commission = happier drivers.
   dispatchRadiusKm: 8,
   offerTimeoutSec: 20,
   minWithdrawal: 5000,
@@ -30,6 +38,17 @@ async function getSettings() {
   // make sure new default services appear even if older settings were saved
   for (const [k, v] of Object.entries(DEFAULT_SERVICES)) {
     s.services[k] = { ...v, ...(s.services[k] || {}) };
+  }
+  // One-time move to the new real-world rates. Keeps each service's on/off switch and surge.
+  const stored = rows.find((r) => r.key === 'pricingVersion');
+  if (!stored || Number(stored.value) < PRICING_VERSION) {
+    for (const [k, v] of Object.entries(DEFAULT_SERVICES)) {
+      s.services[k] = { ...s.services[k], base: v.base, perKm: v.perKm, perMin: v.perMin, minFare: v.minFare };
+    }
+    s.pricingVersion = PRICING_VERSION;
+    for (const [key, value] of [['services', s.services], ['pricingVersion', PRICING_VERSION]]) {
+      await db.query('INSERT INTO settings(key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, JSON.stringify(value)]);
+    }
   }
   cache = s;
   return s;
@@ -89,8 +108,11 @@ function trustedDistance(pickup, drop, clientKm, clientMin) {
   return { km: Math.round(km * 100) / 100, min: Math.round(min) };
 }
 
+// Round like the apps riders know: to the nearest UGX 100 for everyday fares,
+// and to the nearest 500 for long trips, so cash change is easy.
 function roundUGX(n) {
-  return Math.ceil(n / 500) * 500;
+  const step = n < 20000 ? 100 : 500;
+  return Math.round(n / step) * step;
 }
 
 function calcFare(svc, km, min) {

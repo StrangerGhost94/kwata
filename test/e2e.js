@@ -123,7 +123,9 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   assert(before - after === Math.round(t4.fare * 0.12), 'cash trip: commission taken from driver balance');
 
   // Withdrawal + SOS + share tracking + admin
-  await api('/driver/withdraw', { amount: 5000 }, driver.token);
+  await api('/admin/settings', { minWithdrawal: 1000 }, admin.token, 'PUT');
+  await api('/driver/withdraw', { amount: 1000 }, driver.token);
+  await api('/admin/settings', { minWithdrawal: 5000 }, admin.token, 'PUT');
   const wds = await api('/admin/withdrawals', null, admin.token);
   await api(`/admin/withdrawals/${wds[0].id}`, { status: 'paid' }, admin.token);
   const pub = await api('/track/' + trip.shareToken);
