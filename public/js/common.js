@@ -246,29 +246,15 @@
     return { el: ov.firstElementChild, close };
   };
 
-  // ---------- real screen fit ----------
-  // Installed iPhone apps (and some Androids) stop the page above the home bar but
-  // still report the home-bar gap, so it gets counted twice and the tab bar floats
-  // up. Measure what the phone really gives us and only pad what is left.
-  function fitScreen() {
-    try {
-      const probe = document.createElement('div');
-      probe.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none';
-      document.body.appendChild(probe);
-      const inset = probe.offsetHeight; probe.remove();
-      const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-      const portrait = innerHeight >= innerWidth;
-      const screenH = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-      const lost = standalone ? Math.max(0, screenH - innerHeight) : 0; // screen the page doesn't reach
-      const pad = Math.max(0, inset - lost - 30); // matches Apple's own tab bars
-      document.documentElement.style.setProperty('--sab', pad + 'px');
-      K.screenInfo = { inset, lost, pad, standalone, innerHeight, screenH };
-    } catch {}
-  }
-  if (document.body) fitScreen();
-  addEventListener('resize', fitScreen);
-  addEventListener('orientationchange', () => setTimeout(fitScreen, 300));
-  if (/[?&]debug=screen/.test(location.search)) addEventListener('load', () => setTimeout(() => K.toast(JSON.stringify(K.screenInfo), 15000), 1500));
+  // ---------- screen info (open any page with ?debug=screen to see it) ----------
+  // The app runs edge to edge with a normal status bar, so the standard
+  // env(safe-area-inset-bottom) spacing lands exactly like native iPhone apps.
+  if (/[?&]debug=screen/.test(location.search)) addEventListener('load', () => setTimeout(() => {
+    const p = document.createElement('div'); p.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom)';
+    document.body.appendChild(p);
+    K.toast(JSON.stringify({ inset: p.offsetHeight, innerHeight, screenH: screen.height, standalone: navigator.standalone === true || matchMedia('(display-mode: standalone)').matches }), 15000);
+    p.remove();
+  }, 1500));
 
   // ---------- launch splash ----------
   const T0 = performance.now();

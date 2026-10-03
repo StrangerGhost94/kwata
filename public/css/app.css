@@ -28,7 +28,7 @@
   --font: 'Inter', ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --r: 14px; --r-lg: 22px; --r-pill: 999px;
   color-scheme: light;
-  --sab: max(0px, calc(env(safe-area-inset-bottom) - 30px));
+  --sab: env(safe-area-inset-bottom, 0px);
   /* aliases used by older pages */
   --gold: var(--brand); --lake: var(--ink); --mist: var(--surface); --vest: var(--brand); --vest-ink: var(--brand-ink);
   --display: var(--font); --body: var(--font);
