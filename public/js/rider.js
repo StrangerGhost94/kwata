@@ -51,6 +51,7 @@
     K.draggableSheet(sheet);
     map = K.map('map');
     map.on('moveend', onPinMove);
+    map.on('dragstart', () => { if (S.view === 'home') S.mapTouched = true; });
     root.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => openTab(b.dataset.tab));
 
     try {
@@ -96,7 +97,9 @@
       const ll = [S.gps.lat, S.gps.lng];
       if (!meMarker) meMarker = L.marker(ll, { icon: K.divIcon('<div class="me-dot"></div>', [18, 18]), interactive: false, zIndexOffset: 500 }).addTo(map);
       else meMarker.setLatLng(ll);
-      if (S.view === 'home' || userAsked) map.setView(ll, 16);
+      if (userAsked) S.mapTouched = false;
+      if (S.view === 'home') centerOn(S.gps, 16, !!userAsked);
+      else if (userAsked) map.setView(ll, 16, { animate: true });
       if (S.view === 'home' || !S.pickup) setPickup(S.gps.lat, S.gps.lng, 'Current location');
     }, () => { if (userAsked) K.toast('Turn on location so drivers can find you'); fallback(); }, { enableHighAccuracy: true, timeout: 10000 });
   }
@@ -138,9 +141,10 @@
       list.forEach((d) => {
         keep.add(d.k);
         if (nearby.has(d.k)) nearby.get(d.k).moveTo(d.lat, d.lng, d.heading);
-        else nearby.set(d.k, K.vehicle(map, d, d.vehicle === 'car' ? 'car' : 'boda', d.heading || Math.random() * 360));
+        else { const v = K.vehicle(map, d, d.vehicle === 'car' ? 'car' : 'boda', d.heading || Math.random() * 360); v._kind = d.vehicle === 'car' ? 'car' : 'boda'; nearby.set(d.k, v); }
       });
       for (const [k, m] of nearby) if (!keep.has(k)) { map.removeLayer(m); nearby.delete(k); }
+      if (S.view === 'home') paintEtas();
     } catch {}
   }
   function clearNearby() { for (const m of nearby.values()) map.removeLayer(m); nearby.clear(); }
@@ -177,7 +181,9 @@
     sheet.classList.toggle('home-card', v === 'home');
     K.underTabs(sheet, v === 'home');
     topbar();
-    sheet.classList.remove('sheet-enter'); void sheet.offsetWidth; sheet.classList.add('sheet-enter');
+    if (v !== S.lastView) { sheet.classList.remove('sheet-enter'); void sheet.offsetWidth; sheet.classList.add('sheet-enter'); }
+    if (v !== 'home') leaveHomeSheet();
+    S.lastView = v;
     ({ home: vHome, choose: vChoose, pickup: vPickup, droppin: vDropPin, searching: vSearching, trip: vTrip, done: vDone, none: vNone })[v]();
   }
 
@@ -187,38 +193,125 @@
     else reset();
   }
 
-  // Screen 5: home
+  // Screen 5: home. One clear job up top ("Where to?"), quick picks, services, then offers you swipe through.
+  // The sheet rests at the services row so the map stays visible; drag or flick it up for everything else.
+  const shortName = (a) => String(a || '').split(',')[0].trim();
   function vHome() {
     clearRoute();
-    const sp = S.user.savedPlaces || {};
     const ids = S.config.services.map((s) => s.id);
-    const main = ['boda', 'car', 'comfort', 'parcel'].filter((id) => ids.includes(id));
-    const saved = (key) => `<button class="saved" data-place="${key}"><span class="ic">${K.ic(key === 'home' ? 'home' : 'work')}</span>
-      <span class="grow"><b>${key === 'home' ? 'Home' : 'Work'}</b><span>${sp[key] ? K.esc(shorten(sp[key].address)) : 'Add address'}</span></span></button>`;
+    const main = ['boda', 'car', 'comfort', 'parcel', 'airport'].filter((id) => ids.includes(id));
+    const first = !S.homeShown; S.homeShown = true;
     sheet.innerHTML = `
       <div class="grabber"></div>
-      <div id="installHost"></div>
-      ${(S.upcoming || []).map((u) => `<div class="sched-card"><span class="ic">${K.ic('clock')}</span><span class="grow"><b>${whenLabel(u.scheduledFor)}</b><span>${K.esc(svcName(u.service))} to ${K.esc(shorten(u.drop.address, 30))}</span></span><button class="btn btn-sm btn-ghost" data-cancel-sched="${u.id}">Cancel</button></div>`).join('')}
-      ${S.growth && S.growth.firstRide ? `<div class="offer-chip">${K.ic('gift', 'sm')}<span><b>${S.growth.firstRide.percent}% off your first ride</b> · up to ${K.ugx(S.growth.firstRide.max)}, applied automatically</span></div>` : ''}
-      <button class="search-bar" id="whereBtn">${K.ic('search')}<span>Where are you going?</span></button>
-      <div class="saved-row">${saved('home')}${saved('work')}</div>
-      ${S.recent.length ? S.recent.slice(0, 2).map((r, i) => `<button class="lrow" data-recent="${i}"><span class="ic">${K.ic('clock')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(shorten(r.name, 40))}</span><span class="s">${K.esc(r.address)}</span></span></button>`).join('') : ''}
-      <div class="svc-row">${main.map((id) => `<button class="svc-ic" data-svc="${id}"><span class="tile">${K.ART[id]}</span>${svcName(id)}</button>`).join('')}</div>
-      ${ids.includes('airport') ? `<div class="section-label">More services</div>
-        <button class="more-row" data-svc="airport"><span class="ic">${K.ic('plane')}</span><span class="grow">Airport transfer<br><span class="tiny muted" style="font-weight:500">Entebbe and long-distance trips</span></span>${K.ic('chev', 'sm')}</button>` : ''}
-      ${ids.includes('parcel') ? `<button class="promo" data-svc="parcel"><span class="grow"><b>Need to send a package?</b><span>Fast and reliable delivery across Kampala</span></span>${K.ART.parcel}</button>` : ''}
-      ${S.config.growth && S.config.growth.referral.enabled && S.config.growth.referral.referrer ? `<button class="promo invite" id="inviteBanner"><span class="grow"><b>Invite friends, get ${K.ugx(S.config.growth.referral.referrer)}</b><span>They get ${K.ugx(S.config.growth.referral.friend)} too, after their first trip</span></span><span class="gift">🎁</span></button>` : ''}`;
+      <div class="home ${first && !K.reduced() ? 'home-in' : ''}">
+        <div id="upHost"></div>
+        <div class="where">
+          <button class="where-go" id="whereBtn">${K.ic('search')}<span>Where to?</span></button>
+          <button class="when-pill ${S.when ? 'on' : ''}" id="homeWhen" aria-label="Pickup time">${K.ic('clock', 'sm')}<span>${S.when ? K.esc(whenLabel(S.when)) : 'Now'}</span>${K.ic('chevDown', 'sm')}</button>
+        </div>
+        <div class="quick" id="quickHost">${quickHtml()}</div>
+        <div class="svc-strip" id="svcStrip">${main.map((id) => `<button class="svc-t" data-svc="${id}"><span class="tile">${K.ART[id]}</span><b>${svcName(id)}</b><small data-eta="${id}">&nbsp;</small></button>`).join('')}</div>
+        <div id="foldMark"></div>
+        <div id="forYou">${forYouHtml()}</div>
+        <div id="installHost"></div>
+      </div>`;
+    upHtml();
     K.installCard(K.$('#installHost'));
     K.$('#whereBtn').onclick = () => openSearch();
+    K.$('#homeWhen').onclick = () => openWhen(() => openSearch());
+    sheet.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { setService(b.dataset.svc); openSearch(b.dataset.svc === 'airport' ? { preset: K.PLACES[0] } : {}); });
+    bindQuick(); bindForYou(); paintEtas();
+    homeSheet();
+  }
+
+  function quickHtml() {
+    const sp = S.user.savedPlaces || {};
+    const chip = (attrs, ic, label, sub) => `<button class="q-chip" ${attrs}><span class="ic">${K.ic(ic, 'sm')}</span><span class="t"><b>${K.esc(label)}</b>${sub ? `<small>${K.esc(sub)}</small>` : ''}</span></button>`;
+    return chip('data-place="home"', 'home', 'Home', sp.home ? shortName(sp.home.address) : 'Add') +
+      chip('data-place="work"', 'work', 'Work', sp.work ? shortName(sp.work.address) : 'Add') +
+      S.recent.slice(0, 3).map((r, i) => chip(`data-recent="${i}"`, 'clock', shorten(shortName(r.name), 22), '')).join('');
+  }
+  function bindQuick() {
     sheet.querySelectorAll('[data-place]').forEach((b) => b.onclick = () => {
       const key = b.dataset.place, p = (S.user.savedPlaces || {})[key];
       if (p) chooseDrop({ name: key === 'home' ? 'Home' : 'Work', address: p.address, lat: p.lat, lng: p.lng });
       else openSearch({ saveAs: key });
     });
     sheet.querySelectorAll('[data-recent]').forEach((b) => b.onclick = () => chooseDrop(S.recent[+b.dataset.recent]));
-    sheet.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { setService(b.dataset.svc); openSearch(b.dataset.svc === 'airport' ? { preset: K.PLACES[0] } : {}); });
-    const ib = K.$('#inviteBanner'); if (ib) ib.onclick = () => openInvite();
-    sheet.querySelectorAll('[data-cancel-sched]').forEach((b) => b.onclick = () => cancelScheduled(+b.dataset.cancelSched));
+  }
+
+  // Swipeable offer cards (only real offers: what the admin has switched on)
+  function forYouHtml() {
+    const ids = S.config.services.map((s) => s.id);
+    const g = S.config.growth || {}, cards = [];
+    if (S.growth && S.growth.firstRide) cards.push(`<div class="fy-card fy-offer"><span class="grow"><small>Welcome offer</small><b>${S.growth.firstRide.percent}% off your first ride</b><span>Up to ${K.ugx(S.growth.firstRide.max)} · applied automatically</span></span><span class="fy-art">${K.ic('gift')}</span></div>`);
+    if (g.referral && g.referral.enabled && g.referral.referrer) cards.push(`<button class="fy-card fy-invite" data-fy="invite"><span class="grow"><small>Invite friends</small><b>Get ${K.ugx(g.referral.referrer)} per friend</b><span>They get ${K.ugx(g.referral.friend)} after their first trip</span></span><span class="fy-art emoji">🎁</span></button>`);
+    if (ids.includes('parcel')) cards.push(`<button class="fy-card fy-parcel" data-svc2="parcel"><span class="grow"><small>Kwata Parcel</small><b>Send a package</b><span>Picked up and delivered across Kampala</span></span><span class="fy-art">${K.ART.parcel}</span></button>`);
+    if (ids.includes('airport')) cards.push(`<button class="fy-card fy-air" data-svc2="airport"><span class="grow"><small>Airport transfer</small><b>Flying out of Entebbe?</b><span>Book now or schedule ahead, no surge</span></span><span class="fy-art">${K.ART.airport}</span></button>`);
+    if (!cards.length) return '';
+    return `<div class="section-label">For you</div><div class="fy-rail">${cards.join('')}</div>`;
+  }
+  function bindForYou() {
+    sheet.querySelectorAll('[data-svc2]').forEach((b) => b.onclick = () => { setService(b.dataset.svc2); openSearch(b.dataset.svc2 === 'airport' ? { preset: K.PLACES[0] } : {}); });
+    const ib = sheet.querySelector('[data-fy="invite"]'); if (ib) ib.onclick = () => openInvite();
+  }
+  function upHtml() {
+    const host = K.$('#upHost'); if (!host) return;
+    host.innerHTML = (S.upcoming || []).map((u) => `<div class="sched-card"><span class="ic">${K.ic('clock')}</span><span class="grow"><b>${whenLabel(u.scheduledFor)}</b><span>${K.esc(svcName(u.service))} to ${K.esc(shorten(u.drop.address, 30))}</span></span><button class="btn btn-sm btn-ghost" data-cancel-sched="${u.id}">Cancel</button></div>`).join('');
+    host.querySelectorAll('[data-cancel-sched]').forEach((b) => b.onclick = () => cancelScheduled(+b.dataset.cancelSched));
+  }
+  // Update parts of the home in place (no flash, no jump) when data arrives.
+  function patchHome(part) {
+    if (S.view !== 'home' || !K.$('#forYou')) return;
+    sheet._keep = true;
+    if (part === 'up') upHtml();
+    if (part === 'forYou') { K.$('#forYou').innerHTML = forYouHtml(); bindForYou(); }
+    if (part === 'quick') { K.$('#quickHost').innerHTML = quickHtml(); bindQuick(); }
+    sheet._keep = false;
+  }
+
+  // Live "2 min" under each service from the cars and bodas around you
+  function paintEtas() {
+    const near = { boda: Infinity, car: Infinity };
+    if (S.pickup) for (const m of nearby.values()) { const p = m.pos(), k = m._kind === 'car' ? 'car' : 'boda'; near[k] = Math.min(near[k], K.km(S.pickup, p)); }
+    const eta = (km, speed) => (Number.isFinite(km) ? Math.max(1, Math.round((km * 1.4 / speed) * 60 + 1)) + ' min' : '');
+    const val = { boda: eta(near.boda, 22), parcel: eta(near.boda, 22), car: eta(near.car, 18), comfort: eta(near.car, 18), airport: eta(near.car, 18) };
+    sheet.querySelectorAll('[data-eta]').forEach((el) => { const v = val[el.dataset.eta] || ''; if (el.textContent !== (v || ' ')) { el.textContent = v || ' '; el.classList.toggle('on', !!v); } });
+  }
+
+  // Resting heights for the home sheet
+  function homeSheet() {
+    sheet.restSnap = 'mid';
+    sheet.snapPoints = () => {
+      const H = sheet.offsetHeight, pad = parseFloat(sheet.style.paddingBottom) || 0;
+      const fold = K.$('#foldMark'), where = K.$('.where');
+      if (!fold || !where) return { full: 0 };
+      const midShow = fold.offsetTop + 6 + pad, peekShow = where.offsetTop + where.offsetHeight + 14 + pad;
+      return { full: 0, mid: Math.max(0, H - midShow), peek: Math.max(0, H - peekShow) };
+    };
+    sheet.onSheetMove = (off, p) => {
+      // Dim the map and tuck the greeting away as the sheet opens fully.
+      const k = p.mid ? Math.max(0, Math.min(1, 1 - off / p.mid)) : 0;
+      const low = p.peek > p.mid ? Math.max(0, Math.min(1, (off - p.mid) / (p.peek - p.mid))) : 0;
+      const app = K.$('#app'); if (app) { app.style.setProperty('--open', k.toFixed(3)); app.style.setProperty('--low', low.toFixed(3)); }
+    };
+    sheet.onSnap = () => { if (S.view === 'home' && S.gps && !S.mapTouched) centerOn(S.gps, map.getZoom(), true); };
+    sheet._keep = true; sheet.snapTo('mid', false); sheet._keep = false;
+  }
+  function leaveHomeSheet() {
+    sheet.restSnap = null; sheet.snapPoints = null; sheet.onSheetMove = null; sheet.onSnap = null;
+    const app = K.$('#app'); if (app) { app.style.setProperty('--open', 0); app.style.setProperty('--low', 0); }
+  }
+
+  // Put a point in the middle of the map you can actually see (between the top bar and the sheet).
+  function centerOn(ll, zoom, animate) {
+    const size = map.getSize(), tb = K.$('#topbar'), top = tb && tb.firstElementChild ? tb.getBoundingClientRect().bottom : 70;
+    const restTop = S.view === 'home' && sheet.snapPoints ? size.y - sheet.offsetHeight + (sheet.snapPoints()[sheet.snap()] || 0) : size.y * 0.55;
+    const visibleMid = (top + Math.max(top + 80, restTop)) / 2;
+    const shift = size.y / 2 - visibleMid;
+    const z = zoom || map.getZoom();
+    const c = map.unproject(map.project([ll.lat, ll.lng], z).add([0, shift]), z);
+    map.setView(c, z, { animate: !!animate, duration: 0.5 });
   }
   function setService(id) { S.service = id; try { localStorage.setItem('kwata_service', id); } catch {} }
 
@@ -310,6 +403,7 @@
     K.$('#tabs').classList.add('hidden');
     sheet.classList.remove('home-card');
     K.underTabs(sheet, false);
+    leaveHomeSheet(); S.lastView = 'choose';
     topbar();
     sheet.innerHTML = `<div class="grabber"></div><h2>Choose a ride</h2><div class="bar indet"><i></i></div>`;
     S.route = await K.route(S.pickup, S.drop);
@@ -375,7 +469,7 @@
   };
 
   // Schedule for later (20 min to 7 days ahead)
-  function openWhen() {
+  function openWhen(after) {
     const pad = (n) => String(n).padStart(2, '0');
     const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     const min = new Date(Date.now() + 21 * 60e3), max = new Date(Date.now() + 7 * 86400e3);
@@ -392,6 +486,7 @@
       const d = new Date(K.$('#wt', m.el).value);
       if (!(d > min - 60e3) || d > max) { K.$('#err', m.el).textContent = 'Choose a time between 20 minutes and 7 days from now.'; return; }
       S.when = d.toISOString(); m.close(); render();
+      if (after) setTimeout(after, 280);
     };
     const now = K.$('#now', m.el); if (now) now.onclick = () => { S.when = null; m.close(); render(); };
   }
@@ -904,8 +999,8 @@
   }
 
   // ---------- growth: offers, upcoming rides, invite friends, rewards ----------
-  async function loadGrowth() { try { S.growth = await K.api('/me/growth'); if (S.view === 'home' && !document.querySelector('.page')) render(); } catch {} }
-  async function loadUpcoming() { try { S.upcoming = await K.api('/trips/upcoming'); if (S.view === 'home' && !document.querySelector('.page')) render(); } catch {} }
+  async function loadGrowth() { try { S.growth = await K.api('/me/growth'); patchHome('forYou'); } catch {} }
+  async function loadUpcoming() { try { S.upcoming = await K.api('/trips/upcoming'); patchHome('up'); } catch {} }
   function cancelScheduled(id) {
     const m = K.modal(`<h2>Cancel scheduled ride?</h2><p class="muted">There’s no charge for cancelling a scheduled ride.</p>
       <button class="btn btn-danger btn-block btn-lg" id="yes">Cancel ride</button><button class="btn btn-block" style="margin-top:8px" data-close>Keep it</button>`);

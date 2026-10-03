@@ -882,3 +882,99 @@ html.standalone .auth2 { min-height: 100%; }
 .g-fields { flex-wrap: wrap; align-items: flex-end; }
 .g-fields > span { flex: 1 1 90px; min-width: 90px; }
 .g-fields small { display: block; font-size: .72rem; color: var(--ink-2); margin: 6px 0 4px; font-weight: 600; }
+
+/* =====================================================================
+   Home v3: lighter, calmer, smoother
+   ===================================================================== */
+/* The big sheet is solid (a full-screen blur over a live map is what made phones stutter). */
+.sheet { background: #FDFCFB; -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: 0 -8px 30px rgba(0,0,0,.09), 0 120px 0 0 #FDFCFB; will-change: transform; }
+.sheet.lifted { overflow: hidden; }
+.sheet-enter { animation: sheetRise .55s var(--ease-ios); }
+@keyframes sheetRise { from { translate: 0 44px; opacity: .3; } to { translate: 0 0; opacity: 1; } }
+.sheet.home-card { max-height: calc(100dvh - env(safe-area-inset-top) - 70px); padding-top: 6px; }
+.sheet .grabber { margin-bottom: 12px; }
+
+/* Map dims and the greeting tucks away as the sheet opens fully (--open goes 0 → 1 while dragging) */
+.app { --open: 0; }
+.app::after { content: ''; position: absolute; inset: 0; z-index: 550; background: #000; opacity: calc(var(--open) * .22); pointer-events: none; }
+.app .topbar { opacity: calc(1 - var(--open) * 1.4); transform: translateY(calc(var(--open) * -10px)); }
+
+/* "Where to?" with the pickup-time pill inside, like the big apps */
+.where { display: flex; align-items: center; gap: 6px; background: rgba(118,118,128,.12); border-radius: 999px; padding: 5px 5px 5px 0; }
+.where-go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; background: none; border: 0; padding: 0 0 0 18px; min-height: 48px; font: inherit; font-size: 1.12rem; font-weight: 700; color: var(--ink); cursor: pointer; text-align: left; letter-spacing: -.01em; }
+.where-go svg { flex: none; }
+.when-pill { flex: none; display: inline-flex; align-items: center; gap: 5px; background: #fff; border: 0; border-radius: 999px; padding: 0 12px; height: 40px; font: inherit; font-size: .86rem; font-weight: 700; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); cursor: pointer; max-width: 46%; }
+.when-pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.when-pill.on { background: var(--ink); color: #fff; }
+.where:active { background: rgba(118,118,128,.18); }
+
+/* Quick picks: Home, Work, recent places; swipe sideways */
+.quick, .svc-strip, .fy-rail { display: flex; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; margin: 0 -18px; padding: 0 18px; scroll-padding: 0 18px; }
+.quick::-webkit-scrollbar, .svc-strip::-webkit-scrollbar, .fy-rail::-webkit-scrollbar { display: none; }
+.quick { gap: 8px; margin-top: 12px; margin-bottom: 2px; padding-bottom: 2px; }
+.q-chip { flex: none; display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid rgba(0,0,0,.07); border-radius: 999px; padding: 5px 14px 5px 5px; font: inherit; cursor: pointer; max-width: 200px; text-align: left; }
+.q-chip .ic { width: 30px; height: 30px; border-radius: 50%; background: rgba(118,118,128,.12); display: grid; place-items: center; flex: none; }
+.q-chip .t { min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
+.q-chip b { font-size: .86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-chip small { font-size: .72rem; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+
+/* Services: one swipeable row, live pickup times */
+.svc-strip { gap: 10px; margin-top: 14px; padding-bottom: 4px; scroll-snap-type: x proximity; }
+.svc-t { flex: 0 0 calc((100% - 30px) / 4.35); min-width: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; scroll-snap-align: start; }
+.svc-t .tile { width: 100%; aspect-ratio: 1.05; border-radius: 18px; background: linear-gradient(160deg, #FFF6D6, #FFEDB0); display: grid; place-items: center; margin-bottom: 4px; transition: transform .2s var(--ease-out); }
+.svc-t .tile .art-img { width: 78%; height: 78%; }
+.svc-t b { font-size: .84rem; }
+.svc-t small { font-size: .7rem; color: var(--ink-2); min-height: 1.1em; opacity: 0; transition: opacity .3s; }
+.svc-t small.on { opacity: 1; }
+.svc-t:active .tile { transform: scale(.93); }
+
+/* For you: swipeable offer cards */
+.home .section-label { margin: 18px 0 8px; }
+.fy-rail { gap: 10px; scroll-snap-type: x mandatory; padding-bottom: 6px; }
+.fy-card { flex: 0 0 84%; scroll-snap-align: start; display: flex; align-items: center; gap: 10px; min-height: 104px; border: 0; border-radius: 20px; padding: 16px; font: inherit; text-align: left; cursor: pointer; overflow: hidden; position: relative; transition: transform .2s var(--ease-out); }
+.fy-card:active { transform: scale(.98); }
+.fy-card .grow { min-width: 0; }
+.fy-card small { display: block; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; opacity: .7; margin-bottom: 3px; }
+.fy-card b { display: block; font-size: 1.05rem; letter-spacing: -.01em; line-height: 1.2; }
+.fy-card .grow > span { display: block; font-size: .8rem; margin-top: 4px; opacity: .8; }
+.fy-art { flex: none; width: 70px; height: 70px; display: grid; place-items: center; }
+.fy-art .art-img { width: 70px; height: 70px; }
+.fy-art.emoji { font-size: 2.6rem; }
+.fy-art svg { width: 40px; height: 40px; }
+.fy-offer { background: linear-gradient(135deg, #0F7A3E, #12A150); color: #fff; }
+.fy-invite { background: linear-gradient(135deg, #111, #2A2418); color: #fff; }
+.fy-invite b { color: #FFC400; }
+.fy-parcel { background: linear-gradient(135deg, #FFF3C4, #FFE38A); color: var(--ink); }
+.fy-air { background: linear-gradient(135deg, #E6F0FF, #C9DCFF); color: #0B2550; }
+
+/* First-time entrance: items rise in one after another */
+.home-in > * { animation: riseIn .6s var(--ease-ios) both; }
+.home-in > *:nth-child(2) { animation-delay: .04s; } .home-in > *:nth-child(3) { animation-delay: .09s; }
+.home-in > *:nth-child(4) { animation-delay: .14s; } .home-in > *:nth-child(5) { animation-delay: .19s; }
+.home-in > *:nth-child(n+6) { animation-delay: .24s; }
+@keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.home .sched-card { margin-bottom: 10px; }
+
+@media (max-height: 700px) {
+  .where-go { min-height: 44px; font-size: 1.05rem; }
+  .when-pill { height: 36px; }
+  .quick { margin-top: 10px; }
+  .svc-strip { margin-top: 10px; }
+  .svc-t .tile { aspect-ratio: 1.2; border-radius: 16px; }
+}
+@media (min-width: 760px) {
+  .sheet { will-change: auto; box-shadow: 0 10px 34px rgba(0,0,0,.12); }
+  .quick, .svc-strip, .fy-rail { margin: 0 -18px; }
+  .app::after { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .home-in > * { animation: none !important; } }
+/* Below the fold fades in as the sheet is pulled up, so nothing peeks messily under the tab bar */
+.home #forYou > *, .home #installHost > * { opacity: clamp(0, calc(var(--open) * 2 - .2), 1); transition: opacity .15s linear; }
+.home #forYou > .section-label { transform: translateY(calc((1 - var(--open)) * 10px)); }
+.app { --low: 0; }
+.home .quick > *, .home .svc-strip > * { opacity: clamp(0, calc(1 - var(--low) * 1.6), 1); }
+@media (min-width: 760px) {
+  .home .quick > *, .home .svc-strip > *, .home #forYou > *, .home #installHost > * { opacity: 1; transform: none; }
+  .app .topbar { opacity: 1; transform: none; }
+}
