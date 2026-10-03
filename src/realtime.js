@@ -324,5 +324,6 @@ function forceOffline(driverId) {
 module.exports = {
   init, broadcast, messages, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
   liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, ACTIVE,
+  driversSnapshot: () => [...drivers.values()],
   get io() { return io; },
 };

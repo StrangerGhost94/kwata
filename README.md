@@ -94,3 +94,15 @@ src/payments.js      Flutterwave Mobile Money + card
 public/              landing, rider, driver, admin, tracking pages
 test/e2e.js          full ride simulation
 ```
+
+## Pricing (how fares work)
+
+Fares are upfront and calibrated to Kampala (about 8–10% below Bolt's published route prices):
+
+`fare = max(minimum, base + per km × road km + per minute × minutes in traffic) × surge`
+
+- **Traffic** – minutes come from free-flow route time × a Kampala time-of-day factor (rush hours 7:30–9:30 and 17:00–19:30 on weekdays, quieter at night). Bodas feel only about a third of the jam.
+- **Dynamic surge** (`src/surge.js`) – per ~2 km area and per vehicle class (boda / car): ride requests in the last 10 minutes (plus people checking prices) vs free drivers within 3 km. Gentle curve, needs real requests, rises at most +0.3× per minute, falls −0.15× per minute, capped (1.8× boda, 2.0× car by default).
+- **Rain** – live weather from Open-Meteo adds a small boost (more for boda). Open-Meteo's free API is for non-commercial use; for production set `OPEN_METEO_KEY` (their commercial plan) or switch rain off in Admin → Pricing.
+- **Locked quotes** – every price shown is locked for 2 minutes; riders pay exactly what they accepted. If a lock expires and the price has risen more than 5%, the rider is shown the new price before booking.
+- **Admin → Pricing** – edit rates, fixed boost, surge on/off, sensitivity, caps, rain boost, and see live conditions.

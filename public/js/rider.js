@@ -306,12 +306,25 @@
     sheet.innerHTML = `<div class="grabber"></div><h2>Choose a ride</h2><div class="bar indet"><i></i></div>`;
     S.route = await K.route(S.pickup, S.drop);
     try {
-      S.quote = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.min });
+      S.quote = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin });
+      S.quote.at = Date.now();
       if (!S.quote.options.find((o) => o.id === S.service)) setService(S.quote.options[0].id);
       showRoute();
       render();
     } catch (e) { sheet.innerHTML = `<p class="error">${K.esc(e.message)}</p><button class="btn btn-block" id="b">Back</button>`; K.$('#b').onclick = reset; }
   }
+
+  // Prices are locked for 2 minutes. If the rider is still deciding, quietly get a fresh lock.
+  let quoteTimer;
+  async function refreshQuote() {
+    if (S.view !== 'choose' || !S.route) return;
+    try {
+      const q = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin });
+      q.at = Date.now(); S.quote = q;
+      if (S.view === 'choose') render();
+    } catch {}
+  }
+  setInterval(() => { if (S.view === 'choose' && S.quote && Date.now() - S.quote.at > 100e3) refreshQuote(); }, 10e3);
 
   function showRoute() {
     clearRoute();
@@ -333,6 +346,12 @@
     labels.forEach((l) => map.removeLayer(l)); labels = [];
   }
 
+  const surgeText = (o) => {
+    const r = o.surgeReasons || [];
+    const why = r.includes('rain') && r.includes('demand') ? 'Rain and high demand' : r.includes('rain') ? 'Raining' : r.includes('demand') ? 'High demand nearby' : 'Busy right now';
+    return `↑ ${why} · fares ×${o.surge}`;
+  };
+
   // Screen 6: choose a ride
   function vChoose() {
     const q = S.quote;
@@ -341,21 +360,22 @@
     const meta = (o) => [o.etaMin != null ? `${o.etaMin} min` : 'No drivers nearby', o.seats ? `${o.seats} seat${o.seats > 1 ? 's' : ''}` : 'Up to 10 kg'].join(' · ');
     sheet.innerHTML = `
       <div class="grabber"></div>
-      <h2 style="margin-bottom:12px">Choose a ride</h2>
+      <div class="row" style="margin-bottom:12px;align-items:baseline"><h2 style="margin:0" class="grow">Choose a ride</h2>
+        <span class="tiny muted">${[q.raining ? '🌧 Raining' : '', { rush: 'Rush hour traffic', busy: 'Busy roads', clear: 'Clear roads' }[q.traffic] || ''].filter(Boolean).join(' · ')}</span></div>
       <div class="opts" role="radiogroup" aria-label="Ride type">
       ${q.options.map((o) => `
         <button class="opt" data-s="${o.id}" aria-pressed="${o.id === S.service}">
           <span class="art">${K.artFor(o.id, o.vehicle)}</span>
           <span class="grow"><span class="name" style="display:block">${K.esc(svcName(o.id))}</span>
-            <span class="meta">${meta(o)}</span>${o.surge > 1 ? `<span class="surge" style="display:block">Busy right now · higher fares</span>` : ''}</span>
-          <span class="price">${K.ugx(o.fare)}</span>
+            <span class="meta">${meta(o)}</span>${o.surge > 1 ? `<span class="surge" style="display:block">${surgeText(o)}</span>` : ''}</span>
+          <span class="price">${o.surge > 1 && o.regularFare < o.fare ? `<span class="was">${K.ugx(o.regularFare)}</span>` : ''}${K.ugx(o.fare)}</span>
           <span class="tick">${K.ic('check', 'sm')}</span>
         </button>`).join('')}
       </div>
       <button class="payrow" id="pickRow" style="padding-bottom:4px"><span class="dot-pick" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Pickup</span><span class="ellipsis" id="pickLabel" style="display:block">${K.esc(S.pickup.address)}</span></span><span class="small muted">Change</span></button>
       ${S.service === 'parcel' ? `<button class="payrow" id="parcelRow"><span class="paylogo wallet">${K.ic('gift', 'sm')}</span><span class="grow">${S.parcel ? `Package for ${K.esc(S.parcel.recipientName)}` : 'Add delivery details'}</span>${K.ic('chev', 'sm')}</button>` : ''}
       <button class="payrow" id="payRow">${P.logo}<span class="grow">${P.name}${p === 'wallet' ? ` · ${K.ugx(S.user.walletBalance)}` : ''}${['mtn', 'airtel'].includes(p) ? `<span class="tiny muted" style="display:block;font-weight:500">${prettyPhone(S.user.payPhone)}</span>` : ''}</span>${K.ic('chev', 'sm')}</button>
-      <div class="sheet-foot"><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
+      <div class="sheet-foot"><p class="tiny muted" style="margin:0;text-align:center">Upfront price · you pay what you see</p><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
       <button class="btn btn-primary btn-block btn-lg" id="request">Request ${K.esc(svcName(sel.id))}</button></div>`;
     sheet.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => {
       if (b.dataset.s === S.service) return;
@@ -413,10 +433,15 @@
     const btn = K.$('#request'), err = K.$('#err');
     btn.disabled = true; btn.textContent = 'Requesting…'; err.textContent = '';
     if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
-    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.min };
+    const opt = S.quote.options.find((o) => o.id === S.service);
+    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && opt.fare };
     if (S.service === 'parcel') body.parcel = S.parcel;
     try { onTrip(await K.api('/trips', body)); }
-    catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = `Request ${svcName(S.service)}`; }
+    catch (e) {
+      btn.disabled = false; btn.textContent = `Request ${svcName(S.service)}`;
+      if (/Prices have just changed/.test(e.message)) { K.toast(e.message, 5000); refreshQuote(); return; }
+      err.textContent = e.message;
+    }
   }
 
   // Screen 7: finding your rider

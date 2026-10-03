@@ -183,8 +183,8 @@
     const s = await K.api('/admin/settings');
     const ids = Object.keys(s.services);
     main.innerHTML = `<h1>Pricing</h1>
-      <p class="muted">Fare = (base + per km × distance + per minute × time) × busy multiplier, never below the minimum. Rounded to the nearest UGX 100 (nearest 500 above UGX 20,000). Default rates are set about 8–10% below Bolt’s Kampala prices.</p>
-      <div class="table-wrap"><table class="price"><thead><tr><th>Ride type</th><th>Base</th><th>Per km</th><th>Per min</th><th>Minimum</th><th>Busy ×</th><th>On</th></tr></thead><tbody>
+      <p class="muted">Fare = (base + per km × distance + per minute × time in traffic, never below the minimum) × surge. Rounded to the nearest UGX 100 (nearest 500 above UGX 20,000). Default rates are set about 8–10% below Bolt’s Kampala prices.</p>
+      <div class="table-wrap"><table class="price"><thead><tr><th>Ride type</th><th>Base</th><th>Per km</th><th>Per min</th><th>Minimum</th><th>Fixed boost ×</th><th>On</th></tr></thead><tbody>
       ${ids.map((id) => { const v = s.services[id]; return `<tr data-id="${id}"><td>${v.icon} <b>${K.esc(v.name)}</b></td>
         ${['base', 'perKm', 'perMin', 'minFare'].map((f) => `<td><input type="number" min="0" step="50" data-f="${f}" value="${v[f]}" aria-label="${f}"></td>`).join('')}
         <td><input type="number" min="1" max="5" step="0.1" data-f="surge" value="${v.surge}" aria-label="busy multiplier"></td>
@@ -197,7 +197,32 @@
         <div><label for="mw">Min cash out (UGX)</label><input id="mw" type="number" min="0" value="${s.minWithdrawal}"></div>
         <div><label for="sp">Support phone</label><input id="sp" value="${K.esc(s.supportPhone)}"></div>
       </div>
+      <h2 style="margin-top:26px">Dynamic pricing</h2>
+      <p class="muted" style="max-width:720px">Like Bolt and Uber, fares rise automatically when an area has more ride requests than free drivers, or when it rains. Increases are gentle, smoothed and capped, and riders always pay the upfront price they accepted. “Fixed boost” above is a manual minimum on top of this.</p>
+      <div class="kpis" style="max-width:720px">
+        <div><label><input type="checkbox" id="dyn" ${s.dynamic.enabled ? 'checked' : ''} style="width:auto"> Automatic surge</label></div>
+        <div><label><input type="checkbox" id="wx" ${s.dynamic.weather ? 'checked' : ''} style="width:auto"> Rain boost (live weather)</label></div>
+        <div><label for="sens">Sensitivity (0.05–1)</label><input id="sens" type="number" min="0.05" max="1" step="0.05" value="${s.dynamic.sensitivity}"></div>
+        <div><label for="mb">Max boda surge ×</label><input id="mb" type="number" min="1" max="3" step="0.1" value="${s.dynamic.maxBoda}"></div>
+        <div><label for="mc">Max car surge ×</label><input id="mc" type="number" min="1" max="3" step="0.1" value="${s.dynamic.maxCar}"></div>
+      </div>
+      <div class="card" id="live" style="max-width:720px;margin:14px 0">Checking live conditions…</div>
+      <div class="row" style="max-width:720px;margin-bottom:18px"><span class="grow small muted">Weather feed wrong or offline? Switch rain on or off by hand.</span>
+        <button class="btn btn-sm" data-rain="4">It’s raining</button><button class="btn btn-sm" data-rain="0">Dry</button><button class="btn btn-sm btn-ghost" data-rain="">Use live weather</button></div>
       <button class="btn btn-primary" id="save">Save pricing</button>`;
+    const live = async () => {
+      try {
+        const c = await K.api('/admin/pricing/live');
+        const row = (n, x) => `<b>${n}:</b> ×${x.mult}${x.reasons.length ? ' (' + x.reasons.join(', ') + ')' : ''}`;
+        K.$('#live').innerHTML = `<b>Central Kampala now</b><br>${row('Boda & parcel', c.boda)} · ${row('Cars', c.car)}<br>
+          <span class="small muted">Rain: ${c.rainMm} mm/h${c.raining ? ' (raining)' : ''} · Traffic: ${c.traffic}${c.bodaDebug ? ` · Boda demand ${c.bodaDebug.demand.score.toFixed(1)} vs ${c.bodaDebug.supply} free riders · Car demand ${c.carDebug.demand.score.toFixed(1)} vs ${c.carDebug.supply} free drivers` : ''}</span>`;
+      } catch (e) { K.$('#live').textContent = e.message; }
+    };
+    live();
+    main.querySelectorAll('[data-rain]').forEach((b) => b.onclick = async () => {
+      await K.api('/admin/pricing/rain', { mm: b.dataset.rain === '' ? null : +b.dataset.rain });
+      K.toast(b.dataset.rain === '' ? 'Using live weather' : b.dataset.rain === '0' ? 'Rain boost off' : 'Rain boost on'); live();
+    });
     K.$('#save').onclick = async () => {
       const services = {};
       main.querySelectorAll('tr[data-id]').forEach((tr) => {
@@ -205,7 +230,8 @@
         tr.querySelectorAll('[data-f]').forEach((i) => { o[i.dataset.f] = i.type === 'checkbox' ? i.checked : +i.value; });
         services[tr.dataset.id] = o;
       });
-      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, supportPhone: K.$('#sp').value }, 'PUT');
+      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, supportPhone: K.$('#sp').value,
+        dynamic: { enabled: K.$('#dyn').checked, weather: K.$('#wx').checked, sensitivity: +K.$('#sens').value, maxBoda: +K.$('#mb').value, maxCar: +K.$('#mc').value } }, 'PUT');
       K.toast('Pricing saved. New requests use it right away.');
     };
   }

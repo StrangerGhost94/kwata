@@ -24,6 +24,8 @@ const DEFAULTS = {
   offerTimeoutSec: 20,
   minWithdrawal: 5000,
   supportPhone: '+256 700 000000',
+  // Dynamic pricing (see src/surge.js). Caps keep fares affordable in Kampala.
+  dynamic: { enabled: true, sensitivity: 0.35, maxBoda: 1.8, maxCar: 2.0, weather: true },
 };
 
 let cache = null;
@@ -35,6 +37,7 @@ async function getSettings() {
   for (const r of rows) {
     try { s[r.key] = JSON.parse(r.value); } catch { /* ignore bad rows */ }
   }
+  s.dynamic = { ...DEFAULTS.dynamic, ...(s.dynamic || {}) };
   // make sure new default services appear even if older settings were saved
   for (const [k, v] of Object.entries(DEFAULT_SERVICES)) {
     s.services[k] = { ...v, ...(s.services[k] || {}) };
@@ -56,7 +59,7 @@ async function getSettings() {
 
 async function updateSettings(patch) {
   const current = await getSettings();
-  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'supportPhone'];
+  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'supportPhone', 'dynamic'];
   for (const key of allowed) {
     if (patch[key] === undefined) continue;
     let value = patch[key];
@@ -72,6 +75,14 @@ async function updateSettings(patch) {
         if (svc.enabled !== undefined) clean.enabled = !!svc.enabled;
         value[id] = { ...value[id], ...clean };
       }
+    } else if (key === 'dynamic') {
+      const d = { ...current.dynamic };
+      if (value.enabled !== undefined) d.enabled = !!value.enabled;
+      if (value.weather !== undefined) d.weather = !!value.weather;
+      if (value.sensitivity !== undefined) d.sensitivity = Math.min(1, Math.max(0.05, Number(value.sensitivity) || 0.35));
+      if (value.maxBoda !== undefined) d.maxBoda = Math.min(3, Math.max(1, Number(value.maxBoda) || 1.8));
+      if (value.maxCar !== undefined) d.maxCar = Math.min(3, Math.max(1, Number(value.maxCar) || 2));
+      value = d;
     } else if (key !== 'supportPhone') {
       value = Number(value);
       if (!Number.isFinite(value) || value < 0) continue;
@@ -94,18 +105,18 @@ function haversineKm(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// Client sends road distance from OSRM; we sanity-check it against the
-// straight-line distance so nobody can fake a cheap fare.
-function trustedDistance(pickup, drop, clientKm, clientMin) {
+// Client sends road distance and FREE-FLOW driving time from OSRM; we sanity-check
+// both against the straight line so nobody can fake a cheap fare. Traffic is added
+// on the server (see surge.trafficFactor), so everyone gets the same treatment.
+function trustedDistance(pickup, drop, clientKm, clientFreeMin) {
   const straight = haversineKm(pickup, drop);
   let km = Number(clientKm);
   if (!Number.isFinite(km) || km <= 0) km = straight * 1.35;
   km = Math.min(Math.max(km, straight), straight * 3 + 1);
-  let min = Number(clientMin);
-  const minPossible = (km / 60) * 60;   // 60 km/h average best case
-  if (!Number.isFinite(min) || min <= 0) min = (km / 22) * 60; // Kampala avg ~22 km/h
-  min = Math.min(Math.max(min, minPossible), (km / 5) * 60 + 10);
-  return { km: Math.round(km * 100) / 100, min: Math.round(min) };
+  let min = Number(clientFreeMin);
+  if (!Number.isFinite(min) || min <= 0) min = (km / 35) * 60;           // free-flow ~35 km/h in town
+  min = Math.min(Math.max(min, (km / 70) * 60), (km / 15) * 60 + 5);     // between 70 and 15 km/h
+  return { km: Math.round(km * 100) / 100, min: Math.round(min * 10) / 10 };
 }
 
 // Round like the apps riders know: to the nearest UGX 100 for everyday fares,
@@ -115,21 +126,35 @@ function roundUGX(n) {
   return Math.round(n / step) * step;
 }
 
-function calcFare(svc, km, min) {
-  const raw = (svc.base + svc.perKm * km + svc.perMin * min) * (svc.surge || 1);
-  return roundUGX(Math.max(svc.minFare, raw));
+// fare = max(minimum, base + per km × km + per minute × minutes) × multiplier
+function calcFare(svc, km, min, mult) {
+  const m = mult == null ? (svc.surge || 1) : mult;
+  const raw = Math.max(svc.minFare, svc.base + svc.perKm * km + svc.perMin * min);
+  return roundUGX(raw * m);
 }
 
-async function quote(pickup, drop, clientKm, clientMin) {
+// Full upfront quote for every ride type, with live demand, rain and traffic.
+async function quote(pickup, drop, clientKm, clientFreeMin) {
+  const surge = require('./surge');
   const s = await getSettings();
-  const { km, min } = trustedDistance(pickup, drop, clientKm, clientMin);
+  const { km, min: freeMin } = trustedDistance(pickup, drop, clientKm, clientFreeMin);
+  const cond = await surge.conditions(pickup.lat, pickup.lng, s.dynamic);
   const options = Object.entries(s.services)
     .filter(([, v]) => v.enabled)
-    .map(([id, v]) => ({
-      id, name: v.name, icon: v.icon, seats: v.seats, blurb: v.blurb, vehicle: v.vehicle,
-      surge: v.surge, fare: calcFare(v, km, min),
-    }));
-  return { distanceKm: km, durationMin: min, options };
+    .map(([id, v]) => {
+      const cls = surge.CLASS_OF[id] || 'car';
+      const mins = Math.max(1, Math.round(freeMin * surge.trafficFactor(cls, cond.raining)));
+      const dyn = cond[cls].mult, manual = v.surge || 1;
+      const mult = Math.min(5, Math.max(dyn, manual));
+      const reasons = manual > dyn ? ['busy'] : cond[cls].reasons;
+      return {
+        id, name: v.name, icon: v.icon, seats: v.seats, blurb: v.blurb, vehicle: v.vehicle,
+        surge: Math.round(mult * 10) / 10, surgeReasons: mult > 1 ? reasons : [],
+        durationMin: mins, fare: calcFare(v, km, mins, mult), regularFare: calcFare(v, km, mins, 1),
+      };
+    });
+  const car = options.find((o) => surge.CLASS_OF[o.id] === 'car') || options[0];
+  return { distanceKm: km, freeMin, durationMin: car ? car.durationMin : Math.round(freeMin), traffic: cond.traffic, raining: cond.raining, options };
 }
 
 module.exports = { getSettings, updateSettings, quote, calcFare, haversineKm, trustedDistance, DEFAULT_SERVICES };

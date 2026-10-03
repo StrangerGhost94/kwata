@@ -159,6 +159,21 @@
   }
 
   // Screen 17: home
+  // Like Uber/Bolt "high demand" alerts: tell drivers when their area pays more.
+  function demandHtml() {
+    const d = S.demand; if (!d) return '';
+    const mine = d[S.driver.vehicleType === 'car' ? 'car' : 'boda'];
+    if (!mine || mine.mult <= 1) return d.raining ? '<div class="demand-chip">🌧 It’s raining. Riders need you, so stay safe out there.</div>' : '';
+    const why = mine.reasons.includes('rain') && mine.reasons.includes('demand') ? 'Rain and high demand near you' : mine.reasons.includes('rain') ? 'Raining: fares are higher' : 'High demand near you';
+    return `<div class="demand-chip">${K.ic('trend', 'sm')} ${why}<b>×${mine.mult}</b></div>`;
+  }
+  async function loadDemand() {
+    if (!S.loc || S.trip) return;
+    try { S.demand = await K.api(`/drivers/demand?lat=${S.loc.lat}&lng=${S.loc.lng}`); } catch { return; }
+    const el = K.$('#demand'); if (el) el.innerHTML = demandHtml();
+  }
+  setInterval(loadDemand, 60e3); setTimeout(loadDemand, 3000);
+
   function vHome() {
     clearTarget();
     const e = S.earnings || { today: { net: 0, trips: 0 }, balance: 0 };
@@ -166,6 +181,7 @@
       <div class="grabber"></div>
       <div id="installHost"></div>
       ${S.online ? `<div class="online-banner"><span class="pulse"></span><span class="grow">You’re online<br><span class="tiny" style="opacity:.7;font-weight:500">Ride requests near you will pop up here</span></span></div>` : ''}
+      <div id="demand">${demandHtml()}</div>
       <button class="earn-card" id="earn"><span><small>Today’s earnings</small><b>${K.ugx(e.today.net)}</b></span>${K.ic('chev')}</button>
       <div class="stats3">
         <div><b>${e.today.trips}</b><span>Trips today</span></div>

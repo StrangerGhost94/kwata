@@ -595,3 +595,6 @@ html, body { background: var(--bg); overscroll-behavior: none; }
 body[data-app="rider"], body[data-app="driver"] { -webkit-text-size-adjust: 100%; }
 .tabbar svg.i { width: 26px; height: 26px; }
 .tabbar button { padding: 7px 0 4px; gap: 2px; font-size: .7rem; }
+.opt .price .was { display: block; text-decoration: line-through; font-size: .74rem; font-weight: 600; color: var(--ink-3); }
+.demand-chip { display: flex; align-items: center; gap: 10px; background: var(--brand-soft); color: #6B5200; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; font-weight: 600; font-size: .9rem; }
+.demand-chip b { margin-left: auto; color: var(--ink); }

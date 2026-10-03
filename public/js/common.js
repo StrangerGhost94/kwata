@@ -246,6 +246,28 @@
     return { el: ov.firstElementChild, close };
   };
 
+  // ---------- old home-screen installs ----------
+  // Apps added to an iPhone home screen before Oct 2026 keep the old "draw under
+  // the status bar" mode. iOS then cuts the app off above the home bar, so the
+  // home-bar spacing must not be added again (it doubled the gap).
+  function fitOldInstall() {
+    try {
+      const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+      if (!standalone) return;
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none';
+      document.body.appendChild(probe);
+      const top = probe.offsetHeight; probe.remove();
+      const portrait = innerHeight >= innerWidth;
+      const screenH = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+      const cutOff = top > 0 && innerHeight < screenH - 5; // drawn under the status bar AND short of the bottom
+      document.documentElement.style.setProperty('--sab', cutOff ? '0px' : 'env(safe-area-inset-bottom, 0px)');
+      document.documentElement.classList.toggle('old-install', cutOff);
+    } catch {}
+  }
+  if (document.body) fitOldInstall();
+  addEventListener('resize', fitOldInstall);
+
   // ---------- screen info (open any page with ?debug=screen to see it) ----------
   // The app runs edge to edge with a normal status bar, so the standard
   // env(safe-area-inset-bottom) spacing lands exactly like native iPhone apps.
@@ -543,10 +565,11 @@
       const j = await r.json();
       const rt = j.routes && j.routes[0];
       if (!rt) throw new Error('no route');
-      // OSRM assumes free roads; Kampala traffic is roughly 1.8x slower.
-      return { km: rt.distance / 1000, min: (rt.duration / 60) * 1.8, coords: rt.geometry.coordinates.map(([x, y]) => [y, x]) };
+      // OSRM assumes empty roads (freeMin). The server adds Kampala traffic for prices;
+      // `min` is a rough traffic-adjusted figure for ETAs shown on the map.
+      return { km: rt.distance / 1000, freeMin: rt.duration / 60, min: (rt.duration / 60) * 1.8, coords: rt.geometry.coordinates.map(([x, y]) => [y, x]) };
     } catch {
-      return { km: null, min: null, coords: [[a.lat, a.lng], [b.lat, b.lng]] };
+      return { km: null, freeMin: null, min: null, coords: [[a.lat, a.lng], [b.lat, b.lng]] };
     }
   };
 

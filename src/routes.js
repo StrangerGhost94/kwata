@@ -6,7 +6,9 @@ const auth = require('./auth');
 const rt = require('./realtime');
 const ledger = require('./ledger');
 const payments = require('./payments');
-const { getSettings, updateSettings, quote, calcFare, trustedDistance } = require('./pricing');
+const { getSettings, updateSettings, quote } = require('./pricing');
+const surge = require('./surge');
+const { haversineKm: haversine } = require('./pricing');
 
 const r = express.Router();
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -202,13 +204,38 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
 r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   const pickup = point(req.body.pickup), drop = point(req.body.drop);
   if (!pickup || !drop) return bad(res, 'Choose a pickup and a destination.');
+  surge.recordLook(req.user.id, pickup.lat, pickup.lng);   // someone checking prices = demand signal
   const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin);
   // How far is the nearest free driver for each ride type?
   for (const o of q.options) {
     const near = rt.nearbyDrivers(pickup.lat, pickup.lng, o.id)[0];
     o.etaMin = near ? Math.max(2, Math.round(((near.km * 1.3) / 20) * 60)) : null;
   }
+  // Lock these prices for 2 minutes: booking within that time pays exactly this.
+  q.quoteId = surge.saveQuote({ userId: req.user.id, pickup, drop, km: q.distanceKm, options: q.options.map((o) => ({ id: o.id, fare: o.fare, durationMin: o.durationMin, surge: o.surge })) });
+  q.lockedForSec = 120;
   res.json(q);
+}));
+
+// Drivers see how busy their area is (like Uber/Bolt "high demand" alerts).
+r.get('/drivers/demand', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const lat = Number(req.query.lat), lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return bad(res, 'Location needed.');
+  const s = await getSettings();
+  const c = await surge.conditions(lat, lng, s.dynamic);
+  res.json({ boda: c.boda, car: c.car, raining: c.raining, traffic: c.traffic });
+}));
+
+// Admin: see live pricing conditions, and switch "it's raining" on for testing or when the weather feed is off.
+r.get('/admin/pricing/live', auth.requireAuth('admin'), wrap(async (req, res) => {
+  const s = await getSettings();
+  const lat = Number(req.query.lat) || 0.3136, lng = Number(req.query.lng) || 32.5811;
+  res.json(await surge.conditions(lat, lng, s.dynamic));
+}));
+r.post('/admin/pricing/rain', auth.requireAuth('admin'), wrap(async (req, res) => {
+  const mm = req.body && req.body.mm;
+  surge.setRainOverride(mm === null || mm === undefined || mm === '' ? null : Number(mm));
+  res.json({ ok: true });
 }));
 
 r.get('/drivers/nearby', auth.requireAuth(), wrap(async (req, res) => {
@@ -228,8 +255,21 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
     "SELECT id FROM trips WHERE rider_id = $1 AND status IN ('requested','accepted','arrived','in_progress')", [req.user.id]);
   if (busy) return bad(res, 'You already have a trip in progress.');
 
-  const { km, min } = trustedDistance(pickup, drop, distanceKm, durationMin);
-  const fare = calcFare(svc, km, min);
+  // Upfront, locked price: use the quote the rider saw if it is still valid,
+  // otherwise price it now and make sure the rider isn't surprised by a jump.
+  let km, min, fare;
+  const locked = surge.getQuote(req.body.quoteId, req.user.id);
+  const lockedOpt = locked && haversine(locked.pickup, pickup) < 0.15 && haversine(locked.drop, drop) < 0.15 && locked.options.find((o) => o.id === service);
+  if (lockedOpt) { km = locked.km; min = lockedOpt.durationMin; fare = lockedOpt.fare; }
+  else {
+    const q = await quote(pickup, drop, distanceKm, durationMin);
+    const o = q.options.find((x) => x.id === service);
+    km = q.distanceKm; min = o.durationMin; fare = o.fare;
+    const expected = Number(req.body.expectedFare);
+    if (expected > 0 && fare > expected * 1.05 + 100) {
+      return res.status(409).json({ error: `Prices have just changed. ${svc.name.replace('Kwata ', '')} is now UGX ${fare.toLocaleString()}.`, code: 'PRICE_CHANGED', fare });
+    }
+  }
   if (paymentMethod === 'wallet' && req.user.wallet_balance < fare) {
     return bad(res, `Your wallet has UGX ${req.user.wallet_balance.toLocaleString()}. Top up or choose another payment method.`);
   }
@@ -251,6 +291,8 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   [req.user.id, service, pickup.lat, pickup.lng, pickup.address, drop.lat, drop.lng, drop.address,
     km, min, fare, paymentMethod, pin, share, parcelJson, notes ? String(notes).slice(0, 200) : null]);
 
+  surge.recordRequest(service, pickup.lat, pickup.lng);
+  if (req.body.quoteId) surge.dropQuote(req.body.quoteId);
   rt.dispatch(t.id).catch(console.error);
   const full = await rt.loadTrip(t.id);
   rt.io.to('admin').emit('admin:trip', rt.view(full, 'admin'));
