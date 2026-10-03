@@ -598,3 +598,28 @@ body[data-app="rider"], body[data-app="driver"] { -webkit-text-size-adjust: 100%
 .opt .price .was { display: block; text-decoration: line-through; font-size: .74rem; font-weight: 600; color: var(--ink-3); }
 .demand-chip { display: flex; align-items: center; gap: 10px; background: var(--brand-soft); color: #6B5200; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; font-weight: 600; font-size: .9rem; }
 .demand-chip b { margin-left: auto; color: var(--ink); }
+
+/* ---------- 3D vehicle art ---------- */
+.art-img { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 6px 8px rgba(0,0,0,.14)); -webkit-user-drag: none; user-select: none; }
+.svc-ic .tile { place-items: center; }
+.svc-ic .tile .art-img { width: 70%; height: 70%; }
+.opt .art { width: 52px; height: 46px; }
+.trip-card .ic .art-img { width: 36px; height: 36px; }
+.promo .art-img { width: 58px; height: 58px; flex: none; }
+.ring-wrap .center .art-img { width: 60px; height: 60px; }
+.empty .illu .art-img { width: 76px; height: 76px; }
+.illu > .art-img { width: 66%; height: 66%; }
+.slide .art .art-img { filter: drop-shadow(0 20px 26px rgba(0,0,0,.55)); }
+
+/* ---------- Installed app (home screen): full screen, top to bottom ----------
+   With the status bar drawn over the app, iOS reports a viewport that is short by
+   the status-bar height. 100lvh is the real full screen, so the shell, overlays and
+   splash are sized from it instead of the (short) fixed viewport. */
+html.standalone { height: 100vh; height: 100lvh; }
+html.standalone body { position: relative; min-height: 100vh; min-height: 100lvh; }
+html.standalone .app,
+html.standalone .overlay,
+html.standalone .req,
+html.standalone .splash,
+html.standalone .onboard { position: absolute; top: 0; left: 0; right: 0; bottom: auto; height: 100vh; height: 100lvh; }
+html.standalone .onb { min-height: 100vh; min-height: 100lvh; }

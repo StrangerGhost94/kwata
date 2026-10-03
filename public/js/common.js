@@ -68,52 +68,11 @@
   K.ic = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${name === 'star' && cls.includes('fill') ? P.star : P[name] || ''}</svg>`;
   K.starSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
 
-  // ---------- vehicle art (3D-style icons for services) ----------
-  const shadow = (w = 46) => `<ellipse cx="60" cy="64" rx="${w}" ry="3.5" fill="#000" opacity=".12"/>`;
-  const sedan = (body, glass, trim = '#111') => `${shadow(50)}
-    <path d="M10 50c0-6 3-10 10-11l16-2c6-9 13-14 24-14h16c11 0 18 5 24 13l9 2c5 1 7 5 7 10v4c0 2-1 3-3 3H13c-2 0-3-1-3-3z" fill="${body}"/>
-    <path d="M10 52h100v2c0 2-1 3-3 3H13c-2 0-3-1-3-3z" fill="#000" opacity=".18"/>
-    <path d="M42 37c5-7 10-10 18-10h12c8 0 14 3 19 10z" fill="${glass}"/>
-    <path d="M45 35c4-5 8-7 14-7" stroke="#fff" stroke-width="2" opacity=".55" fill="none" stroke-linecap="round"/>
-    <rect x="65" y="27" width="2.4" height="10" fill="${body}"/>
-    <rect x="103" y="42" width="7" height="3.5" rx="1.7" fill="#FFE27A"/><rect x="11" y="43" width="4" height="3" rx="1.5" fill="#FF5A4E"/>
-    <circle cx="33" cy="56" r="9.5" fill="${trim}"/><circle cx="33" cy="56" r="4" fill="#C9CCD1"/>
-    <circle cx="90" cy="56" r="9.5" fill="${trim}"/><circle cx="90" cy="56" r="4" fill="#C9CCD1"/>`;
-  const suv = `${shadow(52)}
-    <path d="M9 52V38c0-4 2-6 6-7l12-2 8-9c2-2 4-3 7-3h38c4 0 6 1 8 4l8 9 7 2c4 1 6 4 6 8v12c0 2-1 3-3 3H12c-2 0-3-1-3-3z" fill="#1E1E20"/>
-    <path d="M9 50h102v2c0 2-1 3-3 3H12c-2 0-3-1-3-3z" fill="#000" opacity=".3"/>
-    <path d="M33 30l7-8c1-1 2-2 4-2h16v10zM64 20h16c2 0 3 1 4 2l7 8H64z" fill="#7C8B99"/>
-    <path d="M14 40h92" stroke="#FFC400" stroke-width="2.5" opacity=".9"/>
-    <rect x="105" y="38" width="7" height="3.5" rx="1.7" fill="#FFE27A"/>
-    <circle cx="32" cy="56" r="10" fill="#0A0A0A"/><circle cx="32" cy="56" r="4.2" fill="#D4D7DB"/>
-    <circle cx="91" cy="56" r="10" fill="#0A0A0A"/><circle cx="91" cy="56" r="4.2" fill="#D4D7DB"/>`;
-  const boda = `${shadow(46)}
-    <circle cx="28" cy="52" r="11" fill="none" stroke="#141414" stroke-width="5"/><circle cx="28" cy="52" r="3" fill="#9A9A9A"/>
-    <circle cx="93" cy="52" r="11" fill="none" stroke="#141414" stroke-width="5"/><circle cx="93" cy="52" r="3" fill="#9A9A9A"/>
-    <path d="M28 52 46 40h28l19 12" stroke="#3A3A3C" stroke-width="4.5" fill="none" stroke-linejoin="round"/>
-    <path d="M42 33c9-5 24-6 35-2l6 10H45z" fill="#FFC400"/><path d="M45 39h37" stroke="#D49F00" stroke-width="2"/>
-    <rect x="33" y="30" width="26" height="5.5" rx="2.7" fill="#141414"/>
-    <path d="M82 39 92 21" stroke="#141414" stroke-width="3.5" stroke-linecap="round"/><path d="M87 21h9" stroke="#141414" stroke-width="3.5" stroke-linecap="round"/>
-    <path d="M48 31 53 15c1-3 4-4 7-3l2 1" stroke="#FFC400" stroke-width="9" stroke-linecap="round" fill="none"/>
-    <path d="M50 17h8" stroke="#141414" stroke-width="2" opacity=".35"/>
-    <path d="M59 16 88 21" stroke="#FFC400" stroke-width="5.5" stroke-linecap="round"/>
-    <path d="M51 31 63 42" stroke="#2A2A2C" stroke-width="6.5" stroke-linecap="round"/>
-    <circle cx="58" cy="8" r="8" fill="#141414"/><path d="M60 6.5h7" stroke="#6E6E73" stroke-width="2.5" stroke-linecap="round"/>`;
-  const parcel = `${shadow(40)}
-    <path d="M26 26 60 13l34 13v32L60 71 26 58z" fill="#F2B233"/>
-    <path d="M26 26 60 39l34-13" fill="none" stroke="#C98A12" stroke-width="2"/><path d="M60 39v32" stroke="#C98A12" stroke-width="2"/>
-    <path d="M60 39 94 26v32L60 71z" fill="#000" opacity=".08"/>
-    <path d="M39 21 73 34v10l-6-2.3v-6.5L33 22.8z" fill="#FCE5B0"/>`;
-  const plane = `${shadow(40)}
-    <path d="M18 44c0-3 3-5 7-5h22l18-24c1-2 3-3 5-3h4l-9 27h22l7-9h5l-3 14 3 14h-5l-7-9H72l9 27h-4c-2 0-4-1-5-3L54 49H25c-4 0-7-2-7-5z" fill="#FFC400"/>
-    <path d="M25 44h60" stroke="#D49F00" stroke-width="2" opacity=".6"/>`;
-  K.ART = {
-    boda: `<svg viewBox="0 0 120 72" aria-hidden="true">${boda}</svg>`,
-    car: `<svg viewBox="0 0 120 72" aria-hidden="true">${sedan('#3A3A3C', '#A9BBCB')}</svg>`,
-    comfort: `<svg viewBox="0 0 120 72" aria-hidden="true">${suv}</svg>`,
-    parcel: `<svg viewBox="0 0 120 72" aria-hidden="true">${parcel}</svg>`,
-    airport: `<svg viewBox="0 0 120 72" aria-hidden="true">${plane}</svg>`,
-  };
+  // ---------- vehicle art ----------
+  // Premium 3D vehicle art: Microsoft Fluent 3D (MIT licence, see /img/vehicles/LICENSE-fluentui-emoji.txt)
+  const VEH = { boda: 'Boda boda', car: 'Car', comfort: 'Comfort SUV', parcel: 'Parcel', airport: 'Airport transfer' };
+  K.ART = Object.fromEntries(Object.entries(VEH).map(([k, alt]) => [k, `<img class="art-img" src="/img/vehicles/${k}.png" alt="" data-alt="${alt}" decoding="async">`]));
+  Object.keys(VEH).forEach((k) => { const i = new Image(); i.src = `/img/vehicles/${k}.png`; });
   K.artFor = (service, vehicleType) => K.ART[service] || (vehicleType === 'car' ? K.ART.car : K.ART.boda);
 
   // ---------- brand: pin logo & night skyline ----------
@@ -246,27 +205,10 @@
     return { el: ov.firstElementChild, close };
   };
 
-  // ---------- old home-screen installs ----------
-  // Apps added to an iPhone home screen before Oct 2026 keep the old "draw under
-  // the status bar" mode. iOS then cuts the app off above the home bar, so the
-  // home-bar spacing must not be added again (it doubled the gap).
-  function fitOldInstall() {
-    try {
-      const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
-      if (!standalone) return;
-      const probe = document.createElement('div');
-      probe.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none';
-      document.body.appendChild(probe);
-      const top = probe.offsetHeight; probe.remove();
-      const portrait = innerHeight >= innerWidth;
-      const screenH = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-      const cutOff = top > 0 && innerHeight < screenH - 5; // drawn under the status bar AND short of the bottom
-      document.documentElement.style.setProperty('--sab', cutOff ? '0px' : 'env(safe-area-inset-bottom, 0px)');
-      document.documentElement.classList.toggle('old-install', cutOff);
-    } catch {}
-  }
-  if (document.body) fitOldInstall();
-  addEventListener('resize', fitOldInstall);
+  // ---------- installed app: draw under the status bar AND reach the bottom ----------
+  // iOS shortens installed apps by the status-bar height when they draw under it.
+  // The large-viewport unit (100lvh) gives the full screen back; see app.css.
+  if (navigator.standalone === true || matchMedia('(display-mode: standalone)').matches) document.documentElement.classList.add('standalone');
 
   // ---------- screen info (open any page with ?debug=screen to see it) ----------
   // The app runs edge to edge with a normal status bar, so the standard
