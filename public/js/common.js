@@ -379,9 +379,6 @@
   // happens, don't add home-bar spacing on top, or the bottom bar floats up.
   const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   if (standalone) document.documentElement.classList.add('standalone');
-  // The installed app runs under the clock (like Apple Maps). iOS draws the clock in white there,
-  // so a soft shade sits behind it to keep it readable over the light map and pages.
-  if (standalone) { const add = () => { const pr = document.createElement('div'); pr.style.cssText = 'position:absolute;top:0;height:env(safe-area-inset-top);visibility:hidden'; document.body.appendChild(pr); const inset = pr.offsetHeight; pr.remove(); if (inset > 0 && !document.querySelector('.sb-scrim')) { const d = document.createElement('div'); d.className = 'sb-scrim'; d.setAttribute('aria-hidden', 'true'); document.body.appendChild(d); } }; document.body ? add() : document.addEventListener('DOMContentLoaded', add); }
   // Normal case: the app reaches the bottom edge, so keep the standard home-bar spacing.
   // iOS 26 bug case: the app's view is shorter than the full screen (the "large
   // viewport", 100lvh). Only then is the home-bar strip outside the app, and only

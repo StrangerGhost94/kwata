@@ -1318,9 +1318,3 @@ label { font-size: 15px; }                                                  /* S
 /* Phone sheets span the width between their 8pt insets */
 @media (max-width: 759px) { .overlay > .modal { width: calc(100% - 16px); max-width: none; } }
 
-/* Status bar: the installed app draws edge to edge under the clock. iOS paints the clock white in
-   this mode, so a soft shade fades out below it; on the dark splash and welcome screens it's invisible. */
-.sb-scrim { position: fixed; left: 0; right: 0; top: 0; z-index: 2500; pointer-events: none;
-  height: calc(env(safe-area-inset-top) + 18px);
-  background: linear-gradient(180deg, rgba(0,0,0,.3) 0%, rgba(0,0,0,.16) 55%, rgba(0,0,0,0) 100%); }
-@media (prefers-contrast: more) { .sb-scrim { background: linear-gradient(180deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,.35) 60%, rgba(0,0,0,0) 100%); } }
