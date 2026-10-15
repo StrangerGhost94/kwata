@@ -1371,3 +1371,11 @@ label { font-size: 15px; }                                                  /* S
 @keyframes spLoad { from { left: -40%; } to { left: 100%; } }
 .splash.quick .sp-load { display: none; }
 @media (prefers-reduced-motion: reduce) { .sp-icon, .sp-name, .sp-tag { animation: fadeIn .2s ease both !important; } .sp-load i { animation-duration: 2s; } }
+
+/* Signed-out launch: dark, to match the welcome and sign-in screens that follow */
+html.launch-dark .splash { background: radial-gradient(120% 70% at 50% 40%, #182235 0%, #0B111C 55%, #05070B 100%); }
+html.launch-dark .sp-icon { background: linear-gradient(160deg, #24262B, #111215); box-shadow: 0 14px 34px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.08); }
+html.launch-dark .sp-name { color: #FFFFFF; }
+html.launch-dark .sp-name span { color: var(--brand); }
+html.launch-dark .sp-tag { color: #A1A1A8; }
+html.launch-dark .sp-load { background: rgba(255,255,255,.14); }
