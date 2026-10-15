@@ -290,8 +290,12 @@
     }
     const bar = p.querySelector(':scope > .nav-bar > span');
     if (bar && bar.textContent !== title.textContent) bar.textContent = title.textContent;
+    // The small title appears only once the large one has gone under the bar, never both at once
+    // (and never during the rubber-band bounce at the top).
     const pr = p.getBoundingClientRect(), tr = title.getBoundingClientRect();
-    p.classList.toggle('scrolled', tr.bottom - pr.top < 54 + (parseFloat(getComputedStyle(p).paddingTop) - 10 || 0));
+    const head = p.classList.contains('nav-large') && p.querySelector('.page-head');
+    const barBottom = head ? head.getBoundingClientRect().bottom : pr.top + (parseFloat(getComputedStyle(p).paddingTop) || 0);
+    p.classList.toggle('scrolled', top > 0 && tr.bottom <= barBottom + 2);
   }, true);
 
   K.modal = function (html, { drawer = false, onClose } = {}) {
@@ -377,7 +381,7 @@
   if (standalone) document.documentElement.classList.add('standalone');
   // The installed app runs under the clock (like Apple Maps). iOS draws the clock in white there,
   // so a soft shade sits behind it to keep it readable over the light map and pages.
-  if (standalone) { const add = () => { if (!document.querySelector('.sb-scrim')) { const d = document.createElement('div'); d.className = 'sb-scrim'; d.setAttribute('aria-hidden', 'true'); document.body.appendChild(d); } }; document.body ? add() : document.addEventListener('DOMContentLoaded', add); }
+  if (standalone) { const add = () => { const pr = document.createElement('div'); pr.style.cssText = 'position:absolute;top:0;height:env(safe-area-inset-top);visibility:hidden'; document.body.appendChild(pr); const inset = pr.offsetHeight; pr.remove(); if (inset > 0 && !document.querySelector('.sb-scrim')) { const d = document.createElement('div'); d.className = 'sb-scrim'; d.setAttribute('aria-hidden', 'true'); document.body.appendChild(d); } }; document.body ? add() : document.addEventListener('DOMContentLoaded', add); }
   // Normal case: the app reaches the bottom edge, so keep the standard home-bar spacing.
   // iOS 26 bug case: the app's view is shorter than the full screen (the "large
   // viewport", 100lvh). Only then is the home-bar strip outside the app, and only
