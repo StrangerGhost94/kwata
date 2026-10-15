@@ -1332,3 +1332,14 @@ label { font-size: 15px; }                                                  /* S
 /* Sticky sheet footer: a short fade, then the sheet's own solid colour, so rows scrolling
    underneath never show through the price note or the Request button. */
 .sheet-foot::before { background: linear-gradient(180deg, rgba(253,252,251,0) 0, #FDFCFB 8px); }
+
+/* Launch screen: white, like Apple's own apps in light mode. iOS picks the status-bar colour from
+   the top of the screen when the app opens, so a white launch keeps that strip white from the start. */
+.splash { background: #FFFFFF; color: var(--ink); }
+.splash .wm { color: var(--ink); }
+.splash .wm-t { color: #141414; }
+.splash .wm-sub { color: var(--accent-ink, #8A6400); }
+.splash .wm-tag { color: #6C6C70; }
+.splash .wm-tag i { color: var(--brand); }
+.splash .wm-k { filter: drop-shadow(0 4px 14px rgba(255,180,0,.25)); }
+.splash-glow { background: radial-gradient(circle, rgba(255,196,0,.14), rgba(255,196,0,0) 62%); }
