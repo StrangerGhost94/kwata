@@ -1324,3 +1324,12 @@ label { font-size: 15px; }                                                  /* S
   height: calc(env(safe-area-inset-top) + 18px);
   background: linear-gradient(180deg, rgba(0,0,0,.3) 0%, rgba(0,0,0,.16) 55%, rgba(0,0,0,0) 100%); }
 @media (prefers-contrast: more) { .sb-scrim { background: linear-gradient(180deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,.35) 60%, rgba(0,0,0,0) 100%); } }
+
+/* iOS 26 home-screen bug: the app's view stops short of the bottom edge when it runs under the
+   clock. In that case (html.fill, set by fitInstalled) the app is sized to the full screen height
+   so the map and the menu pill reach the bottom like a native app. */
+html.fill, html.fill body { height: var(--app-h, 100lvh); }
+html.fill body[data-app="rider"], html.fill body[data-app="driver"],
+html.fill body[data-app="rider"] .app, html.fill body[data-app="driver"] .app,
+html.fill .app { top: 0; bottom: auto; height: var(--app-h, 100lvh); }
+html.fill .overlay { bottom: auto; height: var(--app-h, 100lvh); }
