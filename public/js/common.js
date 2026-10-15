@@ -429,7 +429,10 @@
         if (!tabs.classList.contains('hidden') && c !== STRIP.dark) c = q('.page.grouped:not(.hidden)') ? STRIP.grouped : q('.page:not(.hidden)') ? STRIP.page : STRIP.map;
       }
       document.documentElement.style.setProperty('--edge', c);
-      if (document.documentElement.style.backgroundColor !== c) { document.documentElement.style.backgroundColor = c; document.body.style.backgroundColor = c; }
+      // iOS colours the status-bar strip from the page background when the app opens and keeps it,
+      // so the page background is never the dark splash colour (the splash covers the screen anyway).
+      const bg = c === STRIP.dark ? STRIP.page : c;
+      if (document.documentElement.style.backgroundColor !== bg) { document.documentElement.style.backgroundColor = bg; document.body.style.backgroundColor = bg; }
     });
   }
   new MutationObserver(syncStrip).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
