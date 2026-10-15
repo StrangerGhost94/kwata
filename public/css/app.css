@@ -1343,3 +1343,31 @@ label { font-size: 15px; }                                                  /* S
 .splash .wm-tag i { color: var(--brand); }
 .splash .wm-k { filter: drop-shadow(0 4px 14px rgba(255,180,0,.25)); }
 .splash-glow { background: radial-gradient(circle, rgba(255,196,0,.14), rgba(255,196,0,0) 62%); }
+
+/* =====================================================================
+   Launch screen v2: calm and premium, no blur or zoom.
+   White at the top (iOS takes the status-bar colour from there), easing into
+   a faint warm ivory; the K in a dark app-icon tile; name and tagline in
+   Apple-style type; a thin gold loading line near the bottom.
+   ===================================================================== */
+.splash { background: linear-gradient(180deg, #FFFFFF 0%, #FFFFFF 38%, #FBF8F2 100%); color: var(--ink);
+  transition: opacity .35s ease, visibility .35s; }
+.splash.out { opacity: 0; transform: none; filter: none; visibility: hidden; }
+.sp-center { display: flex; flex-direction: column; align-items: center; margin-top: -6vh; }
+.sp-icon { width: 92px; height: 92px; border-radius: 22px; display: grid; place-items: center;
+  background: linear-gradient(160deg, #2A2B2F 0%, #141416 55%, #0B0B0C 100%);
+  box-shadow: 0 14px 34px rgba(20,20,22,.18), 0 2px 6px rgba(20,20,22,.12), inset 0 1px 0 rgba(255,255,255,.08);
+  animation: spIn .7s var(--spring, cubic-bezier(.32,.72,0,1)) both; }
+.sp-icon svg { width: 58px; height: 42px; margin-left: 4px; }
+.sp-name { margin-top: 22px; font-size: 30px; font-weight: 700; letter-spacing: -.025em; color: #141414; line-height: 1.1;
+  animation: spIn .7s var(--spring, cubic-bezier(.32,.72,0,1)) .12s both; }
+.sp-name span { margin-left: 8px; font-weight: 600; color: var(--accent-ink, #8A6400); }
+.sp-tag { margin-top: 8px; font-size: 13px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #8E8E93;
+  animation: spIn .7s var(--spring, cubic-bezier(.32,.72,0,1)) .22s both; }
+.sp-load { position: absolute; left: 50%; bottom: calc(56px + var(--sab)); width: 44px; height: 3px; margin-left: -22px; border-radius: 3px;
+  background: rgba(120,120,128,.16); overflow: hidden; animation: fadeIn .4s ease .5s both; }
+.sp-load i { position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 3px; background: var(--brand); animation: spLoad 1.1s cubic-bezier(.45,0,.25,1) infinite; }
+@keyframes spIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes spLoad { from { left: -40%; } to { left: 100%; } }
+.splash.quick .sp-load { display: none; }
+@media (prefers-reduced-motion: reduce) { .sp-icon, .sp-name, .sp-tag { animation: fadeIn .2s ease both !important; } .sp-load i { animation-duration: 2s; } }

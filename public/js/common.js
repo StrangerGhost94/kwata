@@ -458,8 +458,8 @@
     let quick = false;
     try { const last = Number(localStorage.getItem('kwata_opened')) || 0; quick = Date.now() - last < 12 * 3600e3; localStorage.setItem('kwata_opened', String(Date.now())); } catch {}
     if (quick) sp.classList.add('quick');
-    const wait = Math.max(0, (quick ? 350 : 2100) - (performance.now() - T0));
-    setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), quick ? 300 : 800); }, wait);
+    const wait = Math.max(0, (quick ? 350 : 1300) - (performance.now() - T0));
+    setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 400); }, wait);
   };
 
   // ---------- installable app ----------
@@ -487,7 +487,7 @@
   };
 
   // ---------- onboarding, sign up & log in (mockup screens 1–4, 14–16) ----------
-  K.splashMarkup = (driver) => `<div class="splash-glow"></div><div class="splash-logo">${K.wordmark(driver)}</div>`;
+  
 
   // Shrink a photo in the browser so uploads are quick on mobile data.
   K.compressImage = (file, max = 1280, quality = 0.8) => new Promise((resolve, reject) => {
