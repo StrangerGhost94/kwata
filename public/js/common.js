@@ -294,7 +294,7 @@
   // When iOS cuts the installed app short, the band under it takes the page's
   // background colour. Keep that colour matched to whatever is at the bottom of
   // the screen, so the band blends in: dark screens, the map, or the white sheet.
-  const STRIP = { dark: '#0E0E10', map: '#F8F5F0', sheet: '#FDFCFB', page: '#FFFFFF' };
+  const STRIP = { dark: '#0E0E10', map: '#F8F5F0', sheet: '#FDFCFB', page: '#FFFFFF', grouped: '#F2F2F7' };
   let stripRaf;
   function syncStrip() {
     cancelAnimationFrame(stripRaf);
@@ -303,6 +303,7 @@
       let c = STRIP.page;
       const splash = q('#splash:not(.out)') || q('.splash');
       if (q('#req') || q('.onboard') || splash) c = STRIP.dark;
+      else if (q('.page.grouped:not(.hidden)')) c = STRIP.grouped;
       else if (q('.page:not(.hidden)') || q('.onb')) c = STRIP.page;
       else if (q('#sheet.collapsed') || q('.sheet-dock.floating') || (q('#map') && !q('#sheet'))) c = STRIP.map;
       else if (q('#sheet')) c = STRIP.sheet;
@@ -311,7 +312,7 @@
       const tabs = q('#tabs');
       if (tabs) {
         if (!(tabs.nextElementSibling && tabs.nextElementSibling.classList.contains('dock-edge'))) { const e = document.createElement('div'); e.className = 'dock-edge'; e.setAttribute('aria-hidden', 'true'); tabs.after(e); }
-        if (!tabs.classList.contains('hidden') && c !== STRIP.dark) c = q('.page:not(.hidden)') ? STRIP.page : STRIP.map;
+        if (!tabs.classList.contains('hidden') && c !== STRIP.dark) c = q('.page.grouped:not(.hidden)') ? STRIP.grouped : q('.page:not(.hidden)') ? STRIP.page : STRIP.map;
       }
       document.documentElement.style.setProperty('--edge', c);
       if (document.documentElement.style.backgroundColor !== c) { document.documentElement.style.backgroundColor = c; document.body.style.backgroundColor = c; }

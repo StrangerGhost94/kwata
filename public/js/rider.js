@@ -1159,7 +1159,7 @@
     document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
     if (tab === 'home') return;
     const page = document.createElement('div');
-    page.className = 'page tab-in'; page.dataset.tabpage = tab;
+    page.className = 'page tab-in grouped'; page.dataset.tabpage = tab;
     page.innerHTML = `<div class="page-inner">${K.skeleton('title-list')}</div>`;
     root.querySelector('#app').insertBefore(page, K.$('#tabs'));
     (tab === 'activity' ? drawActivity : drawAccount)(page.firstElementChild);
@@ -1167,7 +1167,7 @@
 
   function subPage(title, onBack) {
     const page = document.createElement('div');
-    page.className = 'page push-in'; page.style.zIndex = 860;
+    page.className = 'page push-in grouped'; page.style.zIndex = 860;
     page.innerHTML = `<div class="page-inner"><div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Back">${K.ic('back')}</button><h2>${title}</h2></div><div data-body></div></div>`;
     root.querySelector('#app').appendChild(page);
     K.$('[data-x]', page).onclick = () => K.pop(page, onBack);

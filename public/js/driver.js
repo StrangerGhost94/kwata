@@ -484,7 +484,7 @@
     document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
     if (tab === 'home') { if (!S.trip && sheet) vHome(); return; }
     const page = document.createElement('div');
-    page.className = 'page tab-in'; page.dataset.tabpage = tab;
+    page.className = 'page tab-in grouped'; page.dataset.tabpage = tab;
     page.innerHTML = `<div class="page-inner">${K.skeleton(tab === 'earnings' ? 'earnings' : 'title-list')}</div>`;
     root.querySelector('#app').insertBefore(page, K.$('#tabs'));
     (tab === 'earnings' ? drawEarnings : drawProfile)(page.firstElementChild);
@@ -544,7 +544,7 @@
       <button class="menu-item" data-a="manual"><span class="ic">${K.ic('pin')}</span><span class="grow">${S.manual ? 'Use phone GPS' : 'Set position on map'}<br><span class="small muted">For testing without GPS</span></span></button>
       ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Driver support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
       <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
-      <p class="tiny faint" style="text-align:center;margin-top:18px">Kwata Driver 1.0 · ${K.screen.view || innerHeight}/${K.screen.full || '–'}/${K.screen.inset ?? '–'}/${K.screen.pad ?? '–'}</p>`;
+      <p class="tiny faint" style="text-align:center;margin-top:18px">Kwata Driver 1.0</p>`;
     K.$('#ph', el).onchange = async (ev) => {
       const f = ev.target.files[0]; if (!f) return;
       try { const img = await K.compressImage(f, 800); await K.api('/driver/documents', { kind: 'photo', image: img }, 'POST', { timeout: 90000 }); S.hasPhoto = true; S.photoData = img; K.toast('Photo updated'); drawProfile(el); topbar(); }

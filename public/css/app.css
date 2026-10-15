@@ -1068,3 +1068,82 @@ input, select, textarea { font-size: max(16px, 1em); }
 }
 .btn-google.is-soon { justify-content: flex-start; padding-left: 16px; padding-right: 12px; }
 .btn-google.is-soon span:not(.soon-badge) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* =====================================================================
+   SwiftUI / iOS 26 look (Apple HIG metrics)
+   Tab bar: 62pt capsule, 21pt from the sides and bottom, 10pt semibold labels.
+   Lists: inset grouped on systemGroupedBackground. Type: Apple's text styles.
+   ===================================================================== */
+:root {
+  --ios-grouped: #F2F2F7;          /* systemGroupedBackground */
+  --ios-cell: #FFFFFF;             /* secondarySystemGroupedBackground */
+  --ios-sep: rgba(60,60,67,.18);   /* separator */
+  --ios-label2: #6C6C70;           /* secondary label, AA on white and grey */
+  --ios-radius: 22px;              /* iOS 26 inset-grouped corner */
+}
+
+/* ---- Tab bar ---- */
+.tabbar {
+  left: 21px; right: 21px; height: 62px; padding: 3px; gap: 0; align-items: stretch;
+  bottom: max(12px, calc(var(--sab) - 13px));   /* 21pt above the edge on Face ID iPhones */
+  border-radius: 999px;
+}
+.tabbar button { padding: 0; gap: 1px; justify-content: center; font-size: 10px; font-weight: 600; letter-spacing: .01em; border-radius: 999px; min-height: 0; }
+.tabbar button svg.i, .tabbar svg.i { width: 24px; height: 24px; stroke-width: 1.9; }
+.tabbar button[aria-current="page"] { background: rgba(120,120,128,.14); box-shadow: none; }
+.tabbar button[aria-current="page"] svg { color: #8A6400; stroke-width: 2.2; }
+@media (max-width: 359px) { .tabbar { left: 12px; right: 12px; } }
+@media (min-width: 760px) { .tabbar { left: 50%; right: auto; width: 360px; transform: translateX(-50%); bottom: 21px; } }
+.dock-edge { height: calc(max(12px, var(--sab) - 13px) + 31px); }
+
+/* ---- Type: Apple text styles ---- */
+.page-title { font-size: 34px; font-weight: 700; letter-spacing: .01em; line-height: 1.12; margin: 6px 0 14px; }   /* Large Title */
+.sheet h2, .modal h2, .drawer h2 { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }                   /* Title 2 */
+.page-head { justify-content: flex-start; min-height: 44px; }
+.page-head h2 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }                                       /* Headline (nav title) */
+
+/* ---- Grouped pages ---- */
+.page.grouped { background: var(--ios-grouped); }
+.page.grouped .profile-head { background: var(--ios-cell); border-radius: var(--ios-radius); padding: 16px; margin: 4px 0 22px; }
+
+/* Inset grouped list rows (Settings style) */
+.page.grouped .menu-item {
+  background: var(--ios-cell); border: 0; border-radius: 0; margin: 0; padding: 11px 16px; min-height: 52px;
+  font-size: 17px; font-weight: 400; letter-spacing: -.01em; position: relative; gap: 14px;
+}
+.page.grouped .menu-item .small, .page.grouped .menu-item .muted { font-size: 13px; color: var(--ios-label2); letter-spacing: 0; }
+.page.grouped .menu-item .ic { width: 30px; height: 30px; border-radius: 8px; background: var(--brand); color: #141414; }
+.page.grouped .menu-item .ic svg { width: 18px; height: 18px; }
+.page.grouped .menu-item > svg:last-child { color: #C4C4C7; }
+.page.grouped .menu-item::after { content: ''; position: absolute; left: 60px; right: 0; bottom: 0; height: .5px; background: var(--ios-sep); }
+/* first and last row of each group get the rounded corners; the last loses its separator */
+.page.grouped .menu-item:not(.menu-item + .menu-item) { border-top-left-radius: var(--ios-radius); border-top-right-radius: var(--ios-radius); }
+.page.grouped .menu-item:not(:has(+ .menu-item)), .page.grouped .menu-item:has(+ [data-a="out"]) { border-bottom-left-radius: var(--ios-radius); border-bottom-right-radius: var(--ios-radius); }
+.page.grouped .menu-item:not(:has(+ .menu-item))::after, .page.grouped .menu-item:has(+ [data-a="out"])::after { display: none; }
+/* Log out stands alone, like iOS "Sign Out" */
+.page.grouped .menu-item[data-a="out"] { margin-top: 22px; border-radius: var(--ios-radius); justify-content: center; color: var(--stop); font-weight: 400; }
+.page.grouped .menu-item[data-a="out"] .ic { display: none; }
+.page.grouped .menu-item[data-a="out"] .grow { flex: none; }
+.page.grouped .menu-item:active { background: #E5E5EA; transform: none; }
+
+/* Payment methods as one grouped list with a checkmark for the default */
+.page.grouped .pay-item { background: var(--ios-cell); border: 0; border-radius: 0; margin: 0; padding: 11px 16px; min-height: 60px; position: relative; }
+.page.grouped .pay-item::after { content: ''; position: absolute; left: 66px; right: 0; bottom: 0; height: .5px; background: var(--ios-sep); }
+.page.grouped .pay-item:not(.pay-item + .pay-item) { border-top-left-radius: var(--ios-radius); border-top-right-radius: var(--ios-radius); }
+.page.grouped .pay-item:not(:has(+ .pay-item)) { border-bottom-left-radius: var(--ios-radius); border-bottom-right-radius: var(--ios-radius); }
+.page.grouped .pay-item:not(:has(+ .pay-item))::after { display: none; }
+.page.grouped .pay-item.on { background: var(--ios-cell); border: 0; }
+.page.grouped .pay-item b { font-weight: 400; font-size: 17px; }
+.page.grouped .pay-item .grow > span { font-size: 13px; color: var(--ios-label2); }
+.page.grouped .default-badge { background: none; color: #8A6400; font-size: 0; padding: 0; }
+.page.grouped .default-badge::before { content: '✓'; font-size: 20px; font-weight: 700; }
+.page.grouped [role="radiogroup"] { margin-bottom: 18px; }
+
+/* Activity & earnings cards sit on the grey like iOS cards */
+.page.grouped .trip-card { background: var(--ios-cell); border: 0; border-radius: var(--ios-radius); padding: 12px 16px; }
+.page.grouped .seg-tabs { background: rgba(118,118,128,.12); }
+.page.grouped .state-box { background: var(--ios-cell); }
+.page.grouped .btn-outline { background: var(--ios-cell); border-color: transparent; }
+
+/* Section footers / small print */
+.page.grouped > .page-inner > p.small.muted, .page.grouped [data-body] > p.small.muted { padding: 0 16px; font-size: 13px; color: var(--ios-label2); }
