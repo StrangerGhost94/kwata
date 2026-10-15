@@ -14,7 +14,8 @@
   if (params.get('ref')) { try { localStorage.setItem('kwata_ref', params.get('ref').toUpperCase().slice(0, 20)); } catch {} history.replaceState(null, '', location.pathname); }
   if (params.get('payment')) {
     history.replaceState(null, '', location.pathname);
-    setTimeout(() => K.toast(params.get('payment') === 'success' ? 'Payment received' : 'Payment was not completed. Try again from your trip.'), 600);
+    const pm = params.get('payment');
+    setTimeout(() => K.toast(pm === 'success' ? 'Payment received ✅' : pm === 'pending' ? 'We’re still confirming your payment. It will update here automatically.' : 'Payment was not completed. Try again from your trip, or pay with cash.', 5000), 600);
   }
 
   if (!K.token()) K.authScreen(root, { role: 'rider', onDone: start });
@@ -28,7 +29,9 @@
     cash: { name: 'Cash', logo: `<span class="paylogo cash">${K.ic('cash', 'sm')}</span>`, method: 'cash' },
     wallet: { name: 'Kwata Wallet', logo: `<span class="paylogo wallet">${K.ic('wallet', 'sm')}</span>`, method: 'wallet' },
   };
-  const pref = () => (PAY[S.user && S.user.payPref] ? S.user.payPref : 'cash');
+  // Mobile Money and card only work once online payments are switched on.
+  const payOK = (k) => !['mtn', 'airtel', 'card'].includes(k) || !!(S.config && S.config.paymentsAvailable);
+  const pref = () => (PAY[S.user && S.user.payPref] && payOK(S.user.payPref) ? S.user.payPref : 'cash');
   const payOfTrip = (t) => t.paymentMethod === 'momo' ? (S.user.payPref === 'airtel' ? 'airtel' : 'mtn') : t.paymentMethod;
   const prettyPhone = (p) => String(p || '').replace(/^\+256/, '0').replace(/^(\d{4})(\d{3})(\d{3})$/, '$1 $2 $3');
   const who = (t) => (t.driver && t.driver.vehicleType === 'car') || ['car', 'comfort', 'airport'].includes(t.service) ? 'driver' : 'rider';
@@ -55,10 +58,10 @@
     root.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => openTab(b.dataset.tab));
 
     try {
-      const [me, config, active, hist] = await Promise.all([K.api('/me'), K.api('/config'), K.api('/trips/active'), K.api('/trips/history').catch(() => [])]);
+      const [me, config, active, hist] = await Promise.all([K.api('/me'), K.api('/config'), K.api('/trips/active'), K.api('/trips/history').catch(() => null)]);
       S.user = me.user; S.config = config;
       loadGrowth(); loadUpcoming();
-      S.history = hist || []; buildRecent(hist);
+      S.history = hist; buildRecent(hist);   // null if it failed: Activity then shows an error with Retry, not 'No trips'
       sock = K.socket(K.token());
       sock.on('trip:update', onTrip);
       sock.on('driver:location', (p) => { if (S.trip && p.tripId === S.trip.id) moveDriver(p); });
@@ -89,10 +92,25 @@
   }
 
   // ---------- location ----------
+  // If we can't get the rider's location we never guess one: we say why and ask
+  // them to set the pickup themselves before they can request a ride.
+  const LOC_MSG = {
+    denied: 'Location access is off for Kwata. Set your pickup point, or allow location for this site in your browser or phone settings and try again.',
+    unavailable: 'Your phone couldn’t find your position right now. Set your pickup point, or try again outside or near a window.',
+    timeout: 'Finding your position took too long. Set your pickup point, or try again.',
+    unsupported: 'This browser can’t share your location. Set your pickup point to continue.',
+  };
   function locate(userAsked) {
-    const fallback = () => { if (!S.pickup) setPickup(K.KAMPALA.lat, K.KAMPALA.lng, null); };
-    if (!navigator.geolocation) return fallback();
+    const failed = (why) => {
+      S.loc = why;
+      if (userAsked) K.toast(why === 'denied' ? 'Location is off. Set your pickup point instead.' : 'We couldn’t find your location. Set your pickup point instead.', 4500);
+      if (!S.pickup && !S.gps) map.setView([K.KAMPALA.lat, K.KAMPALA.lng], 13); // just a map view, never a pickup
+      patchHome('loc');
+    };
+    if (!navigator.geolocation) return failed('unsupported');
+    if (!S.gps) { S.loc = 'finding'; patchHome('loc'); }
     navigator.geolocation.getCurrentPosition((p) => {
+      S.loc = 'ok';
       S.gps = { lat: p.coords.latitude, lng: p.coords.longitude };
       const ll = [S.gps.lat, S.gps.lng];
       if (!meMarker) meMarker = L.marker(ll, { icon: K.divIcon('<div class="me-dot"></div>', [18, 18]), interactive: false, zIndexOffset: 500 }).addTo(map);
@@ -100,12 +118,14 @@
       if (userAsked) S.mapTouched = false;
       if (S.view === 'home') centerOn(S.gps, 16, !!userAsked);
       else if (userAsked) map.setView(ll, 16, { animate: true });
-      if (S.view === 'home' || !S.pickup) setPickup(S.gps.lat, S.gps.lng, 'Current location');
-    }, () => { if (userAsked) K.toast('Turn on location so drivers can find you'); fallback(); }, { enableHighAccuracy: true, timeout: 10000 });
+      if ((S.view === 'home' && (!S.pickup || !S.pickup.manual || userAsked)) || !S.pickup) setPickup(S.gps.lat, S.gps.lng, 'Current location');
+      patchHome('loc');
+    }, (err) => failed(err && err.code === 1 ? 'denied' : err && err.code === 3 ? 'timeout' : 'unavailable'),
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
   }
 
-  function setPickup(lat, lng, label) {
-    S.pickup = { lat, lng, address: label || 'Finding address…', short: label };
+  function setPickup(lat, lng, label, manual) {
+    S.pickup = { lat, lng, address: label || 'Finding address…', short: label, manual: !!manual };
     clearTimeout(revTimer);
     revTimer = setTimeout(async () => {
       const addr = await K.reverse(lat, lng);
@@ -121,7 +141,7 @@
     if (S.view !== 'pickup' && S.view !== 'droppin') return;
     const c = map.getCenter();
     const el = K.$('#pinAddr'); if (el) el.textContent = 'Finding address…';
-    if (S.view === 'pickup') S.pickup = { lat: c.lat, lng: c.lng, address: 'Finding address…' };
+    if (S.view === 'pickup') S.pickup = { lat: c.lat, lng: c.lng, address: 'Finding address…', manual: true };
     else S.pinDrop = { lat: c.lat, lng: c.lng, name: 'Pinned location' };
     clearTimeout(revTimer);
     revTimer = setTimeout(async () => {
@@ -188,7 +208,8 @@
   }
 
   function goBack() {
-    if (S.view === 'pickup') { S.view = 'choose'; showRoute(); render(); }
+    if (S.view === 'pickup' && !S.drop) { if (S.pickup && S.pickup.address === 'Finding address…') S.pickup = null; S.view = 'home'; render(); }
+    else if (S.view === 'pickup') { S.view = 'choose'; showRoute(); render(); }
     else if (S.view === 'droppin') { S.view = 'home'; render(); openSearch(); }
     else reset();
   }
@@ -205,6 +226,7 @@
       <div class="grabber"></div>
       <div class="home ${first && !K.reduced() ? 'home-in' : ''}">
         <div id="upHost"></div>
+        <div id="locHost">${locHtml()}</div>
         <div class="where">
           <button class="where-go" id="whereBtn">${K.ic('search')}<span>Where to?</span></button>
           <button class="when-pill ${S.when ? 'on' : ''}" id="homeWhen" aria-label="Pickup time">${K.ic('clock', 'sm')}<span>${S.when ? K.esc(whenLabel(S.when)) : 'Now'}</span>${K.ic('chevDown', 'sm')}</button>
@@ -215,7 +237,7 @@
         <div id="forYou">${forYouHtml()}</div>
         <div id="installHost"></div>
       </div>`;
-    upHtml();
+    upHtml(); bindLoc();
     K.installCard(K.$('#installHost'));
     K.$('#whereBtn').onclick = () => openSearch();
     K.$('#homeWhen').onclick = () => openWhen(() => openSearch());
@@ -267,7 +289,28 @@
     if (part === 'up') upHtml();
     if (part === 'forYou') { K.$('#forYou').innerHTML = forYouHtml(); bindForYou(); }
     if (part === 'quick') { K.$('#quickHost').innerHTML = quickHtml(); bindQuick(); }
+    if (part === 'loc') { K.$('#locHost').innerHTML = locHtml(); bindLoc(); }
     sheet._keep = false;
+  }
+
+  // Pickup status on the home sheet: finding you, couldn't find you, or the pickup you set yourself.
+  function locHtml() {
+    if (S.pickup && S.pickup.manual) {
+      return `<div class="pick-set"><span class="dot-pick" aria-hidden="true"></span><span class="grow"><small>Pickup</small><b class="ellipsis">${K.esc(S.pickup.short || S.pickup.address)}</b></span><button class="btn btn-sm btn-ghost" id="chgPick">Change</button></div>`;
+    }
+    if (S.pickup) return '';
+    if (S.loc === 'finding' || !S.loc) return `<p class="loc-finding" role="status"><span class="spin" aria-hidden="true"></span>Finding your location…</p>`;
+    return `<div class="loc-card" role="alert">
+      <span class="ic" aria-hidden="true">${K.ic('locate')}</span>
+      <span class="grow"><b>We couldn’t find your location</b><span>${LOC_MSG[S.loc] || LOC_MSG.unavailable}</span></span>
+      <span class="loc-actions"><button class="btn btn-primary btn-sm" id="setPick">Set pickup</button>${S.loc !== 'unsupported' ? '<button class="btn btn-sm" id="retryLoc">Try again</button>' : ''}</span>
+    </div>`;
+  }
+  function bindLoc() {
+    const sp = K.$('#setPick'), rl = K.$('#retryLoc'), cp = K.$('#chgPick');
+    if (sp) sp.onclick = () => openSearch({ pickFirst: true });
+    if (cp) cp.onclick = () => openSearch({ pickFirst: true });
+    if (rl) rl.onclick = () => { S.loc = 'finding'; patchHome('loc'); locate(true); };
   }
 
   // Live "2 min" under each service from the cars and bodas around you
@@ -321,6 +364,7 @@
   function openSearch(opts = {}) {
     if (opts.preset) { chooseDrop(opts.preset); return; }
     const saveAs = opts.saveAs;
+    const pickFirst = !saveAs && (opts.pickFirst || !S.pickup);
     const page = document.createElement('div');
     page.className = 'page push-in';
     page.style.zIndex = 870;
@@ -329,13 +373,15 @@
         <h2>${saveAs ? 'Set ' + saveAs + ' address' : S.service === 'parcel' ? 'Where should it go?' : 'Where are you going?'}</h2></div>
       ${saveAs ? '' : `<div class="route-box" style="margin-bottom:6px">
         <div class="rb-line" style="grid-row:span 2"><span class="rb-dot"></span><span class="rb-bar"></span><span class="rb-sq"></span></div>
-        <input id="qPick" placeholder="Pickup location" value="${K.esc(S.pickup ? (S.pickup.short || S.pickup.address) : '')}" autocomplete="off" aria-label="Pickup">
+        <input id="qPick" placeholder="Set your pickup point" value="${K.esc(S.pickup && !opts.pickFirst ? (S.pickup.short || S.pickup.address) : '')}" autocomplete="off" aria-label="Pickup point">
         <input id="qDrop" placeholder="Where to?" autocomplete="off" aria-label="Destination">
       </div>`}
       ${saveAs ? '<input id="qDrop" placeholder="Search for an address" autocomplete="off" aria-label="Search">' : ''}
-      <div id="res" style="margin-top:10px"></div></div>`;
+      <p class="error" id="sErr" role="alert"></p>
+      <div id="res" style="margin-top:10px" aria-live="polite"></div></div>`;
     root.querySelector('#app').appendChild(page);
-    let target = 'drop';
+    let target = pickFirst ? 'pick' : 'drop';
+    const sErr = K.$('#sErr', page);
     const res = K.$('#res', page);
     const qDrop = K.$('#qDrop', page), qPick = K.$('#qPick', page);
     const close = () => K.pop(page);
@@ -352,10 +398,18 @@
       const recent = saveAs ? [] : S.recent.map((r) => ({ ...r, _ic: 'clock' }));
       const extra = target === 'pick' && S.gps ? [{ name: 'Current location', address: 'Use GPS', lat: S.gps.lat, lng: S.gps.lng, _ic: 'locate' }] : [];
       current = [...extra, ...saved, ...recent, ...K.PLACES.map((p) => ({ ...p, _ic: p.icon || 'pin' }))];
-      res.innerHTML = rows(current, (p) => p._ic) +
-        (!saveAs && target === 'drop' ? `<button class="lrow" id="onMap"><span class="ic">${K.ic('pin')}</span><span class="t">Set location on map</span></button>` : '');
+      const mapRow = !saveAs ? `<button class="lrow" id="onMap"><span class="ic">${K.ic('pin')}</span><span class="t">${target === 'pick' ? 'Set pickup on map' : 'Set destination on map'}</span></button>` : '';
+      res.innerHTML = (target === 'pick' ? mapRow : '') + rows(current, (p) => p._ic) + (target === 'drop' ? mapRow : '');
       bind();
-      const om = K.$('#onMap', page); if (om) om.onclick = () => { close(); S.view = 'droppin'; map.setView([S.pickup.lat, S.pickup.lng], 16); render(); };
+      const om = K.$('#onMap', page);
+      if (om) om.onclick = () => {
+        close();
+        const c = S.pickup || S.gps || map.getCenter();
+        map.setView([c.lat, c.lng], 17);
+        if (target === 'pick') { S.pickup = { lat: c.lat, lng: c.lng, address: 'Finding address…', manual: true }; S.view = 'pickup'; }
+        else S.view = 'droppin';
+        render();
+      };
     };
     const onInput = (el) => {
       clearTimeout(searchTimer);
@@ -380,16 +434,23 @@
         } catch (e) { K.toast(e.message); }
         return;
       }
+      sErr.textContent = '';
       if (target === 'pick') {
-        S.pickup = { lat: p.lat, lng: p.lng, address: p.name, short: p.name };
-        qPick.value = p.name; target = 'drop'; qDrop.focus(); return;
+        S.pickup = { lat: p.lat, lng: p.lng, address: p.name, short: p.name, manual: !(S.gps && p.lat === S.gps.lat && p.lng === S.gps.lng) };
+        qPick.value = p.name; loadNearby(); patchHome('loc');
+        if (opts.thenQuote && S.drop) { close(); prepareQuote(); return; }
+        target = 'drop'; qDrop.focus(); return;
+      }
+      if (!S.pickup) { // a destination needs a pickup first
+        sErr.textContent = 'Set your pickup point first.';
+        target = 'pick'; qPick && qPick.focus(); return;
       }
       close();
       chooseDrop(p);
     }
     showDefault();
     if (opts.query) { qDrop.value = opts.query; onInput(qDrop); }
-    setTimeout(() => qDrop.focus(), 60);
+    setTimeout(() => (target === 'pick' && qPick ? qPick : qDrop).focus(), 60);
   }
 
   function chooseDrop(p) {
@@ -399,7 +460,12 @@
   }
 
   async function prepareQuote() {
-    if (!S.pickup) setPickup(K.KAMPALA.lat, K.KAMPALA.lng);
+    if (!S.pickup) { // never quote from a guessed location
+      S.view = 'home'; render();
+      openSearch({ pickFirst: true, thenQuote: true });
+      K.toast('Set your pickup point first', 3000);
+      return;
+    }
     S.view = 'choose';
     K.$('#tabs').classList.add('hidden');
     sheet.classList.remove('home-card');
@@ -573,7 +639,7 @@
     if (q.promoError && S.promoCode && !q._shown) { q._shown = true; K.toast(q.promoError, 4500); }
     K.$('#request').onclick = () => {
       if (S.service === 'parcel' && !S.parcel) { openParcel(); return; }
-      if (p === 'wallet' && S.user.walletBalance < payOf(sel)) { K.toast('Not enough in your wallet. Top up or pick another way to pay.'); openPayments({ onPick: render }); return; }
+      if (p === 'wallet' && S.user.walletBalance < payOf(sel)) { K.toast(S.config.paymentsAvailable ? 'Not enough in your wallet. Top up or pick another way to pay.' : 'Not enough in your wallet. Choose cash instead.', 4000); openPayments({ onPick: render }); return; }
       book();
     };
   }
@@ -599,10 +665,12 @@
       <p class="small muted" style="text-align:center">Move the map to put the pin where you’ll wait</p>
       <div class="lrow" style="cursor:default"><span class="ic">${K.ic('pin')}</span><span class="grow"><span class="t ellipsis" id="pinAddr" style="display:block">${K.esc(S.pickup.address)}</span></span></div>
       <div class="sheet-foot"><button class="btn btn-primary btn-block btn-lg" id="confirm">Confirm pickup</button></div>`;
+    if (S.pickup.address === 'Finding address…') onPinMove();
     K.$('#confirm').onclick = () => {
       if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
-      S.pickup.short = null;
-      prepareQuote();
+      S.pickup.short = null; S.pickup.manual = true;
+      if (S.drop) prepareQuote();
+      else { S.view = 'home'; render(); openSearch(); }
     };
   }
 
@@ -618,6 +686,7 @@
 
   async function book() {
     const btn = K.$('#request'), err = K.$('#err');
+    if (!S.pickup) { err.textContent = 'Set your pickup point first.'; return; }
     btn.disabled = true; btn.textContent = 'Requesting…'; err.textContent = '';
     if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
     const opt = S.quote.options.find((o) => o.id === S.service);
@@ -807,7 +876,7 @@
         ${!t.riderRated ? `
           <h3 style="margin-top:6px">Rate your ${who(t)}</h3>
           <div class="row" style="justify-content:center;gap:8px">${photo(d, 'photo')}<span style="text-align:left"><b>${K.esc(d.name || '')}</b><br><span class="small muted">${K.esc(d.plate || '')}</span></span></div>
-          <div class="stars" role="radiogroup" aria-label="Rate your ${who(t)}">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${n} star${n > 1 ? 's' : ''}" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>` : ''}
+          <div class="stars" role="radiogroup" aria-label="Rate your ${who(t)}">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" role="radio" aria-checked="${n === S.rating}" aria-label="${n} star${n > 1 ? 's' : ''}" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>` : ''}
         <button class="btn btn-link btn-block" id="details" style="min-height:36px">View details</button>
       </div>
       <div class="sheet-foot">
@@ -816,7 +885,7 @@
       </div>`;
     sheet.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => {
       S.rating = +b.dataset.n;
-      sheet.querySelectorAll('[data-n]').forEach((x) => x.classList.toggle('on', +x.dataset.n <= S.rating));
+      sheet.querySelectorAll('[data-n]').forEach((x) => { x.classList.toggle('on', +x.dataset.n <= S.rating); x.setAttribute('aria-checked', String(+x.dataset.n === S.rating)); });
       K.$('#rate').disabled = false;
     });
     const pay = K.$('#pay');
@@ -830,7 +899,8 @@
     const rate = K.$('#rate');
     if (rate) rate.onclick = async () => {
       rate.disabled = true;
-      await K.api(`/trips/${t.id}/rate`, { stars: S.rating }).catch(() => {});
+      try { await K.api(`/trips/${t.id}/rate`, { stars: S.rating }); }
+      catch (e) { rate.disabled = false; K.toast(`Rating not saved: ${e.message}`, 4500); return; }
       S.trip.riderRated = true; S.rating = 0;
       if (needsPay) render(); else { K.toast('Thanks for riding with Kwata'); reset(); }
     };
@@ -972,20 +1042,32 @@
       try {
         const out = await K.api(`/trips/${S.trip.id}/sos`, { lat, lng });
         const link = location.origin + '/t/' + out.shareToken;
-        const m = K.modal(`<h2>Help is being alerted</h2>
-          <p>The Kwata safety team has your live location and trip details.</p>
+        const m = K.modal(`<h2>Alert sent to Kwata</h2>
+          <p>The Kwata team has been alerted with ${lat ? 'your location and ' : ''}your trip details. If you are in danger, call the police now.</p>
           <a class="btn btn-danger btn-block btn-lg" href="tel:999">Call Police (999)</a>
           ${out.emergencyContact ? `<a class="btn btn-block" style="margin-top:8px" href="sms:${out.emergencyContact}?body=${encodeURIComponent('I need help. Follow my Kwata trip: ' + link)}">Text my emergency contact</a>` : ''}
           <button class="btn btn-block" style="margin-top:8px" id="sh">Share my live location</button>
           <button class="btn btn-ghost btn-block" data-close>Close</button>`);
         K.$('#sh', m.el).onclick = () => K.share(link, 'I need help. Follow my Kwata trip live');
-      } catch (e) { K.toast(e.message); }
+      } catch (e) {
+        // The alert didn't reach us: never pretend it did. Calling the police still works offline.
+        const link = location.origin + '/t/' + S.trip.shareToken;
+        const m = K.modal(`<h2>We couldn’t send the alert</h2>
+          <p role="alert">${K.esc(e.message)} Call the police directly if you are in danger.</p>
+          <a class="btn btn-danger btn-block btn-lg" href="tel:999">Call Police (999)</a>
+          <button class="btn btn-block" style="margin-top:8px" id="again">Try sending the alert again</button>
+          <button class="btn btn-block" style="margin-top:8px" id="sh">Share my live trip</button>
+          <button class="btn btn-ghost btn-block" data-close>Close</button>`);
+        K.$('#again', m.el).onclick = () => { m.close(); send(lat, lng); };
+        K.$('#sh', m.el).onclick = () => K.share(link, 'I need help. Follow my Kwata trip live');
+      }
     };
     if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => send(p.coords.latitude, p.coords.longitude), () => send(), { timeout: 5000 });
     else send();
   }
 
   function reset() {
+    const hadTrip = !!S.trip;
     S.view = 'home'; S.drop = null; S.quote = null; S.route = null; S.trip = null; S.rating = 0; S.parcel = null;
     S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false;
     loadGrowth();
@@ -995,7 +1077,8 @@
     K.api('/me').then((m) => { S.user = m.user; }).catch(() => {});
     K.api('/trips/history').then((h) => { S.history = h; buildRecent(h); if (S.view === 'home') render(); }).catch(() => {});
     if (S.gps) { S.pickup = { ...S.gps, address: 'Current location', short: 'Current location' }; map.setView([S.gps.lat, S.gps.lng], 16); setPickup(S.gps.lat, S.gps.lng, 'Current location'); }
-    else if (S.pickup) map.setView([S.pickup.lat, S.pickup.lng], 16);
+    else if (hadTrip || !S.pickup) { S.pickup = null; locate(false); } // after a trip, ask again rather than reuse an old pickup
+    else map.setView([S.pickup.lat, S.pickup.lng], 16);                // just backed out: keep the pickup they set
     render();
   }
 
@@ -1080,7 +1163,12 @@
       K.api('/trips/history').then((h) => { const changed = JSON.stringify(h) !== JSON.stringify(S.history); S.history = h; if (changed && el.isConnected) paintActivity(el, el.dataset.filter || filter, h); }).catch(() => {});
       return;
     }
-    try { S.history = await K.api('/trips/history'); } catch (e) { el.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; return; }
+    try { S.history = await K.api('/trips/history'); }
+    catch (e) {
+      el.innerHTML = `<div class="page-title">Activity</div><div class="state-box" role="alert"><b>Couldn’t load your trips</b><span>${K.esc(e.message)}</span><button class="btn btn-sm" id="again">Try again</button></div>`;
+      K.$('#again', el).onclick = () => { el.innerHTML = `<div class="page-title">Activity</div>${K.skeleton('list', 4)}`; drawActivity(el, filter, true); };
+      return;
+    }
     paintActivity(el, filter, S.history);
   }
   function paintActivity(el, filter, list) {
@@ -1113,9 +1201,9 @@
       <button class="menu-item" data-a="places"><span class="ic">${K.ic('pin')}</span><span class="grow">Saved places</span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="wallet"><span class="ic">${K.ic('wallet')}</span><span class="grow">Kwata Wallet<br><span class="small muted">${K.ugx(u.walletBalance)}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="safety"><span class="ic">${K.ic('shield')}</span><span class="grow">Safety<br><span class="small muted">${u.emergencyContact ? 'Emergency contact ' + K.esc(prettyPhone(u.emergencyContact)) : 'Add an emergency contact'}</span></span>${K.ic('chev', 'sm')}</button>
-      <a class="menu-item" href="tel:${K.esc(S.config.supportPhone)}"><span class="ic">${K.ic('help')}</span><span class="grow">Help & Support</span>${K.ic('chev', 'sm')}</a>
+      ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Help & Support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
       <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
-      <p class="tiny faint" style="text-align:center;margin-top:18px">Kwata 1.0 · ${K.screen.view || innerHeight}/${K.screen.full || '–'}/${K.screen.inset ?? '–'}/${K.screen.pad ?? '–'}</p>`;
+      <p class="tiny faint" style="text-align:center;margin-top:18px">Kwata 1.0</p>`;
     const redraw = () => drawAccount(el);
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => {
       const a = b.dataset.a;
@@ -1135,16 +1223,21 @@
     const draw = () => {
       const cur = pref();
       const sub = { mtn: prettyPhone(S.user.payPhone), airtel: prettyPhone(S.user.payPhone), card: 'Visa or Mastercard, paid at the end', cash: 'Pay your rider or driver directly', wallet: 'Balance ' + K.ugx(S.user.walletBalance) };
+      const live = S.config.paymentsAvailable;
       sp.body.innerHTML = `<p class="small muted" style="margin:0 0 12px">Your default is used for every trip. Change it any time.</p>
-        ${Object.keys(PAY).map((k) => `<button class="pay-item ${k === cur ? 'on' : ''}" data-p="${k}">${PAY[k].logo}<span class="grow"><b>${PAY[k].name}</b><span>${sub[k]}</span></span>${k === cur ? '<span class="default-badge">Default</span>' : ''}</button>`).join('')}
-        <button class="btn btn-outline btn-block" id="num" style="margin-top:6px">${K.ic('momo', 'sm')} Change Mobile Money number</button>
-        <button class="btn btn-outline btn-block" id="top" style="margin-top:8px">${K.ic('plus', 'sm')} Add money to wallet</button>
-        ${S.config.paymentsLive ? '' : '<p class="tiny faint" style="margin-top:10px">Test mode: Mobile Money and card payments complete instantly without charging you.</p>'}`;
+        <div role="radiogroup" aria-label="Default payment method">
+        ${Object.keys(PAY).map((k) => payOK(k)
+          ? `<button class="pay-item ${k === cur ? 'on' : ''}" data-p="${k}" role="radio" aria-checked="${k === cur}">${PAY[k].logo}<span class="grow"><b>${PAY[k].name}</b><span>${sub[k]}</span></span>${k === cur ? '<span class="default-badge">Default</span>' : ''}</button>`
+          : `<div class="pay-item off" role="radio" aria-checked="false" aria-disabled="true">${PAY[k].logo}<span class="grow"><b>${PAY[k].name}</b><span>Not available yet</span></span><span class="soon-badge">Coming soon</span></div>`).join('')}
+        </div>
+        ${live ? `<button class="btn btn-outline btn-block" id="num" style="margin-top:6px">${K.ic('momo', 'sm')} Change Mobile Money number</button>
+        <button class="btn btn-outline btn-block" id="top" style="margin-top:8px">${K.ic('plus', 'sm')} Add money to wallet</button>` : '<p class="small muted" style="margin-top:10px">Mobile Money and card payments are coming soon. For now, pay with cash or with wallet credit from rewards and invites.</p>'}
+        ${S.config.paymentsDemo ? '<p class="tiny faint" style="margin-top:10px">Test mode: Mobile Money and card payments complete instantly without charging you.</p>' : ''}`;
       sp.body.querySelectorAll('[data-p]').forEach((b) => b.onclick = async () => {
         try { S.user = (await K.api('/me', { payPref: b.dataset.p }, 'PATCH')).user; } catch (e) { K.toast(e.message); return; }
         if (onPick) { sp.close(); onPick(); } else draw();
       });
-      K.$('#num', sp.page).onclick = () => {
+      if (live) K.$('#num', sp.page).onclick = () => {
         const m = K.modal(`<h2>Mobile Money number</h2><p class="small muted">We send MTN or Airtel payment prompts to this number.</p>
           <label for="mm">Phone number</label><input id="mm" type="tel" inputmode="tel" value="${K.esc(prettyPhone(S.user.payPhone))}">
           <p class="error" id="err"></p><button class="btn btn-primary btn-block btn-lg" id="sv">Save</button>`);
@@ -1153,7 +1246,7 @@
           catch (e) { K.$('#err', m.el).textContent = e.message; }
         };
       };
-      K.$('#top', sp.page).onclick = () => openWallet(draw);
+      if (live) K.$('#top', sp.page).onclick = () => openWallet(draw);
     };
     draw();
   }
@@ -1175,23 +1268,31 @@
 
   async function openWallet(after) {
     const m = K.modal(`<h2>Kwata Wallet</h2><p class="money">${K.ugx(S.user.walletBalance)}</p>${K.skeleton('list', 3)}`);
-    let w; try { w = await K.api('/wallet'); } catch (e) { K.$('.sk-card', m.el) && (m.el.querySelectorAll('.sk-card').forEach((x) => x.remove())); return; }
+    let w; try { w = await K.api('/wallet'); } catch (e) {
+      if (!m.el.isConnected) return;
+      m.el.innerHTML = `<h2>Kwata Wallet</h2><div class="state-box" role="alert"><b>Couldn’t load your wallet</b><span>${K.esc(e.message)}</span><button class="btn btn-sm" id="again">Try again</button></div>`;
+      K.$('#again', m.el).onclick = () => { m.close(); setTimeout(() => openWallet(after), 280); };
+      return;
+    }
     if (!m.el.isConnected) return;
+    const live = S.config.paymentsAvailable;
     m.el.innerHTML = `
       <h2>Kwata Wallet</h2>
       <p class="money">${K.ugx(w.balance)}</p>
-      <p class="small muted">Top up once with Mobile Money and pay for trips in one tap.</p>
+      ${live ? `<p class="small muted">Top up once with Mobile Money and pay for trips in one tap.</p>
       <div class="chips">${[10000, 20000, 50000, 100000].map((a) => `<button class="chip" data-amt="${a}">${K.ugx(a)}</button>`).join('')}</div>
-      <label for="amt">Amount</label><input id="amt" type="number" inputmode="numeric" min="1000" step="500" value="20000">
+      <label for="amt">Amount (UGX)</label><input id="amt" type="number" inputmode="numeric" min="1000" max="2000000" step="500" value="20000">
       <div class="row" style="margin-top:12px"><button class="btn btn-primary fill" data-m="momo">MTN / Airtel</button><button class="btn fill" data-m="card">${K.ic('card', 'sm')} Card</button></div>
-      ${S.config.paymentsLive ? '' : '<p class="tiny faint" style="margin-top:8px">Test mode: top-ups are added instantly without charging you.</p>'}
-      <p class="error" id="err"></p>
+      ${S.config.paymentsDemo ? '<p class="tiny faint" style="margin-top:8px">Test mode: top-ups are added instantly without charging you.</p>' : ''}` : '<p class="small muted">Wallet top-ups by Mobile Money and card are coming soon. Credit from Kwata Rewards and invites lands here, and you can use it to pay for trips.</p>'}
+      <p class="error" id="err" role="alert"></p>
       ${w.transactions.length ? `<h3>History</h3>${w.transactions.map((x) => `<div class="tx"><span>${K.esc(x.note || x.type)}<br><span class="tiny faint">${K.when(x.created_at)}</span></span><span class="${x.amount > 0 ? 'pos' : 'neg'}">${x.amount > 0 ? '+' : ''}${K.ugx(x.amount)}</span></div>`).join('')}` : ''}`;
     m.el.querySelectorAll('[data-amt]').forEach((b) => b.onclick = () => { K.$('#amt', m.el).value = b.dataset.amt; });
     m.el.querySelectorAll('[data-m]').forEach((b) => b.onclick = async () => {
+      const amount = Math.round(+K.$('#amt', m.el).value);
+      if (!(amount >= 1000 && amount <= 2000000)) { K.$('#err', m.el).textContent = 'Enter an amount between UGX 1,000 and 2,000,000.'; return; }
       b.disabled = true;
       try {
-        const out = await K.api('/wallet/topup', { amount: +K.$('#amt', m.el).value, method: b.dataset.m });
+        const out = await K.api('/wallet/topup', { amount, method: b.dataset.m });
         if (out.link) { location.href = out.link; return; }
         S.user.walletBalance = out.balance; K.toast('Wallet topped up'); m.close();
         after && after();

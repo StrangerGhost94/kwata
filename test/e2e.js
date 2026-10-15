@@ -24,8 +24,14 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('�
   await api('/driver/documents', { kind: 'national_id', image: tinyJpeg }, applicant.token);
   const docs = await api(`/admin/drivers/${applicant.user.id}/documents`, null, admin.token);
   assert(docs.length === 2 && docs[0].url.startsWith('data:image/jpeg'), 'admin can see uploaded documents');
+  const hidden = await fetch(BASE + `/api/drivers/${applicant.user.id}/photo`);
+  assert(hidden.status === 404, 'an applicant’s photo is private until they are approved');
+  const own = await api('/driver/photo', null, applicant.token);
+  assert(own.url && own.url.startsWith('data:image/jpeg'), 'a driver can see their own photo while pending');
+  await api(`/admin/drivers/${applicant.user.id}/status`, { status: 'approved' }, admin.token);
   const photo = await fetch(BASE + `/api/drivers/${applicant.user.id}/photo`);
-  assert(photo.status === 200 && photo.headers.get('content-type') === 'image/jpeg', 'driver profile photo is served');
+  assert(photo.status === 200 && photo.headers.get('content-type') === 'image/jpeg', 'an approved driver’s photo is shown to riders');
+  await api(`/admin/drivers/${applicant.user.id}/status`, { status: 'pending' }, admin.token);
   await api('/admin/drivers', { name: 'Test Driver', phone: dPhone, password: 'secret1', vehicleType: 'boda', plate: 'UFA 123X', licenseNo: 'DL123', vehicleMake: 'Bajaj Boxer', vehicleColor: 'Red' }, admin.token);
   const driver = await api('/auth/login', { phone: dPhone, password: 'secret1' });
   assert(driver.user.role === 'driver', 'admin-added driver can sign in');

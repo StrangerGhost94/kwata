@@ -14,7 +14,7 @@ One Node.js app serves everything:
 
 ## What works today
 
-**Riders** – the familiar premium flow: *Where to?* → choose a ride (each option shows price, live ETA and arrival time, with the fastest flagged) → confirm pickup on a draggable pin → matching → live trip. Saved Home and Work, recent places, full-screen search, top-down car and boda markers that glide and turn on the map, in-app chat with quick replies, call driver, 4-digit PIN to start, share-trip link, safety centre with SOS and emergency contact, ratings, wallet with top-ups, Activity and Account tabs, light and dark mode. Parcel bookings capture recipient name, phone and item.
+**Riders** – the familiar premium flow: *Where to?* → choose a ride (each option shows price, live ETA and arrival time, with the fastest flagged) → confirm pickup on a draggable pin → matching → live trip. Saved Home and Work, recent places, full-screen search, top-down car and boda markers that glide and turn on the map, in-app chat with quick replies, call driver, 4-digit PIN to start, share-trip link, safety centre with SOS and emergency contact, ratings, wallet with top-ups, Activity and Account tabs. Parcel bookings capture recipient name, phone and item.
 
 **Drivers** – sign up with vehicle and permit details, wait for approval, tap **GO**, ring + vibrate on new requests with a countdown ring, navigation banner with distance and one-tap Google Maps, chat and call the rider, *slide to arrive* → enter PIN → *slide to complete*, earnings pill, today/7-day stats, cash out to Mobile Money. If a driver cancels, the rider is automatically re-matched with someone else.
 
@@ -48,19 +48,26 @@ Local test admin: phone **0700000000**, password **admin123**. This account only
 
 To test a full ride on one computer: open `/admin` in one browser, `/driver` in a second browser (or incognito), `/rider` in a third. Register a driver, approve them in admin, go online, then book from the rider app. If location is blocked, the driver menu has **Set location on map (testing)**.
 
-`npm test` runs the automated end-to-end test (server must be running).
+### Tests
+
+Start the server (`npm start`), then:
+
+- `npm test` runs the payment-safety checks, the full ride simulation, the growth features and the booking/payments/tracking rules.
+- `npm run test:ui` drives a real browser through location denied → manual pickup → fares, payment options, offline banner, dialogs and sign-in (needs Chrome; set `CHROME=/path/to/chrome` if it isn't found).
+- To check the "payments off" behaviour your live site has without Flutterwave keys, start a second server with `PORT=3101 PAYMENTS_DEMO=false npm start` and run the tests with `BASE=http://localhost:3101`.
+- The sign-up limit (10 per 10 minutes) also applies to tests; restart the server between full runs.
 
 ## Deploy to Railway
 
 1. Push the folder to a new GitHub repo.
 2. In Railway: **New Project → Deploy from GitHub repo**, pick it.
 3. **+ New → Database → PostgreSQL**, then in your app service add the variable `DATABASE_URL = ${{Postgres.DATABASE_URL}}`.
-4. Add variables: `JWT_SECRET` (long random text), `ADMIN_PHONE`, `ADMIN_PASSWORD`, `PUBLIC_URL` (your Railway or custom domain).
+4. Add variables: `JWT_SECRET` (long random text, **required**: a live server won't start without it), `ADMIN_PHONE`, `ADMIN_PASSWORD`, `PUBLIC_URL` (your Railway or custom domain), and `SUPPORT_PHONE` once you have a real support line (or set it in Admin → Pricing).
 5. Deploy. Tables are created automatically on first start.
 
 ## Taking real payments (Flutterwave)
 
-Without keys the app runs in **test mode**: payments succeed instantly so you can try every flow.
+Without keys, **local development** runs in test mode (payments succeed instantly so you can try every flow). A **live server** never fakes payments: until the keys are set, Mobile Money, card and wallet top-ups show as *Coming soon* and riders pay cash (or with wallet credit from rewards and invites). `PAYMENTS_DEMO=true` turns test mode on anyway, e.g. for a staging server.
 
 1. Open a Flutterwave business account for Uganda and enable Mobile Money Uganda + cards.
 2. Set `FLW_SECRET_KEY` on Railway.
@@ -70,10 +77,12 @@ Driver payouts are currently sent by your team by Mobile Money and marked paid i
 
 ## Before public launch
 
-- **Maps at scale**: the app uses CARTO basemaps (on OpenStreetMap data), OSRM routing and Nominatim search. CARTO's free basemaps are meant for low-volume use; get a CARTO or Mapbox plan before you launch commercially. These are fine for testing and a pilot but have usage limits. Before heavy traffic, switch to a paid provider (Mapbox, Google Maps Platform, or self-hosted OSRM) — the calls live in `public/js/common.js`.
+- **Maps at scale**: the app uses OpenFreeMap vector maps (OpenStreetMap data), the public OSRM demo router and Nominatim search. These are fine for testing and a pilot but have usage limits and no uptime guarantee. Before heavy traffic, switch to a paid provider (Mapbox, Google Maps Platform, or self-hosted OSRM) — the calls live in `public/js/common.js`.
 - **SMS verification**: add phone OTP at sign-up (e.g. Africa's Talking) so every number is real.
 - **Driver vetting**: check permit, logbook, National ID and insurance in person before approving.
-- **Legal**: confirm current Ministry of Works & Transport rules for digital ride-hailing operators and register as a data controller with Uganda's Personal Data Protection Office. Write terms of service and a privacy policy.
+- **Legal**: confirm current Ministry of Works & Transport rules for digital ride-hailing operators and register as a data controller with Uganda's Personal Data Protection Office. Write terms of service and a privacy policy (the app has no Terms/Privacy pages yet, so sign-up doesn't link to any).
+- **Support line**: set `SUPPORT_PHONE` (or Admin → Pricing). Until then, Help & Support and "Call support" buttons are hidden.
+- **Service descriptions**: the blurbs in Admin settings (e.g. "Helmet provided", "Newer cars, AC, top-rated drivers") are shown to riders on the website; make sure every one is true for your fleet.
 - **Name**: check that "Kwata" is free to trademark with URSB and grab the domain.
 - **Secrets**: set a strong `JWT_SECRET` and change the default admin password.
 

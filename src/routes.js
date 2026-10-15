@@ -16,16 +16,26 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
 const baseUrl = (req) => process.env.PUBLIC_URL || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
 
+const clean = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 function point(p) {
-  if (!p) return null;
+  if (!p || typeof p !== 'object') return null;
   const lat = Number(p.lat), lng = Number(p.lng);
   // Rough bounding box for East Africa — keeps junk coordinates out.
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return null;
-  return { lat, lng, address: String(p.address || '').slice(0, 200) };
+  return { lat, lng, address: clean(p.address, 200) || 'Pinned location' };
+}
+// Pickup and destination must be real, different places.
+function route(body, res) {
+  const pickup = point(body.pickup), drop = point(body.drop);
+  if (!pickup) { bad(res, 'Set your pickup point first.'); return null; }
+  if (!drop) { bad(res, 'Choose where you’re going.'); return null; }
+  if (haversine(pickup, drop) < 0.05) { bad(res, 'Your pickup and destination are the same place. Choose a different destination.'); return null; }
+  return { pickup, drop };
 }
 
 // Tiny in-memory rate limiter for login / register
 const hits = new Map();
+setInterval(() => { const now = Date.now(); for (const [k, arr] of hits) if (!arr.length || now - arr[arr.length - 1] > 30 * 60e3) hits.delete(k); }, 10 * 60e3).unref();
 function limit(max, windowMs) {
   return (req, res, next) => {
     const key = req.ip + req.path;
@@ -37,14 +47,23 @@ function limit(max, windowMs) {
   };
 }
 
+// The support line comes from SUPPORT_PHONE or Admin → Pricing. The old built-in
+// placeholder (+256 700 000000) is not a real line, so it counts as "not set".
+function supportPhone(s) {
+  const v = String(process.env.SUPPORT_PHONE || s.supportPhone || '').trim();
+  return !v || v.replace(/\D/g, '') === '256700000000' ? null : v;
+}
+
 // ---------- Public ----------
 r.get('/config', wrap(async (req, res) => {
   const s = await getSettings();
   res.json({
     services: Object.entries(s.services).filter(([, v]) => v.enabled).map(([id, v]) => ({ id, name: v.name, icon: v.icon, vehicle: v.vehicle, seats: v.seats, blurb: v.blurb })),
-    paymentsLive: payments.enabled(),
+    paymentsLive: payments.enabled(),            // real Flutterwave payments
+    paymentsAvailable: payments.available(),     // Mobile Money / card / top-ups can be used (live or local demo)
+    paymentsDemo: payments.demo(),
     commissionPct: s.commissionPct,
-    supportPhone: s.supportPhone,
+    supportPhone: supportPhone(s),
     minWithdrawal: s.minWithdrawal,
     growth: { firstRide: s.growth.firstRide, referral: s.growth.referral, rewards: s.growth.rewards },
   });
@@ -61,9 +80,11 @@ r.get('/track/:token', wrap(async (req, res) => {
 async function createAccount(body, role, { approved = false } = {}) {
   const { name, phone, password, email } = body || {};
   const p = auth.normalizePhone(phone);
-  if (!name || String(name).trim().length < 2) return { error: 'Enter the full name.' };
+  if (clean(name, 80).length < 2) return { error: 'Enter the full name.' };
   if (!p) return { error: 'Enter a valid Ugandan phone number, e.g. 0772 123456.' };
   if (!password || String(password).length < 6) return { error: 'Password must be at least 6 characters.' };
+  if (String(password).length > 72) return { error: 'Password must be 72 characters or fewer.' };
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return { error: 'Enter a valid email address, or leave it empty.' };
   if (await db.one('SELECT id FROM users WHERE phone = $1', [p])) return { error: 'This phone number already has an account.' };
 
   let driverInfo = null;
@@ -74,17 +95,18 @@ async function createAccount(body, role, { approved = false } = {}) {
     if (!licenseNo) return { error: 'Enter the driving permit number.' };
     const s = await getSettings();
     const services = Object.entries(s.services).filter(([, v]) => v.vehicle === vehicleType).map(([id]) => id);
+    if (momoNumber && !auth.normalizePhone(momoNumber)) return { error: 'Enter a valid Mobile Money number, or leave it empty to use your phone number.' };
     driverInfo = {
-      vehicleType, services: services.join(','), plate: String(plate).toUpperCase().trim(),
-      vehicleMake: String(vehicleMake || '').slice(0, 60), vehicleColor: String(vehicleColor || '').slice(0, 30),
-      licenseNo: String(licenseNo).slice(0, 40), momo: auth.normalizePhone(momoNumber) || p,
+      vehicleType, services: services.join(','), plate: clean(plate, 12).toUpperCase(),
+      vehicleMake: clean(vehicleMake, 60), vehicleColor: clean(vehicleColor, 30),
+      licenseNo: clean(licenseNo, 40), momo: auth.normalizePhone(momoNumber) || p,
     };
   }
 
   const hash = await bcrypt.hash(String(password), 10);
   const user = await db.tx(async (t) => {
     const u = await t.one('INSERT INTO users(name, phone, email, password_hash, role) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [String(name).trim().slice(0, 80), p, email ? String(email).slice(0, 120) : null, hash, role]);
+      [clean(name, 80), p, email ? String(email).trim().slice(0, 120) : null, hash, role]);
     if (driverInfo) {
       await t.query(`INSERT INTO drivers(user_id, vehicle_type, services, plate, vehicle_make, vehicle_color, license_no, momo_number, status)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -134,18 +156,26 @@ r.get('/driver/documents', auth.requireAuth('driver'), wrap(async (req, res) => 
   res.json({ kinds: DOC_KINDS, uploaded: Object.fromEntries(rows.map((x) => [x.kind, x.created_at])) });
 }));
 // Driver profile photos are shown to riders on the trip screen.
+// Only approved drivers' photos are public; applicants' photos stay private.
 r.get('/drivers/:id/photo', wrap(async (req, res) => {
-  const d = await db.one("SELECT mime, data FROM driver_docs WHERE user_id = $1 AND kind = 'photo'", [Number(req.params.id)]);
+  const d = await db.one(`SELECT dd.mime, dd.data FROM driver_docs dd JOIN drivers dr ON dr.user_id = dd.user_id
+    WHERE dd.user_id = $1 AND dd.kind = 'photo' AND dr.status = 'approved'`, [Number(req.params.id)]);
   if (!d) return res.status(404).end();
   res.setHeader('Content-Type', d.mime);
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.end(Buffer.from(d.data, 'base64'));
 }));
 
+r.get('/driver/photo', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const d = await db.one("SELECT mime, data FROM driver_docs WHERE user_id = $1 AND kind = 'photo'", [req.user.id]);
+  res.json({ url: d ? `data:${d.mime};base64,${d.data}` : null });
+}));
+
 r.post('/me/password', auth.requireAuth(), wrap(async (req, res) => {
   const { current, next } = req.body || {};
   if (!(await bcrypt.compare(String(current || ''), req.user.password_hash))) return bad(res, 'Your current password is wrong.');
   if (!next || String(next).length < 6) return bad(res, 'New password must be at least 6 characters.');
+  if (String(next).length > 72) return bad(res, 'New password must be 72 characters or fewer.');
   await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [await bcrypt.hash(String(next), 10), req.user.id]);
   res.json({ ok: true });
 }));
@@ -190,6 +220,8 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
     if (!pp) return bad(res, 'Enter a valid Mobile Money number.');
     await db.query('UPDATE users SET pay_phone = $1 WHERE id = $2', [pp, req.user.id]);
   }
+  if (name !== undefined && clean(name, 80).length < 2) return bad(res, 'Enter your full name.');
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return bad(res, 'Enter a valid email address.');
   const ec = emergencyContact ? auth.normalizePhone(emergencyContact) : null;
   if (emergencyContact && !ec) return bad(res, 'Emergency contact must be a valid Ugandan number.');
   if (savedPlaces && typeof savedPlaces === 'object') {
@@ -207,14 +239,15 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
   }
   const u = await db.one(
     'UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), emergency_contact = COALESCE($3, emergency_contact) WHERE id = $4 RETURNING *',
-    [name ? String(name).slice(0, 80) : null, email ? String(email).slice(0, 120) : null, ec, req.user.id]);
+    [name ? clean(name, 80) : null, email ? String(email).trim().slice(0, 120) : null, ec, req.user.id]);
   res.json({ user: auth.publicUser(u) });
 }));
 
 // ---------- Rider ----------
 r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
-  const pickup = point(req.body.pickup), drop = point(req.body.drop);
-  if (!pickup || !drop) return bad(res, 'Choose a pickup and a destination.');
+  const rt0 = route(req.body || {}, res);
+  if (!rt0) return;
+  const { pickup, drop } = rt0;
   surge.recordLook(req.user.id, pickup.lat, pickup.lng);   // someone checking prices = demand signal
   const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin);
   // How far is the nearest free driver for each ride type?
@@ -258,17 +291,21 @@ r.post('/admin/pricing/rain', auth.requireAuth('admin'), wrap(async (req, res) =
 }));
 
 r.get('/drivers/nearby', auth.requireAuth(), wrap(async (req, res) => {
-  res.json(rt.nearbyDrivers(Number(req.query.lat), Number(req.query.lng), req.query.service));
+  const p = point({ lat: req.query.lat, lng: req.query.lng });
+  if (!p) return bad(res, 'A location inside our service area is needed.');
+  res.json(rt.nearbyDrivers(p.lat, p.lng, req.query.service ? String(req.query.service) : undefined));
 }));
 
 r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const { service, paymentMethod = 'cash', distanceKm, durationMin, parcel, notes } = req.body || {};
-  const pickup = point(req.body.pickup), drop = point(req.body.drop);
-  if (!pickup || !drop) return bad(res, 'Choose a pickup and a destination.');
+  const rt0 = route(req.body || {}, res);
+  if (!rt0) return;
+  const { pickup, drop } = rt0;
   const s = await getSettings();
-  const svc = s.services[service];
+  const svc = typeof service === 'string' && Object.prototype.hasOwnProperty.call(s.services, service) ? s.services[service] : null;
   if (!svc || !svc.enabled) return bad(res, 'That ride type is not available.');
   if (!['cash', 'wallet', 'momo', 'card'].includes(paymentMethod)) return bad(res, 'Choose a payment method.');
+  if (['momo', 'card'].includes(paymentMethod) && !payments.available()) return bad(res, 'Mobile Money and card payments aren’t available yet. Choose cash or your Kwata wallet.');
 
   // Scheduled ride: between 20 minutes and 7 days ahead.
   let scheduledFor = null;
@@ -290,8 +327,9 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   let passengerJson = null;
   if (req.body.passenger && req.body.passenger.name) {
     const pp = auth.normalizePhone(req.body.passenger.phone);
+    if (clean(req.body.passenger.name, 60).length < 2) return bad(res, 'Enter the passenger’s name.');
     if (!pp) return bad(res, 'Enter the passenger’s phone number so the driver can call them.');
-    passengerJson = JSON.stringify({ name: String(req.body.passenger.name).trim().slice(0, 60), phone: pp });
+    passengerJson = JSON.stringify({ name: clean(req.body.passenger.name, 60), phone: pp });
   }
 
   // Upfront, locked price: use the quote the rider saw if it is still valid,
@@ -319,8 +357,8 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   if (service === 'parcel') {
     const pc = parcel || {};
     const rp = auth.normalizePhone(pc.recipientPhone);
-    if (!pc.recipientName || !rp || !pc.item) return bad(res, 'Add the recipient name, phone and what you are sending.');
-    parcelJson = JSON.stringify({ recipientName: String(pc.recipientName).slice(0, 80), recipientPhone: rp, item: String(pc.item).slice(0, 120) });
+    if (clean(pc.recipientName, 80).length < 2 || !rp || !clean(pc.item, 120)) return bad(res, 'Add the recipient name, phone and what you are sending.');
+    parcelJson = JSON.stringify({ recipientName: clean(pc.recipientName, 80), recipientPhone: rp, item: clean(pc.item, 120) });
   }
 
   const pin = String(crypto.randomInt(1000, 10000));
@@ -332,7 +370,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
       discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
   [req.user.id, service, pickup.lat, pickup.lng, pickup.address, drop.lat, drop.lng, drop.address,
-    km, min, fare, paymentMethod, pin, share, parcelJson, notes ? String(notes).slice(0, 200) : null,
+    km, min, fare, paymentMethod, pin, share, parcelJson, notes ? clean(notes, 200) || null : null,
     discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested']);
 
   if (req.body.quoteId) surge.dropQuote(req.body.quoteId);
@@ -389,7 +427,7 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
     return res.json({ ok: true });
   }
   await db.query("UPDATE trips SET status = 'cancelled', cancelled_by = $1, cancel_reason = $2 WHERE id = $3",
-    [role, String((req.body || {}).reason || '').slice(0, 200), t.id]);
+    [role, clean((req.body || {}).reason, 200), t.id]);
   rt.clearOffer(t.id);
   if (t.driver_id) rt.setDriverFree(t.driver_id);
   await rt.broadcast(t.id);
@@ -419,7 +457,8 @@ r.get('/trips/:id/messages', auth.requireAuth('rider', 'driver'), wrap(async (re
 r.post('/trips/:id/sos', auth.requireAuth('rider', 'driver'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, req.user.role);
   if (!t) return;
-  const lat = Number(req.body.lat) || null, lng = Number(req.body.lng) || null;
+  const sp = point({ lat: (req.body || {}).lat, lng: (req.body || {}).lng });
+  const lat = sp ? sp.lat : null, lng = sp ? sp.lng : null;
   const a = await db.one('INSERT INTO sos_alerts(trip_id, user_id, lat, lng) VALUES ($1,$2,$3,$4) RETURNING *', [t.id, req.user.id, lat, lng]);
   rt.io.to('admin').emit('admin:sos', { id: a.id, tripId: t.id, user: req.user.name, phone: req.user.phone, lat, lng });
   res.json({ ok: true, emergencyContact: req.user.emergency_contact, shareToken: t.share_token });
@@ -430,7 +469,9 @@ r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
   if (!t) return;
   if (t.status !== 'completed' || t.payment_status === 'paid') return bad(res, 'Nothing to pay on this trip.');
   if (!['momo', 'card'].includes(t.payment_method)) return bad(res, 'This trip is paid in cash or wallet.');
-  const out = await payments.createCheckout({ user: req.user, amount: t.fare - (t.discount || 0), purpose: 'trip', tripId: t.id, method: t.payment_method, baseUrl: baseUrl(req) });
+  let out;
+  try { out = await payments.createCheckout({ user: req.user, amount: t.fare - (t.discount || 0), purpose: 'trip', tripId: t.id, method: t.payment_method, baseUrl: baseUrl(req) }); }
+  catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
   if (out.demo) await rt.broadcast(t.id);
   res.json(out);
 }));
@@ -549,25 +590,27 @@ r.post('/wallet/topup', auth.requireAuth('rider'), wrap(async (req, res) => {
   const amount = Math.round(Number(req.body.amount));
   if (!(amount >= 1000 && amount <= 2000000)) return bad(res, 'Top up between UGX 1,000 and 2,000,000.');
   const method = req.body.method === 'card' ? 'card' : 'momo';
-  const out = await payments.createCheckout({ user: req.user, amount, purpose: 'topup', method, baseUrl: baseUrl(req) });
+  let out;
+  try { out = await payments.createCheckout({ user: req.user, amount, purpose: 'topup', method, baseUrl: baseUrl(req) }); }
+  catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
   const u = await db.one('SELECT wallet_balance FROM users WHERE id = $1', [req.user.id]);
   res.json({ ...out, balance: u.wallet_balance });
 }));
 
 // ---------- Payments (Flutterwave) ----------
 r.get('/payments/callback', wrap(async (req, res) => {
-  const ref = String(req.query.tx_ref || '');
-  const result = ref ? await payments.verifyAndApply(ref) : { ok: false };
+  const ref = String(req.query.tx_ref || '').slice(0, 80);
+  const result = /^KWT-(TOP|TRP)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
   const p = ref && await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
   if (p && p.trip_id && result.ok) await rt.broadcast(p.trip_id);
   if (p && result.ok) rt.notify(p.user_id, 'toast', { text: 'Payment received ✅' });
-  res.redirect(`/rider.html?payment=${result.ok ? 'success' : 'failed'}`);
+  res.redirect(`/?payment=${result.ok ? 'success' : (result.reason === 'unreachable' ? 'pending' : 'failed')}`);
 }));
 
 r.post('/payments/webhook', wrap(async (req, res) => {
   if (!payments.webhookAuthentic(req)) return res.status(401).end();
-  const ref = req.body && req.body.data && req.body.data.tx_ref;
-  if (ref) {
+  const ref = req.body && req.body.data && String(req.body.data.tx_ref || '');
+  if (ref && /^KWT-(TOP|TRP)-\d+-[0-9a-f]{8}$/.test(ref)) {
     const result = await payments.verifyAndApply(ref);
     const p = await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
     if (p && result.ok) {
@@ -741,7 +784,13 @@ r.post('/admin/promos/:code/active', admin, wrap(async (req, res) => {
 }));
 
 r.get('/admin/settings', admin, wrap(async (req, res) => res.json(await getSettings())));
-r.put('/admin/settings', admin, wrap(async (req, res) => res.json(await updateSettings(req.body || {}))));
+r.put('/admin/settings', admin, wrap(async (req, res) => {
+  const b = req.body || {};
+  if (b.supportPhone !== undefined && String(b.supportPhone).trim() && !/^\+?[0-9][0-9 ]{7,17}$/.test(String(b.supportPhone).trim())) {
+    return bad(res, 'Support phone: use digits only, e.g. 0800 100 200 or +256 772 123456. Leave it empty to hide it.');
+  }
+  res.json(await updateSettings(b));
+}));
 
 r.get('/admin/sos', admin, wrap(async (req, res) => {
   const { rows } = await db.query(`SELECT s.*, u.name, u.phone, u.role, u.emergency_contact FROM sos_alerts s

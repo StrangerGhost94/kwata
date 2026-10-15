@@ -1,12 +1,15 @@
 {
   "name": "kwata",
   "version": "1.0.0",
-  "description": "Kwata — ride-hailing for Uganda: boda, car, parcel, airport",
+  "description": "Kwata \u2014 ride-hailing for Uganda: boda, car, parcel, airport",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node test/e2e.js"
+    "test": "node test/payments.js && node test/e2e.js && node test/growth.js && node test/flows.js",
+    "test:ui": "node test/ui.js",
+    "test:payments": "node test/payments.js",
+    "test:flows": "node test/flows.js"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +27,7 @@
     "socket.io": "^4.8.4"
   },
   "devDependencies": {
+    "playwright-core": "^1.64.1",
     "socket.io-client": "^4.8.4"
   },
   "engines": {

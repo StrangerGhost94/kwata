@@ -14,25 +14,47 @@ app.use(express.json({ limit: '3mb' })); // room for compressed document photos
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'DENY');                       // no one can frame the app (clickjacking)
+  res.setHeader('Permissions-Policy', 'geolocation=(self), camera=(self), microphone=()');
+  if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
   next();
 });
 
 app.get('/health', (req, res) => res.json({ ok: true, db: db.kind }));
 app.use('/api', require('./src/routes'));
-app.get('/t/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'track.html')));
 // The rider app *is* the home page, like a native app. Marketing page lives at /about.
-const page = (f) => (req, res) => res.sendFile(path.join(__dirname, 'public', f));
+// Every deploy gets its own version stamp on our scripts and styles, so a phone can never
+// mix a new file with an old cached one (that caused "snapTo is not a function").
+const fs = require('fs');
+const BUILD = (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 8) || Date.now().toString(36);
+const pageCache = {};
+const page = (f) => (req, res) => {
+  let html = pageCache[f];
+  if (!html) {
+    html = fs.readFileSync(path.join(__dirname, 'public', f), 'utf8').replace(/((?:src|href)="\/(?:js\/[\w-]+\.js|css\/app\.css))"/g, `$1?v=${BUILD}"`);
+    if (process.env.NODE_ENV === 'production' || process.env.DATABASE_URL) pageCache[f] = html;
+  }
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('html').send(html);
+};
 app.get(['/', '/rider'], page('rider.html'));
 app.get('/driver', page('driver.html'));
+app.get('/t/:token', page('track.html'));
+app.get(['/admin', '/admin.html'], page('admin.html'));
+app.get(['/about', '/about.html'], page('about.html'));
 // The service worker must never be cached by the browser, or updates get stuck.
 app.get('/sw.js', (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.sendFile(path.join(__dirname, 'public', 'sw.js')); });
 app.use('/vendor/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist'), { maxAge: '7d' }));
 app.use('/vendor/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist'), { maxAge: '7d' }));
 app.use('/vendor/maplibre-leaflet', express.static(path.join(__dirname, 'node_modules', '@maplibre', 'maplibre-gl-leaflet'), { maxAge: '7d' }));
-app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+// Our own code and styles: always check with the server for a newer copy.
+app.use(['/js', '/css'], (req, res, next) => { res.setHeader('Cache-Control', 'no-cache'); next(); });
+app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], setHeaders: (res, p) => { if (/\.(js|css)$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); } }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'That request could not be read.' });
+  if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'That upload is too large.' });
   console.error(err);
   res.status(500).json({ error: 'Something went wrong. Please try again.' });
 });

@@ -1,10 +1,15 @@
 const jwt = require('jsonwebtoken');
 const db = require('./db');
 
-const SECRET = process.env.JWT_SECRET || 'dev-only-secret-change-me';
-if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
-  console.warn('⚠️  JWT_SECRET is not set. Set it in Railway variables before going live.');
+const DEV_SECRET = 'dev-only-secret-change-me';
+const SECRET = process.env.JWT_SECRET || DEV_SECRET;
+const LIVE = !!process.env.DATABASE_URL || process.env.NODE_ENV === 'production';
+// Anyone who knows the development secret could sign themselves in as an admin,
+// so a live server refuses to start without a real one.
+if (LIVE && SECRET === DEV_SECRET) {
+  throw new Error('JWT_SECRET is not set. Add a long random value in the server environment (Railway → Variables).');
 }
+if (LIVE && SECRET.length < 24) console.warn('⚠️  JWT_SECRET is short. Use 32+ random characters.');
 
 function sign(user) {
   return jwt.sign({ id: user.id, role: user.role }, SECRET, { expiresIn: '30d' });

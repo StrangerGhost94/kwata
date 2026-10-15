@@ -195,7 +195,7 @@
         <div><label for="rad">Search radius (km)</label><input id="rad" type="number" min="1" max="30" value="${s.dispatchRadiusKm}"></div>
         <div><label for="to">Seconds to accept</label><input id="to" type="number" min="8" max="60" value="${s.offerTimeoutSec}"></div>
         <div><label for="mw">Min cash out (UGX)</label><input id="mw" type="number" min="0" value="${s.minWithdrawal}"></div>
-        <div><label for="sp">Support phone</label><input id="sp" value="${K.esc(s.supportPhone)}"></div>
+        <div><label for="sp">Support phone</label><input id="sp" type="tel" value="${K.esc(s.supportPhone || '')}" placeholder="Not set: hidden in the apps"></div>
       </div>
       <h2 style="margin-top:26px">Dynamic pricing</h2>
       <p class="muted" style="max-width:720px">Like Bolt and Uber, fares rise automatically when an area has more ride requests than free drivers, or when it rains. Increases are gentle, smoothed and capped, and riders always pay the upfront price they accepted. “Fixed boost” above is a manual minimum on top of this.</p>

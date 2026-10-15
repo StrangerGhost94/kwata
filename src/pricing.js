@@ -23,7 +23,7 @@ const DEFAULTS = {
   dispatchRadiusKm: 8,
   offerTimeoutSec: 20,
   minWithdrawal: 5000,
-  supportPhone: '+256 700 000000',
+  supportPhone: '',      // set the real line in Admin → Pricing (or SUPPORT_PHONE). Hidden in the apps until set.
   // Dynamic pricing (see src/surge.js). Caps keep fares affordable in Kampala.
   dynamic: { enabled: true, sensitivity: 0.35, maxBoda: 1.8, maxCar: 2.0, weather: true },
   // Growth: what makes people try Kwata, invite friends and come back. Kwata pays for these.
@@ -100,7 +100,10 @@ async function updateSettings(patch) {
       if (value.maxBoda !== undefined) d.maxBoda = Math.min(3, Math.max(1, Number(value.maxBoda) || 1.8));
       if (value.maxCar !== undefined) d.maxCar = Math.min(3, Math.max(1, Number(value.maxCar) || 2));
       value = d;
-    } else if (key !== 'supportPhone') {
+    } else if (key === 'supportPhone') {
+      value = String(value || '').trim();
+      if (value && !/^\+?[0-9][0-9 ]{7,17}$/.test(value)) continue; // digits, spaces and an optional +
+    } else {
       value = Number(value);
       if (!Number.isFinite(value) || value < 0) continue;
     }

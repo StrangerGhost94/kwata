@@ -108,10 +108,10 @@
 </div></section>
 
 <section class="s drive"><div class="wrap">
-  <div><div class="big">88%</div></div>
+  <div><div class="big" id="keepPct">88%</div></div>
   <div>
     <h2>Drive when you want. Keep more of every fare.</h2>
-    <p>Kwata takes 12%, not 25%. Cash out to MTN or Airtel Mobile Money any day of the week. Boda or car, you choose your hours.</p>
+    <p>Kwata takes a <span id="commission">12%</span> commission. Request cash-outs to MTN or Airtel Mobile Money. Boda or car, you choose your hours.</p>
     <a class="btn btn-lg" href="/driver" style="background:#fff;color:#000;margin-top:10px">Get started</a>
   </div>
 </div></section>
@@ -121,7 +121,7 @@
   <div class="feat">
     <div><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div><h3>PIN to start</h3><p>Your trip only begins when you give the driver your 4-digit code, so you never get on the wrong boda.</p></div>
     <div><div class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/></svg></div><h3>Share your trip</h3><p>Send family a live link that follows your ride on the map until you arrive.</p></div>
-    <div><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div><h3>Help in one tap</h3><p>Emergency assistance alerts our safety team with your location and connects you to 999.</p></div>
+    <div><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div><h3>Help in one tap</h3><p>The SOS button alerts the Kwata team with your location and lets you call the police on 999.</p></div>
   </div>
 </div></section>
 </main>
@@ -132,20 +132,20 @@
 </div></footer>
 <script src="/js/common.js"></script>
 <script>
-  const items = [
-    ['boda', 'Boda', 'Beat the jam. Helmet on every trip.'],
-    ['car', 'Car', 'Everyday rides for up to four.'],
-    ['comfort', 'Comfort', 'Newer cars with AC and top-rated drivers.'],
-    ['parcel', 'Parcel', 'Send packages across town within the hour.'],
-    ['airport', 'Airport', 'Reliable rides to and from Entebbe.'],
-  ];
+  // Service names and descriptions come from the live settings, so this page never promises more than the app offers.
+  let items = [['boda', 'Boda', ''], ['car', 'Car', ''], ['comfort', 'Comfort', ''], ['parcel', 'Parcel', ''], ['airport', 'Airport', '']];
   document.getElementById('plan').onsubmit = (e) => {
     e.preventDefault();
     const q = document.getElementById('dest').value.trim();
     try { if (q) sessionStorage.setItem('kwata_q', q); } catch {}
     location.href = '/rider';
   };
-  document.getElementById('sugg').innerHTML = items.map(([id, t, d]) => `<a href="/rider"><span><h3>${t}</h3><p>${d}</p><span class="go">Details</span></span>${K.ART[id]}</a>`).join('');
+  const drawSugg = () => { document.getElementById('sugg').innerHTML = items.map(([id, t, d]) => `<a href="/rider"><span><h3>${K.esc(t)}</h3><p>${K.esc(d)}</p><span class="go">Details</span></span>${K.ART[id] || ''}</a>`).join(''); };
+  drawSugg();
+  K.cfg().then((c) => {
+    items = c.services.map((x) => [x.id, x.name.replace(/^Kwata /, ''), x.blurb || '']); drawSugg();
+    if (Number.isFinite(c.commissionPct)) { document.getElementById('keepPct').textContent = (100 - c.commissionPct) + '%'; document.getElementById('commission').textContent = c.commissionPct + '%'; }
+  }).catch(() => {});
 </script>
 </body>
 </html>

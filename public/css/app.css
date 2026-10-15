@@ -10,15 +10,15 @@
   --bg: #FFFFFF;
   --ink: #141414;
   --ink-2: #6E6E73;
-  --ink-3: #A1A1A6;
+  --ink-3: #707076;   /* 4.9:1 on white (AA) */
   --surface: #F5F5F7;
   --surface-2: #EAEAEE;
   --line: #EDEDF0;
   --card: #FFFFFF;
   --dark: #0E0E10;
   --dark-2: #1C1C1F;
-  --go: #12A150;
-  --stop: #E5322D;
+  --go: #0C8040;      /* 5:1 with white text (AA) */
+  --stop: #C8271F;    /* 5.6:1 (AA) */
   --stop-soft: #FDECEC;
   --blue: #2F6BFF;
   --on-ink: #FFFFFF;
@@ -1009,3 +1009,62 @@ input, select, textarea { font-size: max(16px, 1em); }
   background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--edge, #F8F5F0) 70%, transparent) 45%, var(--edge, #F8F5F0) 100%); }
 .tabbar.hidden + .dock-edge { display: none; }
 @media (min-width: 760px) { .dock-edge { display: none; } }
+
+
+/* =====================================================================
+   States, accessibility and production polish
+   ===================================================================== */
+/* Visible keyboard focus everywhere: dark ring + brand halo reads on white, yellow and the map. */
+:focus-visible { outline: 2.5px solid var(--ink); outline-offset: 2px; box-shadow: 0 0 0 5px rgba(255,196,0,.55); }
+.btn:focus-visible, .q-chip:focus-visible, .svc-t:focus-visible, .lrow:focus-visible, .menu-item:focus-visible, .pay-item:focus-visible { outline: 2.5px solid var(--ink); outline-offset: 2px; }
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.tabbar button { color: #6E6E73; }                 /* inactive tabs: 5:1 instead of 3.3:1 */
+.btn[aria-disabled="true"], .btn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+
+/* Location: finding, couldn't find, and a pickup the rider set */
+.loc-finding { display: flex; align-items: center; gap: 10px; margin: 0 2px 12px; font-size: .9rem; font-weight: 600; color: var(--ink-2); }
+.loc-card { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: start; background: #FFF4E5; border: 1px solid #F5C77A; border-radius: 18px; padding: 14px; margin: 0 0 12px; }
+.loc-card .ic { width: 36px; height: 36px; border-radius: 50%; background: #fff; display: grid; place-items: center; color: #8A5200; }
+.loc-card .grow b { display: block; font-size: .98rem; }
+.loc-card .grow span { display: block; font-size: .84rem; color: #5A4A33; line-height: 1.4; margin-top: 2px; }
+.loc-actions { grid-column: 2; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.loc-actions .btn { min-height: 40px; padding: 0 16px; }
+.pick-set { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid rgba(0,0,0,.08); border-radius: 16px; padding: 10px 8px 10px 14px; margin: 0 0 10px; }
+.pick-set small { display: block; font-size: .72rem; color: var(--ink-2); font-weight: 600; }
+.pick-set b { display: block; font-size: .92rem; }
+.pick-set .grow { min-width: 0; }
+
+/* Generic error / empty box with a retry */
+.state-box { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 22px 16px; background: var(--surface); border-radius: 18px; margin: 10px 0; }
+.state-box b { font-size: 1rem; }
+.state-box span { font-size: .88rem; color: var(--ink-2); max-width: 34ch; }
+.state-box .btn { margin-top: 8px; min-height: 42px; }
+
+/* "Coming soon": Google sign-in and payments that aren't switched on yet */
+.soon-badge { flex: none; margin-left: auto; font-size: .68rem; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #5A4A00; background: var(--brand-soft); border: 1px solid var(--brand-line); border-radius: 999px; padding: 3px 8px; }
+.btn-google.is-soon { color: var(--ink-2); background: var(--surface); border-color: var(--surface-2); box-shadow: none; cursor: not-allowed; }
+.btn-google.is-soon svg { filter: grayscale(1); opacity: .6; }
+.btn-google.is-soon span:not(.soon-badge) { margin-right: auto; }
+.pay-item.off { opacity: .7; cursor: default; }
+.pay-item.off b { color: var(--ink-2); }
+
+/* Offline / reconnecting banner, under the status bar */
+#netBanner { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 10px); transform: translateX(-50%); z-index: 3000;
+  max-width: calc(100% - 32px); background: #141414; color: #fff; font-size: .86rem; font-weight: 600; text-align: center;
+  padding: 10px 16px; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.25); animation: netIn .3s var(--ease-out, ease) both; }
+#netBanner.out { animation: fadeOut .25s ease both; }
+@keyframes netIn { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Search error line sits tight under the inputs */
+#sErr:empty { display: none; }
+#sErr { margin: 4px 2px 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  #netBanner, .loc-card, .sheet, .sheet-dock, .fy-card, .svc-t .tile { animation: none !important; transition: none !important; }
+  .spin { animation-duration: 1.6s; }
+}
+@media (forced-colors: active) {
+  .btn, .pay-item, .q-chip, .loc-card, .state-box { border: 1px solid CanvasText; }
+}
+.btn-google.is-soon { justify-content: flex-start; padding-left: 16px; padding-right: 12px; }
+.btn-google.is-soon span:not(.soon-badge) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

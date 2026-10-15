@@ -9,7 +9,7 @@
   else start();
 
   const prettyPhone = (p) => String(p || '').replace(/^\+256/, '0').replace(/^(\d{4})(\d{3})(\d{3})$/, '$1 $2 $3');
-  const photoUrl = () => (S.hasPhoto ? `/api/drivers/${S.user.id}/photo?v=${S.photoV || 1}` : null);
+  const photoUrl = () => (S.hasPhoto && S.photoData) || null;   // own photo, loaded privately (works while pending approval)
   const photo = (cls = 'photo') => `<span class="${cls}">${photoUrl() ? `<img src="${photoUrl()}" alt="">` : K.initials(S.user.name)}</span>`;
   const fmtKm = (km) => (km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km');
   const customer = (t) => (t.service === 'parcel' ? 'sender' : 'customer');
@@ -20,6 +20,7 @@
     try { [me0, config, docs] = await Promise.all([K.api('/me'), K.api('/config'), K.api('/driver/documents').catch(() => ({ uploaded: {} }))]); }
     catch (e) { K.ready(); root.innerHTML = `<div class="onb"><p class="error">${K.esc(e.message)}</p><button class="btn btn-block" onclick="location.reload()">Try again</button></div>`; return; }
     S.user = me0.user; S.driver = me0.driver; S.config = config; S.docs = docs; S.hasPhoto = !!(docs.uploaded || {}).photo;
+    if (S.hasPhoto) K.api('/driver/photo').then((r) => { S.photoData = r.url; if (S.tab === 'home') topbar(); }).catch(() => {});
     K.ready();
     if (!S.driver || S.driver.status !== 'approved') { renderPending(); return; }
 
@@ -37,7 +38,7 @@
     sheet = K.$('#sheet');
     K.draggableSheet(sheet);
     map = K.map('map');
-    map.on('click', (e) => { if (S.manual) setLoc(e.latlng.lat, e.latlng.lng); });
+    map.on('click', (e) => { if (S.manual) { const had = !!S.loc; setLoc(e.latlng.lat, e.latlng.lng); if (!had && S.tab === 'home' && !S.trip) render(); } });
     root.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => openTab(b.dataset.tab));
 
     sock = K.socket(K.token());
@@ -86,7 +87,7 @@
       </div>
       <div class="spacer"></div>
       ${st === 'pending' ? '<button class="btn btn-primary btn-block btn-lg" id="check">Check again</button>' : ''}
-      <a class="btn btn-outline btn-block btn-lg" style="margin-top:8px" href="tel:${K.esc(S.config.supportPhone)}">Call driver support</a>
+      ${S.config.supportPhone ? `<a class="btn btn-outline btn-block btn-lg" style="margin-top:8px" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}">Call driver support</a>` : ''}
       <button class="btn btn-link btn-block" id="docs">Update my documents</button>
       <button class="btn btn-link btn-block" id="out" style="color:var(--stop)">Log out</button></div>`;
     const c = K.$('#check'); if (c) c.onclick = () => location.reload();
@@ -95,19 +96,31 @@
   }
 
   // ---------- GPS ----------
+  // Riders are matched to drivers by position, so a driver can only go online from a
+  // real GPS fix or a position they set themselves on the map. We never guess one.
   function startGps() {
-    if (!navigator.geolocation) return useManual();
+    if (!navigator.geolocation) return gpsFailed('unsupported');
+    S.gpsState = S.loc ? S.gpsState : 'finding';
     watchId = navigator.geolocation.watchPosition(
-      (p) => { S.manual = false; setLoc(p.coords.latitude, p.coords.longitude, p.coords.heading); },
-      () => useManual(),
+      (p) => { const had = !!S.loc && !S.manual; S.manual = false; S.gpsState = 'ok'; setLoc(p.coords.latitude, p.coords.longitude, p.coords.heading); if (!had && S.tab === 'home' && !S.trip && !S.offer) render(); },
+      (err) => gpsFailed(err && err.code === 1 ? 'denied' : 'unavailable'),
       { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
     );
   }
-  function useManual() {
-    if (S.manual) return;
-    S.manual = true;
-    K.toast('Location is off. Turn it on, or tap the map to set your position.', 6000);
-    if (!S.loc) setLoc(K.KAMPALA.lat, K.KAMPALA.lng);
+  function gpsFailed(why) {
+    if (S.manual && S.loc) return;
+    S.gpsState = why; S.manual = true;
+    if (S.tab === 'home' && !S.trip && !S.offer) render();
+  }
+  function locHtml() {
+    if (S.loc) return S.manual ? '<p class="tiny faint" style="text-align:center;margin:0 0 8px">Using the position you set on the map. Tap the map to move it.</p>' : '';
+    if (!S.gpsState || S.gpsState === 'finding') return '<p class="loc-finding" role="status"><span class="spin" aria-hidden="true"></span>Finding your location…</p>';
+    const why = { denied: 'Location access is off for Kwata Driver. Allow location in your browser or phone settings, or tap the map to set where you are.',
+      unsupported: 'This browser can’t share your location. Tap the map to set where you are.',
+      unavailable: 'Your phone couldn’t find your position. Try again outside, or tap the map to set where you are.' }[S.gpsState];
+    return `<div class="loc-card" role="alert"><span class="ic" aria-hidden="true">${K.ic('locate')}</span>
+      <span class="grow"><b>Location needed to go online</b><span>${why}</span></span>
+      ${S.gpsState !== 'unsupported' ? '<span class="loc-actions"><button class="btn btn-sm" id="retryGps">Try again</button></span>' : ''}</div>`;
   }
   function setLoc(lat, lng, heading) {
     const first = !S.loc;
@@ -123,7 +136,7 @@
   // ---------- online ----------
   function setOnline(on) {
     if (!on) { S.online = false; sock.emit('driver:online', false, () => {}); releaseWake(); render(); return; }
-    if (!S.loc) { K.toast('Waiting for your location…'); return; }
+    if (!S.loc) { K.toast(S.gpsState === 'finding' ? 'Still finding your location…' : 'Set your position first: turn on location or tap the map.', 4000); return; }
     sock.emit('driver:online', true, (res) => {
       if (!res.ok) { K.toast(res.error); return; }
       S.online = true; keepAwake(); render();
@@ -180,6 +193,7 @@
     sheet.innerHTML = `
       <div class="grabber"></div>
       <div id="installHost"></div>
+      ${S.online ? '' : locHtml()}
       ${S.online ? `<div class="online-banner"><span class="pulse"></span><span class="grow">You’re online<br><span class="tiny" style="opacity:.7;font-weight:500">Ride requests near you will pop up here</span></span></div>` : ''}
       <div id="demand">${demandHtml()}</div>
       <button class="earn-card" id="earn"><span><small>Today’s earnings</small><b>${K.ugx(e.today.net)}</b></span>${K.ic('chev')}</button>
@@ -190,9 +204,9 @@
       </div>
       <div class="sheet-foot">${S.online
         ? `<button class="btn btn-go btn-block btn-lg" id="off">${K.ic('power')} Go Offline</button>`
-        : `<button class="btn btn-primary btn-block btn-lg" id="on">${K.ic('power')} Go Online</button>
-           <p class="tiny muted" style="text-align:center;margin:6px 0 0">You keep ${100 - S.config.commissionPct}% of every fare.</p>`}</div>
-      ${S.manual ? '<p class="tiny faint" style="text-align:center;margin-top:8px">Tap the map to set your position.</p>' : ''}`;
+        : `<button class="btn btn-primary btn-block btn-lg" id="on" ${S.loc ? '' : 'aria-disabled="true"'}>${K.ic('power')} Go Online</button>
+           <p class="tiny muted" style="text-align:center;margin:6px 0 0">You keep ${100 - S.config.commissionPct}% of every fare.</p>`}</div>`;
+    const rg = K.$('#retryGps'); if (rg) rg.onclick = () => { navigator.geolocation && navigator.geolocation.clearWatch(watchId); S.manual = false; S.gpsState = 'finding'; render(); startGps(); };
     K.$('#earn').onclick = () => openTab('earnings');
     const on = K.$('#on'); if (on) on.onclick = () => setOnline(true);
     const off = K.$('#off'); if (off) off.onclick = () => setOnline(false);
@@ -350,13 +364,19 @@
   }
 
   function safety() {
-    const m = K.modal(`<h2>Safety</h2><p class="muted">Our safety team is available 24/7.</p>
+    const m = K.modal(`<h2>Safety</h2><p class="muted">An emergency alert sends your location and this trip to the Kwata team. If you are in danger, call the police.</p>
       <button class="btn btn-danger btn-block btn-lg" id="sos">${K.ic('sos')} Send emergency alert</button>
       <a class="btn btn-block" href="tel:999" style="margin-top:8px">Call Police (999)</a>
-      <a class="btn btn-block" href="tel:${K.esc(S.config.supportPhone)}" style="margin-top:8px">Call driver support</a>`);
-    K.$('#sos', m.el).onclick = async () => {
-      await K.api(`/trips/${S.trip.id}/sos`, S.loc || {}).catch(() => {});
-      m.close(); K.toast('Alert sent. Our safety team has your location.', 6000);
+      ${S.config.supportPhone ? `<a class="btn btn-block" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}" style="margin-top:8px">Call driver support</a>` : ''}`);
+    K.$('#sos', m.el).onclick = async (ev) => {
+      const b = ev.currentTarget; b.disabled = true; b.textContent = 'Sending alert…';
+      try {
+        await K.api(`/trips/${S.trip.id}/sos`, S.loc || {});
+        m.close(); K.toast('Alert sent to the Kwata team with your location.', 6000);
+      } catch (e) {
+        b.disabled = false; b.textContent = 'Try sending the alert again';
+        const p = m.el.querySelector('.muted'); p.setAttribute('role', 'alert'); p.textContent = `The alert didn’t send: ${e.message} Call the police directly if you are in danger.`;
+      }
     };
   }
 
@@ -383,7 +403,7 @@
       sheet.querySelectorAll('[data-n]').forEach((x) => x.classList.toggle('on', +x.dataset.n <= S.rating));
     });
     K.$('#next').onclick = async () => {
-      if (S.rating && !t.driverRated) await K.api(`/trips/${t.id}/rate`, { stars: S.rating }).catch(() => {});
+      if (S.rating && !t.driverRated) await K.api(`/trips/${t.id}/rate`, { stars: S.rating }).catch((e) => K.toast(`Rating not saved: ${e.message}`, 4000));
       S.rating = 0; S.trip = null; routedFor = null; render();
     };
   }
@@ -520,12 +540,12 @@
       <button class="menu-item" data-a="trips"><span class="ic">${K.ic('receipt')}</span><span class="grow">Trip history</span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="docs"><span class="ic">${K.ic('idcard')}</span><span class="grow">Documents<br><span class="small muted">ID, driving permit, vehicle, photo</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="manual"><span class="ic">${K.ic('pin')}</span><span class="grow">${S.manual ? 'Use phone GPS' : 'Set position on map'}<br><span class="small muted">For testing without GPS</span></span></button>
-      <a class="menu-item" href="tel:${K.esc(S.config.supportPhone)}"><span class="ic">${K.ic('help')}</span><span class="grow">Driver support</span>${K.ic('chev', 'sm')}</a>
+      ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Driver support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
       <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
       <p class="tiny faint" style="text-align:center;margin-top:18px">Kwata Driver 1.0 · ${K.screen.view || innerHeight}/${K.screen.full || '–'}/${K.screen.inset ?? '–'}/${K.screen.pad ?? '–'}</p>`;
     K.$('#ph', el).onchange = async (ev) => {
       const f = ev.target.files[0]; if (!f) return;
-      try { await K.api('/driver/documents', { kind: 'photo', image: await K.compressImage(f, 800) }); S.hasPhoto = true; S.photoV = Date.now(); K.toast('Photo updated'); drawProfile(el); topbar(); }
+      try { const img = await K.compressImage(f, 800); await K.api('/driver/documents', { kind: 'photo', image: img }); S.hasPhoto = true; S.photoData = img; K.toast('Photo updated'); drawProfile(el); topbar(); }
       catch (e) { K.toast(e.message); }
     };
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => ({

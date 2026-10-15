@@ -168,10 +168,17 @@
     const t = K.token();
     if (t) headers.Authorization = 'Bearer ' + t;
     let res;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctl && setTimeout(() => ctl.abort(), 20000); // never leave a button spinning forever
     try {
-      res = await fetch('/api' + path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined });
-    } catch {
-      throw new Error('No connection. Check your data and try again.');
+      res = await fetch('/api' + path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, signal: ctl ? ctl.signal : undefined });
+    } catch (e) {
+      throw new Error(e && e.name === 'AbortError' ? 'Kwata is taking too long to respond. Check your connection and try again.'
+        : navigator.onLine === false ? 'You’re offline. Check your data or Wi-Fi and try again.' : 'Couldn’t reach Kwata. Check your connection and try again.');
+    } finally { if (timer) clearTimeout(timer); }
+    if (res.status >= 500 && res.status !== 503) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.error || 'Something went wrong on our side. Please try again in a moment.');
     }
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 && t) { K.session.clear(); location.reload(); }
@@ -182,6 +189,7 @@
   // ---------- formatting ----------
   K.ugx = (n) => 'UGX ' + Math.round(Number(n) || 0).toLocaleString('en-UG');
   K.esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  K.validPhone = (raw) => { let p = String(raw || '').replace(/[^\d]/g, ''); if (p.startsWith('256')) p = p.slice(3); if (p.startsWith('0')) p = p.slice(1); return /^7\d{8}$/.test(p); };
   K.initials = (name) => String(name || '?').split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
   K.first = (name) => String(name || '').split(' ')[0];
   K.when = (d) => new Date(d).toLocaleString('en-UG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -203,6 +211,18 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), ms);
   };
 
+  // ---------- connection status ----------
+  // A calm banner while the phone has no connection; it disappears by itself when it's back.
+  K.netBanner = (on, text) => {
+    let el = document.getElementById('netBanner');
+    if (!on) { if (el) { el.classList.add('out'); setTimeout(() => el.remove(), 250); } return; }
+    if (!el) { el = document.createElement('div'); el.id = 'netBanner'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    el.classList.remove('out'); el.textContent = text;
+  };
+  addEventListener('offline', () => K.netBanner(true, 'You’re offline. Kwata will reconnect when your data or Wi-Fi is back.'));
+  addEventListener('online', () => { K.netBanner(false); K.toast('Back online'); });
+  if (navigator.onLine === false) setTimeout(() => K.netBanner(true, 'You’re offline. Kwata will reconnect when your data or Wi-Fi is back.'), 0);
+
   // iOS-style navigation: pages slide in from the right and back out to the right.
   K.reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   K.pop = (el, after) => {
@@ -215,19 +235,32 @@
     const ov = document.createElement('div');
     ov.className = 'overlay';
     ov.innerHTML = `<div class="${drawer ? 'drawer' : 'modal'}" role="dialog" aria-modal="true">${html}</div>`;
+    const dlg = ov.firstElementChild, h = dlg.querySelector('h1, h2, h3');
+    if (h) { h.id = h.id || 'dlg-' + Math.random().toString(36).slice(2, 8); dlg.setAttribute('aria-labelledby', h.id); }
+    const opener = document.activeElement;
     let closed = false;
     const close = () => {
       if (closed) return; closed = true;
       document.removeEventListener('keydown', esc);
+      if (opener && opener.isConnected && opener.focus) setTimeout(() => opener.focus({ preventScroll: true }), 0);
       ov.classList.add('closing');
       setTimeout(() => { ov.remove(); onClose && onClose(); }, K.reduced() ? 0 : 260);
     };
-    const esc = (e) => { if (e.key === 'Escape') close(); };
+    const esc = (e) => {
+      if (e.key === 'Escape') { close(); return; }
+      if (e.key !== 'Tab') return; // keep keyboard focus inside the dialog
+      const f = [...dlg.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select, textarea, [tabindex]:not([tabindex="-1"])')].filter((x) => x.offsetParent !== null);
+      if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+    };
     ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-close]')) close(); });
     document.addEventListener('keydown', esc);
     document.body.appendChild(ov);
-    const first = ov.querySelector('input, button:not([data-close])');
-    first && first.focus({ preventScroll: true });
+    const first = ov.querySelector('input, select, textarea, button:not([data-close])');
+    // On phones, don't pop the keyboard open for a text box; focus the dialog itself instead.
+    if (first && (first.tagName === 'BUTTON' || matchMedia('(pointer: fine)').matches)) first.focus({ preventScroll: true });
+    else { dlg.tabIndex = -1; dlg.focus({ preventScroll: true }); }
     return { el: ov.firstElementChild, close };
   };
 
@@ -348,11 +381,22 @@
     img.src = URL.createObjectURL(file);
   });
 
-  const phoneField = (id, val = '') => `<div class="phone-field"><span class="cc">🇺🇬 +256 ${K.ic('chevDown', 'sm')}</span><input id="${id}" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7XX XXX XXX" value="${K.esc(val)}" required></div>`;
+  const phoneField = (id, val = '') => `<div class="phone-field"><span class="cc" aria-hidden="true">🇺🇬 +256</span><input id="${id}" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="772 123 456" value="${K.esc(val)}" aria-describedby="${id}-hint" required></div><span class="sr-only" id="${id}-hint">Ugandan mobile number. You can start with 0 or 7.</span>`;
+
+  // Public app settings (support line, commission…), fetched once and shared.
+  let cfgP = null;
+  K.cfg = () => (cfgP = cfgP || K.api('/config').catch((e) => { cfgP = null; throw e; }));
+  const supportLink = (label, cls = 'btn btn-primary btn-block btn-lg') => K.cfg().then((c) => c.supportPhone
+    ? `<a class="${cls}" href="tel:${K.esc(c.supportPhone.replace(/\s/g, ''))}">${label} · ${K.esc(c.supportPhone)}</a>` : '').catch(() => '');
   const toLocal = (raw) => { const d = String(raw || '').replace(/\D/g, ''); return d.startsWith('256') ? d : d.startsWith('0') ? d : '0' + d; };
 
   const GOOGLE_G = '<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
   const pwField = (id, auto, ph = '') => `<div class="pw-field"><input id="${id}" name="password" type="password" autocomplete="${auto}" minlength="6" placeholder="${ph}" required><button type="button" class="eye" aria-label="Show password">${K.ic('eye')}</button></div>`;
+
+  // "Keep 88% of every fare", using the commission actually set in Admin.
+  const fillKeep = (root) => root.querySelectorAll('[data-keep]').forEach((x) => K.cfg().then((c) => {
+    if (Number.isFinite(c.commissionPct)) x.textContent = `${x.dataset.keep} ${100 - c.commissionPct}% of every fare`;
+  }).catch(() => {}));
 
   K.authScreen = function (root, { role, onDone }) {
     let draft = {}, dir = 'fwd';
@@ -370,15 +414,17 @@
         const i = eye.previousElementSibling, show = i.type === 'password';
         i.type = show ? 'text' : 'password'; eye.innerHTML = K.ic(show ? 'eyeOff' : 'eye'); eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
       });
-      root.querySelectorAll('[data-google]').forEach((g) => g.onclick = () => K.toast('Google sign-in is coming soon. Use your phone number for now.', 4000));
+      root.querySelectorAll('[data-google]').forEach((g) => g.onclick = () => K.toast('Google sign-in isn’t available yet. Use your phone number.', 4000));
+      fillKeep(root);
       // Only jump into the first box on computers. On phones it opened the keyboard and
       // pushed the typing box over the opening animation.
       if (matchMedia('(pointer: fine)').matches && !document.querySelector('#splash')) {
         const f = root.querySelector('form'); if (f) setTimeout(() => { const i = f.querySelector('input'); i && i.focus({ preventScroll: true }); }, 500);
       }
     };
-    const google = (label) => role === 'admin' ? '' : `<button type="button" class="btn btn-google btn-block btn-lg" data-google>${GOOGLE_G}<span>${label}</span></button>
-      <div class="or"><span>or with your phone number</span></div>`;
+    // Google sign-in is not built yet: shown greyed out and clearly labelled, never as a working login.
+    const google = (label) => role === 'admin' ? '' : `<button type="button" class="btn btn-google btn-block btn-lg is-soon" data-google aria-disabled="true" aria-label="${label}: not available yet">${GOOGLE_G}<span>${label}</span><span class="soon-badge">Coming soon</span></button>
+      <div class="or"><span>Use your phone number</span></div>`;
     const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.innerHTML = on ? '<span class="spin"></span>Please wait…' : btn.dataset.label; };
     const finish = async (out) => {
       K.session.set(out);
@@ -411,7 +457,8 @@
 
     // Driver welcome (screen 14)
     function driverWelcome() {
-      hero(true, [['Your boda,', 'your income.', 'Pick up rides and deliveries near you, keep 88% of every fare, and cash out to Mobile Money.']], 'Get Started');
+      hero(true, [['Your boda,', 'your income.', 'Pick up rides and deliveries near you, <span data-keep="keep">keep most of every fare</span>, and cash out to Mobile Money.']], 'Get Started');
+      fillKeep(root);
       root.querySelector('#go').onclick = becomeDriver;
       root.querySelector('#li').onclick = logIn;
     }
@@ -419,7 +466,7 @@
     function becomeDriver() {
       shell(`<div class="auth-body">
         <h1>Become a driver</h1><p class="lead">Join drivers earning with Kwata.</p>
-        <ul class="checklist"><li>Keep 88% of every fare</li><li>Work the hours you choose</li><li>Cash out to Mobile Money any time</li><li>Quick registration, verified in 24 hours</li></ul>
+        <ul class="checklist"><li><span data-keep="Keep">Keep most of every fare</span></li><li>Work the hours you choose</li><li>Request cash-outs to MTN or Airtel Mobile Money</li><li>We check your documents before your first trip</li></ul>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" id="go">Continue</button>
         <p class="fine">Already driving with Kwata? <button data-li>Log In</button></p></div>`, driverWelcome);
@@ -441,7 +488,6 @@
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Create account">Create account</button>
         <p class="fine">Already have an account? <button type="button" data-li>Log In</button></p>
-        <p class="fine tiny" style="margin-top:2px">By continuing you agree to Kwata’s <a href="/about#terms">Terms</a> and <a href="/about#privacy">Privacy Policy</a>.</p>
       </form>`, onboarding);
       const f = root.querySelector('#f');
       root.querySelector('[data-li]').onclick = logIn;
@@ -450,7 +496,9 @@
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
         draft = { name: f.nm.value.trim(), phone: f.ph.value.trim() };
-        if (!draft.name) { err.textContent = 'Enter your name.'; return; }
+        if (draft.name.length < 2) { err.textContent = 'Enter your full name.'; f.nm.focus(); return; }
+        if (!K.validPhone(draft.phone)) { err.textContent = 'Enter a valid Ugandan mobile number, e.g. 0772 123456.'; f.ph.focus(); return; }
+        if (f.pw.value.length < 6) { err.textContent = 'Your password needs at least 6 characters.'; f.pw.focus(); return; }
         const inviteCode = f.ic && f.ic.value.trim() ? f.ic.value.trim().toUpperCase() : undefined;
         busy(f, true);
         try { const out = await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw.value, role: 'rider', inviteCode }); try { localStorage.removeItem('kwata_ref'); } catch {} await finish(out); }
@@ -479,6 +527,10 @@
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
         const data = Object.fromEntries(new FormData(f).entries());
+        const need = [[(data.name || '').trim().length >= 2, 'nm', 'Enter your full name.'], [K.validPhone(data.phone), 'ph', 'Enter a valid Ugandan mobile number, e.g. 0772 123456.'],
+          [(data.password || '').length >= 6, 'pw', 'Your password needs at least 6 characters.'], [(data.plate || '').trim().length >= 4, 'pl', 'Enter the number plate.'], [(data.licenseNo || '').trim(), 'lc', 'Enter your driving permit number.'],
+          [!data.momoNumber || K.validPhone(data.momoNumber), 'mm', 'Enter a valid Mobile Money number, or leave it empty.']].find(([ok]) => !ok);
+        if (need) { err.textContent = need[2]; f[need[1]].focus(); return; }
         data.phone = toLocal(data.phone);
         busy(f, true);
         try { const out = await K.api('/auth/register', { ...data, role: 'driver' }); K.session.set(out); K.verifyDocs(root, { onDone: () => onDone(out) }); }
@@ -501,14 +553,19 @@
       </form>`, role === 'rider' ? onboarding : role === 'driver' ? driverWelcome : null);
       const f = root.querySelector('#f');
       const su = root.querySelector('[data-su]'); if (su) su.onclick = role === 'driver' ? becomeDriver : signUp;
-      root.querySelector('[data-forgot]').onclick = () => K.modal(`<h2>Forgot your password?</h2>
-        <p class="muted">Call Kwata support from the number you signed up with. We’ll confirm it’s you and set a new password.</p>
-        <a class="btn btn-primary btn-block btn-lg" href="tel:+256700000000">Call support</a>
-        <button class="btn btn-block" style="margin-top:8px" data-close>Close</button>`);
+      root.querySelector('[data-forgot]').onclick = async () => {
+        const call = await supportLink('Call support');
+        K.modal(`<h2>Forgot your password?</h2>
+          <p class="muted">${call ? 'Call Kwata support from the number you signed up with. We’ll confirm it’s you and set a new password.' : 'Password resets are done by the Kwata team for now. A support line will be listed here soon.'}</p>
+          ${call}
+          <button class="btn btn-block" style="margin-top:8px" data-close>Close</button>`);
+      };
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
         draft.phone = f.ph.value.trim();
+        if (!K.validPhone(draft.phone)) { err.textContent = 'Enter a valid Ugandan mobile number, e.g. 0772 123456.'; f.ph.focus(); return; }
+        if (!f.pw.value) { err.textContent = 'Enter your password.'; f.pw.focus(); return; }
         busy(f, true);
         try {
           const out = await K.api('/auth/login', { phone: toLocal(draft.phone), password: f.pw.value });
@@ -547,8 +604,13 @@
     const ICON = { national_id: 'idcard', license: 'card', vehicle: 'camera', photo: 'user' };
     const HINT = { national_id: 'Front of your National ID', license: 'Your driving permit', vehicle: 'Clear photo with the number plate', photo: 'A clear photo of your face' };
     const draw = async () => {
-      let info = { kinds: {}, uploaded: {} };
-      try { info = await K.api('/driver/documents'); } catch {}
+      let info;
+      try { info = await K.api('/driver/documents'); }
+      catch (e) {
+        root.innerHTML = `<div class="onb nav-fwd" style="text-align:center"><div class="state-box" role="alert" style="margin-top:30vh"><b>Couldn’t load your documents</b><span>${K.esc(e.message)}</span><button class="btn btn-primary" id="again">Try again</button></div></div>`;
+        root.querySelector('#again').onclick = draw;
+        return;
+      }
       const kinds = Object.keys(info.kinds);
       const allDone = kinds.every((k) => info.uploaded[k]);
       root.innerHTML = `<div class="onb nav-fwd">${back ? `<div class="onb-top"><button class="btn icon-btn btn-ghost" data-back aria-label="Back">${K.ic('back')}</button></div>` : '<div style="height:20px"></div>'}
@@ -560,11 +622,13 @@
         <p class="error" id="err"></p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" id="go" ${allDone ? '' : 'disabled'}>Continue</button>
-        <p class="fine">Need help? <a href="tel:+256700000000">Contact Support</a></p></div>`;
+        <p class="fine" id="docHelp"></p></div>`;
+      supportLink('Contact support', '').then((a) => { const h = root.querySelector('#docHelp'); if (h && a) h.innerHTML = 'Need help? ' + a; });
       const b = root.querySelector('[data-back]'); if (b) b.onclick = back;
       root.querySelectorAll('input[type=file]').forEach((inp) => inp.onchange = async () => {
         const file = inp.files[0]; if (!file) return;
         const st = inp.closest('.doc').querySelector('.st'); st.textContent = 'Uploading…';
+        if (file.size > 25e6) { root.querySelector('#err').textContent = 'That file is too large. Choose a photo.'; return; }
         try { await K.api('/driver/documents', { kind: inp.dataset.k, image: await K.compressImage(file) }); draw(); }
         catch (ex) { root.querySelector('#err').textContent = ex.message; st.textContent = 'Try again'; }
       });
@@ -651,7 +715,15 @@
     } catch { return 'Pinned location'; }
   };
 
-  K.socket = (token) => io({ auth: { token }, transports: ['websocket', 'polling'] });
+  // Live connection for trip updates. If it drops while the phone is online, say so
+  // after a short grace period (so brief blips stay invisible) and clear it on reconnect.
+  K.socket = (token) => {
+    const sock = io({ auth: { token }, transports: ['websocket', 'polling'] });
+    let t;
+    sock.on('disconnect', () => { clearTimeout(t); t = setTimeout(() => { if (!sock.connected && navigator.onLine !== false) K.netBanner(true, 'Reconnecting to Kwata…'); }, 4000); });
+    sock.on('connect', () => { clearTimeout(t); if (navigator.onLine !== false) K.netBanner(false); });
+    return sock;
+  };
 
   K.share = async function (url, text) {
     if (navigator.share) { try { await navigator.share({ title: 'Kwata trip', text, url }); return; } catch {} }
