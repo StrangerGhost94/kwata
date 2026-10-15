@@ -43,9 +43,11 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   assert(!res.ok, 'suspended driver cannot go online');
   await api(`/admin/drivers/${driver.user.id}/status`, { status: 'approved' }, admin.token);
   res = await ds.emitWithAck('driver:online', true);
-  assert(res.ok, 'approved driver goes online');
+  assert(!res.ok && /position/.test(res.error), 'a driver with no position cannot go online');
   ds.emit('driver:location', { lat: 0.3150, lng: 32.5800 });
   await sleep(200);
+  res = await ds.emitWithAck('driver:online', true);
+  assert(res.ok, 'approved driver with a position goes online');
 
   const pickup = { lat: 0.3136, lng: 32.5811, address: 'Kampala Road' }, drop = { lat: 0.3326, lng: 32.5686, address: 'Wandegeya' };
   const est = await api('/fare/estimate', { pickup, drop, distanceKm: 3.2, durationMin: 12 }, rider.token);

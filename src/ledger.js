@@ -74,6 +74,21 @@ async function creditDriver(t, trip, commission) {
     [trip.driver_id, net, trip.id, `Fare ${trip.fare} less commission ${commission}`]);
 }
 
+// Rider paid the driver in cash after all (e.g. Mobile Money isn't available or failed).
+// Same books as a cash trip: the driver holds the money, so we take our commission from
+// their balance and give back any discount Kwata covered.
+async function settleAsCash(t, tripId) {
+  const trip = await t.one('SELECT * FROM trips WHERE id = $1 FOR UPDATE', [tripId]);
+  if (!trip || trip.status !== 'completed' || trip.payment_status === 'paid' || !['momo', 'card'].includes(trip.payment_method)) return null;
+  const commission = trip.commission || await commissionFor(trip.fare);
+  const discount = trip.discount || 0;
+  await t.query('UPDATE drivers SET earnings_balance = earnings_balance - $1 + $2 WHERE user_id = $3', [commission, discount, trip.driver_id]);
+  await t.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'commission',$2,$3,'Commission on cash trip (rider switched to cash)')", [trip.driver_id, -commission, trip.id]);
+  if (discount) await t.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'promo_cover',$2,$3,'Rider discount paid by Kwata')", [trip.driver_id, discount, trip.id]);
+  await t.query("UPDATE trips SET payment_method = 'cash', payment_status = 'paid', commission = $1 WHERE id = $2", [commission, trip.id]);
+  return { ...trip, payment_method: 'cash', payment_status: 'paid' };
+}
+
 // For mobile money / card trips once the payment is confirmed.
 async function markTripPaid(t, tripId) {
   const trip = await t.one('SELECT * FROM trips WHERE id = $1 FOR UPDATE', [tripId]);
@@ -90,4 +105,4 @@ async function creditWallet(t, userId, amount, note) {
   await t.query("INSERT INTO transactions(user_id, type, amount, note) VALUES ($1,'topup',$2,$3)", [userId, amount, note]);
 }
 
-module.exports = { settleCompletedTrip, markTripPaid, creditWallet, tipDriver };
+module.exports = { settleCompletedTrip, markTripPaid, creditWallet, tipDriver, settleAsCash };

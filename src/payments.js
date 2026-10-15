@@ -14,7 +14,7 @@ const demo = () => {
   if (FLW_KEY) return false;
   if (process.env.PAYMENTS_DEMO === 'true') return true;
   if (process.env.PAYMENTS_DEMO === 'false') return false;
-  return !process.env.DATABASE_URL;
+  return !process.env.DATABASE_URL && process.env.NODE_ENV !== 'production'; // same "live" rule as src/auth.js
 };
 // Can riders pay by Mobile Money / card or top up their wallet right now?
 const available = () => enabled() || demo();

@@ -261,6 +261,7 @@ function init(server) {
         if (on && (!fresh || fresh.status !== 'approved')) {
           return cb && cb({ ok: false, error: 'Your account is waiting for approval by the Kwata team.' });
         }
+        if (on && !d.lat) return cb && cb({ ok: false, error: 'We need your position before you can go online.' });
         d.online = !!on;
         cb && cb({ ok: true, online: d.online });
         // pick up any riders already waiting nearby
@@ -275,7 +276,7 @@ function init(server) {
 
       socket.on('driver:location', (loc = {}) => {
         const lat = Number(loc.lat), lng = Number(loc.lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return;
         d.lat = lat; d.lng = lng; d.heading = Number(loc.heading) || null; d.updatedAt = Date.now();
         if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
       });

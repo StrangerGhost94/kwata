@@ -163,13 +163,13 @@
   };
   K.token = () => (K.session.get() || {}).token;
 
-  K.api = async function (path, body, method) {
+  K.api = async function (path, body, method, { timeout = 20000 } = {}) {
     const headers = { 'Content-Type': 'application/json' };
     const t = K.token();
     if (t) headers.Authorization = 'Bearer ' + t;
     let res;
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = ctl && setTimeout(() => ctl.abort(), 20000); // never leave a button spinning forever
+    const timer = ctl && setTimeout(() => ctl.abort(), timeout); // never leave a button spinning forever
     try {
       res = await fetch('/api' + path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, signal: ctl ? ctl.signal : undefined });
     } catch (e) {
@@ -629,7 +629,7 @@
         const file = inp.files[0]; if (!file) return;
         const st = inp.closest('.doc').querySelector('.st'); st.textContent = 'Uploading…';
         if (file.size > 25e6) { root.querySelector('#err').textContent = 'That file is too large. Choose a photo.'; return; }
-        try { await K.api('/driver/documents', { kind: inp.dataset.k, image: await K.compressImage(file) }); draw(); }
+        try { await K.api('/driver/documents', { kind: inp.dataset.k, image: await K.compressImage(file) }, 'POST', { timeout: 90000 }); draw(); }
         catch (ex) { root.querySelector('#err').textContent = ex.message; st.textContent = 'Try again'; }
       });
       root.querySelector('#go').onclick = onDone;

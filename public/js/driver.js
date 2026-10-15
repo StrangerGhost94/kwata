@@ -43,8 +43,8 @@
 
     sock = K.socket(K.token());
     sock.on('connect', async () => {
-      if (S.online) sock.emit('driver:online', true, () => {});
-      if (S.loc) sock.emit('driver:location', S.loc);
+      if (S.loc) sock.emit('driver:location', S.loc);   // position first: the server needs it to go online
+      if (S.online) sock.emit('driver:online', true, (r) => { if (r && !r.ok) { S.online = false; K.toast(r.error); render(); } });
       const a = await K.api('/trips/active').catch(() => null);
       if (a) onTrip(a);
     });
@@ -65,16 +65,17 @@
   // ---------- application status (screen 16 + review) ----------
   async function renderPending() {
     const st = S.driver ? S.driver.status : 'pending';
+    let docsKnown = true, info = null;
     if (st === 'pending') {
-      let info = { kinds: {}, uploaded: {} };
-      try { info = await K.api('/driver/documents'); } catch {}
-      const missing = Object.keys(info.kinds).filter((k) => !info.uploaded[k]);
+      try { info = await K.api('/driver/documents'); } catch { docsKnown = false; }
+      const missing = info ? Object.keys(info.kinds).filter((k) => !info.uploaded[k]) : [];
       if (missing.length) { K.verifyDocs(root, { onDone: renderPending }); return; }
     }
+    const ask = S.config.supportPhone ? 'Call driver support' : 'Contact the Kwata team';
     const msg = {
-      pending: ['Application under review', 'Thanks! We’re checking your documents. Most drivers are approved within 24 hours. We may call you to confirm a few details.'],
-      suspended: ['Your account is paused', 'Call driver support to find out why and how to get back on the road.'],
-      rejected: ['We couldn’t approve your account', 'Call driver support for details.'],
+      pending: ['Application under review', 'Thanks! We’re checking your documents. We’ll show it here as soon as you’re approved, and we may call you to confirm a few details.'],
+      suspended: ['Your account is paused', `${ask} to find out why and how to get back on the road.`],
+      rejected: ['We couldn’t approve your account', `${ask} for details.`],
     }[st] || ['Account not active', ''];
     root.innerHTML = `<div class="onb onb-enter" style="text-align:center">
       <div class="illu" style="margin-top:30px">${st === 'pending' ? `<span style="width:110px;height:70px;display:block">${K.artFor(null, S.driver.vehicleType)}</span>` : K.ic('shield').replace('class="i "', 'class="i" style="width:60px;height:60px;stroke-width:1.6"')}</div>
@@ -82,7 +83,7 @@
       <div style="text-align:left">
         <div class="kv"><span>Vehicle</span><b>${K.esc([S.driver.vehicleColor, S.driver.vehicleMake].filter(Boolean).join(' ') || (S.driver.vehicleType === 'car' ? 'Car' : 'Boda boda'))}</b></div>
         <div class="kv"><span>Number plate</span><b>${K.esc(S.driver.plate)}</b></div>
-        <div class="kv"><span>Documents</span><b style="color:var(--go)">All uploaded ✓</b></div>
+        ${st === 'pending' ? `<div class="kv"><span>Documents</span>${docsKnown ? '<b style="color:var(--go)">All uploaded ✓</b>' : '<b class="muted">Couldn’t check right now</b>'}</div>` : ''}
         <div class="kv"><span>Status</span><b><span class="badge ${st === 'pending' ? 'warn' : 'bad'}">${st === 'pending' ? 'In review' : st}</span></b></div>
       </div>
       <div class="spacer"></div>
@@ -108,9 +109,10 @@
     );
   }
   function gpsFailed(why) {
-    if (S.manual && S.loc) return;
+    if (S.loc) return;                        // keep the last real position through a brief GPS hiccup
+    const changed = S.gpsState !== why;
     S.gpsState = why; S.manual = true;
-    if (S.tab === 'home' && !S.trip && !S.offer) render();
+    if (changed && S.tab === 'home' && !S.trip && !S.offer) render();
   }
   function locHtml() {
     if (S.loc) return S.manual ? '<p class="tiny faint" style="text-align:center;margin:0 0 8px">Using the position you set on the map. Tap the map to move it.</p>' : '';
@@ -545,7 +547,7 @@
       <p class="tiny faint" style="text-align:center;margin-top:18px">Kwata Driver 1.0 · ${K.screen.view || innerHeight}/${K.screen.full || '–'}/${K.screen.inset ?? '–'}/${K.screen.pad ?? '–'}</p>`;
     K.$('#ph', el).onchange = async (ev) => {
       const f = ev.target.files[0]; if (!f) return;
-      try { const img = await K.compressImage(f, 800); await K.api('/driver/documents', { kind: 'photo', image: img }); S.hasPhoto = true; S.photoData = img; K.toast('Photo updated'); drawProfile(el); topbar(); }
+      try { const img = await K.compressImage(f, 800); await K.api('/driver/documents', { kind: 'photo', image: img }, 'POST', { timeout: 90000 }); S.hasPhoto = true; S.photoData = img; K.toast('Photo updated'); drawProfile(el); topbar(); }
       catch (e) { K.toast(e.message); }
     };
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => ({

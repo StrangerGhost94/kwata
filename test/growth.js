@@ -25,8 +25,9 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   const driver = await api('/auth/login', { phone: dPhone, password: 'secret1' });
   const ds = io(BASE, { auth: { token: driver.token } });
   await new Promise((r) => ds.on('connect', r));
-  await ds.emitWithAck('driver:online', true);
   ds.emit('driver:location', { lat: 0.3150, lng: 32.5800 });
+  await new Promise((r) => setTimeout(r, 150));
+  await ds.emitWithAck('driver:online', true);
   await sleep(200);
   const bal = async () => (await api('/driver/earnings', null, driver.token)).balance;
   const ride = async (rider, body, extra = {}) => {

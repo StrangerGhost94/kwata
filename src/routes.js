@@ -50,8 +50,10 @@ function limit(max, windowMs) {
 // The support line comes from SUPPORT_PHONE or Admin → Pricing. The old built-in
 // placeholder (+256 700 000000) is not a real line, so it counts as "not set".
 function supportPhone(s) {
-  const v = String(process.env.SUPPORT_PHONE || s.supportPhone || '').trim();
-  return !v || v.replace(/\D/g, '') === '256700000000' ? null : v;
+  const env = String(process.env.SUPPORT_PHONE || '').trim();
+  const v = (env && /^\+?[0-9][0-9 ]{7,17}$/.test(env) ? env : String(s.supportPhone || '')).trim();
+  const digits = v.replace(/\D/g, '').replace(/^256/, '').replace(/^0/, '');
+  return !v || digits === '700000000' ? null : v;
 }
 
 // ---------- Public ----------
@@ -474,6 +476,19 @@ r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
   catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
   if (out.demo) await rt.broadcast(t.id);
   res.json(out);
+}));
+
+// Mobile Money / card didn't work out: the rider pays the driver in cash instead.
+r.post('/trips/:id/pay-cash', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'rider');
+  if (!t) return;
+  if (t.status !== 'completed' || t.payment_status === 'paid' || !['momo', 'card'].includes(t.payment_method)) return bad(res, 'Nothing to pay on this trip.');
+  let done;
+  await db.tx(async (tx) => { done = await ledger.settleAsCash(tx, t.id); });
+  if (!done) return bad(res, 'This trip is already settled.');
+  if (t.driver_id) rt.notify(t.driver_id, 'toast', { text: `💵 Collect UGX ${(t.fare - (t.discount || 0)).toLocaleString()} in cash for trip #${t.id}` });
+  await rt.broadcast(t.id);
+  res.json({ ok: true });
 }));
 
 // ---------- Driver trip actions ----------

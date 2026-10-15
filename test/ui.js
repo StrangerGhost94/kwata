@@ -34,19 +34,23 @@ const api = async (path, body, token) => {
   ok(/couldn’t find your location/i.test(await p.textContent('.loc-card')), 'location denied: home explains it instead of guessing');
   ok(await p.evaluate(() => !document.querySelector('.pick-set')), 'no pickup is set automatically');
 
-  // Choosing a destination first asks for the pickup
-  await p.click('#whereBtn');
-  await p.waitForSelector('#qPick'); await p.waitForTimeout(400);
-  ok(await p.evaluate(() => document.activeElement && document.activeElement.id === 'qPick'), 'search opens on the pickup field when there is no pickup');
-  await p.click('#qDrop'); await p.waitForTimeout(200);
-  await p.locator('#res .lrow[data-i]').first().click();
-  ok(/Set your pickup point first/.test(await p.textContent('#sErr')), 'picking a destination without a pickup is blocked with a clear message');
+  // "Set pickup" → "Set pickup on map" → Back: nothing unconfirmed sticks
+  await p.click('#setPick'); await p.waitForSelector('#onMap'); await p.waitForTimeout(300);
+  await p.click('#onMap'); await p.waitForSelector('#confirm'); await p.waitForTimeout(900);
+  await p.click('#backBtn'); await p.waitForSelector('#whereBtn'); await p.waitForTimeout(300);
+  ok(await p.evaluate(() => !document.querySelector('.pick-set') && !!document.querySelector('.loc-card')), 'backing out of the map pin does not set a pickup');
 
-  // Set the pickup from the list, then the destination → prices load
-  await p.click('#qPick'); await p.waitForTimeout(200);
-  await p.locator('#res .lrow[data-i]').nth(0).click();
-  await p.waitForTimeout(200);
+  // "Where to?" starts on the destination; a destination picked first is kept while we ask for the pickup
+  await p.click('#whereBtn');
+  await p.waitForSelector('#qDrop'); await p.waitForTimeout(400);
+  ok(await p.evaluate(() => document.activeElement && document.activeElement.id === 'qDrop'), '“Where to?” opens on the destination field');
+  const destName = await p.locator('#res .lrow[data-i] .t').nth(2).textContent();
   await p.locator('#res .lrow[data-i]').nth(2).click();
+  ok(/Now set your pickup point/.test(await p.textContent('#sErr')) && (await p.inputValue('#qDrop')) === destName, 'a destination picked without a pickup is kept, and the pickup is asked for next');
+  ok(await p.evaluate(() => document.activeElement && document.activeElement.id === 'qPick'), 'focus moves to the pickup field');
+
+  // Set the pickup → prices load for the kept destination
+  await p.locator('#res .lrow[data-i]').nth(0).click();
   await p.waitForSelector('#request', { timeout: 20000 });
   ok(/Request|Schedule/.test(await p.textContent('#request')), 'after setting the pickup manually, fares load and Request is available');
   await p.screenshot({ path: (process.env.SHOTS || '/tmp') + '/ui-manual-pickup.png' });

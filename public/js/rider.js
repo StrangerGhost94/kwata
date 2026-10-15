@@ -108,7 +108,7 @@
       patchHome('loc');
     };
     if (!navigator.geolocation) return failed('unsupported');
-    if (!S.gps) { S.loc = 'finding'; patchHome('loc'); }
+    if (!S.pickup) { S.loc = 'finding'; patchHome('loc'); }
     navigator.geolocation.getCurrentPosition((p) => {
       S.loc = 'ok';
       S.gps = { lat: p.coords.latitude, lng: p.coords.longitude };
@@ -208,8 +208,11 @@
   }
 
   function goBack() {
-    if (S.view === 'pickup' && !S.drop) { if (S.pickup && S.pickup.address === 'Finding address…') S.pickup = null; S.view = 'home'; render(); }
-    else if (S.view === 'pickup') { S.view = 'choose'; showRoute(); render(); }
+    if (S.view === 'pickup') { // cancel: the pin was never confirmed
+      S.pickup = S.prevPickup || null; S.prevPickup = undefined;
+      if (S.route && S.quote && S.drop) { S.view = 'choose'; showRoute(); render(); }
+      else { S.view = 'home'; render(); }
+    }
     else if (S.view === 'droppin') { S.view = 'home'; render(); openSearch(); }
     else reset();
   }
@@ -269,7 +272,7 @@
     if (S.growth && S.growth.firstRide) cards.push(`<div class="fy-card fy-offer"><span class="grow"><small>Welcome offer</small><b>${S.growth.firstRide.percent}% off your first ride</b><span>Up to ${K.ugx(S.growth.firstRide.max)} · applied automatically</span></span><span class="fy-art">${K.ic('gift')}</span></div>`);
     if (g.referral && g.referral.enabled && g.referral.referrer) cards.push(`<button class="fy-card fy-invite" data-fy="invite"><span class="grow"><small>Invite friends</small><b>Get ${K.ugx(g.referral.referrer)} per friend</b><span>They get ${K.ugx(g.referral.friend)} after their first trip</span></span><span class="fy-art emoji">🎁</span></button>`);
     if (ids.includes('parcel')) cards.push(`<button class="fy-card fy-parcel" data-svc2="parcel"><span class="grow"><small>Kwata Parcel</small><b>Send a package</b><span>Picked up and delivered across Kampala</span></span><span class="fy-art">${K.ART.parcel}</span></button>`);
-    if (ids.includes('airport')) cards.push(`<button class="fy-card fy-air" data-svc2="airport"><span class="grow"><small>Airport transfer</small><b>Flying out of Entebbe?</b><span>Book now or schedule ahead, no surge</span></span><span class="fy-art">${K.ART.airport}</span></button>`);
+    if (ids.includes('airport')) cards.push(`<button class="fy-card fy-air" data-svc2="airport"><span class="grow"><small>Airport transfer</small><b>Flying out of Entebbe?</b><span>Book now, or schedule ahead at the regular price</span></span><span class="fy-art">${K.ART.airport}</span></button>`);
     if (!cards.length) return '';
     return `<div class="section-label">For you</div><div class="fy-rail">${cards.join('')}</div>`;
   }
@@ -299,7 +302,7 @@
       return `<div class="pick-set"><span class="dot-pick" aria-hidden="true"></span><span class="grow"><small>Pickup</small><b class="ellipsis">${K.esc(S.pickup.short || S.pickup.address)}</b></span><button class="btn btn-sm btn-ghost" id="chgPick">Change</button></div>`;
     }
     if (S.pickup) return '';
-    if (S.loc === 'finding' || !S.loc) return `<p class="loc-finding" role="status"><span class="spin" aria-hidden="true"></span>Finding your location…</p>`;
+    if (S.loc === 'finding' || S.loc === 'ok' || !S.loc) return `<p class="loc-finding" role="status"><span class="spin" aria-hidden="true"></span>Finding your location…</p>`;
     return `<div class="loc-card" role="alert">
       <span class="ic" aria-hidden="true">${K.ic('locate')}</span>
       <span class="grow"><b>We couldn’t find your location</b><span>${LOC_MSG[S.loc] || LOC_MSG.unavailable}</span></span>
@@ -364,13 +367,13 @@
   function openSearch(opts = {}) {
     if (opts.preset) { chooseDrop(opts.preset); return; }
     const saveAs = opts.saveAs;
-    const pickFirst = !saveAs && (opts.pickFirst || !S.pickup);
+    const pickFirst = !saveAs && !!opts.pickFirst;
     const page = document.createElement('div');
     page.className = 'page push-in';
     page.style.zIndex = 870;
     page.innerHTML = `<div class="page-inner">
       <div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Close">${K.ic('back')}</button>
-        <h2>${saveAs ? 'Set ' + saveAs + ' address' : S.service === 'parcel' ? 'Where should it go?' : 'Where are you going?'}</h2></div>
+        <h2>${saveAs ? 'Set ' + saveAs + ' address' : pickFirst ? 'Set your pickup point' : S.service === 'parcel' ? 'Where should it go?' : 'Where are you going?'}</h2></div>
       ${saveAs ? '' : `<div class="route-box" style="margin-bottom:6px">
         <div class="rb-line" style="grid-row:span 2"><span class="rb-dot"></span><span class="rb-bar"></span><span class="rb-sq"></span></div>
         <input id="qPick" placeholder="Set your pickup point" value="${K.esc(S.pickup && !opts.pickFirst ? (S.pickup.short || S.pickup.address) : '')}" autocomplete="off" aria-label="Pickup point">
@@ -380,7 +383,7 @@
       <p class="error" id="sErr" role="alert"></p>
       <div id="res" style="margin-top:10px" aria-live="polite"></div></div>`;
     root.querySelector('#app').appendChild(page);
-    let target = pickFirst ? 'pick' : 'drop';
+    let target = pickFirst ? 'pick' : 'drop', pendingDrop = null;
     const sErr = K.$('#sErr', page);
     const res = K.$('#res', page);
     const qDrop = K.$('#qDrop', page), qPick = K.$('#qPick', page);
@@ -391,6 +394,7 @@
     let current = [];
     const bind = () => res.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => pick(current[+b.dataset.i]));
     const showDefault = () => {
+      clearTimeout(searchTimer); // results for the other box must never land in this one
       const sp = S.user.savedPlaces || {};
       const saved = [];
       if (!saveAs && sp.home) saved.push({ name: 'Home', address: sp.home.address, lat: sp.home.lat, lng: sp.home.lng, _ic: 'home' });
@@ -406,7 +410,7 @@
         close();
         const c = S.pickup || S.gps || map.getCenter();
         map.setView([c.lat, c.lng], 17);
-        if (target === 'pick') { S.pickup = { lat: c.lat, lng: c.lng, address: 'Finding address…', manual: true }; S.view = 'pickup'; }
+        if (target === 'pick') { S.prevPickup = S.pickup; S.pickup = { lat: c.lat, lng: c.lng, address: 'Finding address…', manual: true }; S.view = 'pickup'; }
         else S.view = 'droppin';
         render();
       };
@@ -438,12 +442,14 @@
       if (target === 'pick') {
         S.pickup = { lat: p.lat, lng: p.lng, address: p.name, short: p.name, manual: !(S.gps && p.lat === S.gps.lat && p.lng === S.gps.lng) };
         qPick.value = p.name; loadNearby(); patchHome('loc');
+        if (pendingDrop) { close(); chooseDrop(pendingDrop); return; }
         if (opts.thenQuote && S.drop) { close(); prepareQuote(); return; }
         target = 'drop'; qDrop.focus(); return;
       }
-      if (!S.pickup) { // a destination needs a pickup first
-        sErr.textContent = 'Set your pickup point first.';
-        target = 'pick'; qPick && qPick.focus(); return;
+      if (!S.pickup) { // keep the destination and ask for the pickup next
+        pendingDrop = p; qDrop.value = p.name;
+        sErr.textContent = 'Now set your pickup point.';
+        target = 'pick'; showDefault(); qPick && qPick.focus(); return;
       }
       close();
       chooseDrop(p);
@@ -631,7 +637,7 @@
       setService(b.dataset.s); showRoute(); render();
     });
     K.$('#payRow').onclick = () => openPayments({ onPick: render });
-    K.$('#pickRow').onclick = () => { S.view = 'pickup'; clearRoute(); map.setView([S.pickup.lat, S.pickup.lng], 18); render(); };
+    K.$('#pickRow').onclick = () => { S.prevPickup = S.pickup ? { ...S.pickup } : null; S.view = 'pickup'; clearRoute(); map.setView([S.pickup.lat, S.pickup.lng], 18); render(); };
     const pr = K.$('#parcelRow'); if (pr) pr.onclick = openParcel;
     K.$('#whenBtn').onclick = openWhen;
     K.$('#whoBtn').onclick = openWho;
@@ -668,7 +674,7 @@
     if (S.pickup.address === 'Finding address…') onPinMove();
     K.$('#confirm').onclick = () => {
       if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
-      S.pickup.short = null; S.pickup.manual = true;
+      S.pickup.short = null; S.pickup.manual = true; S.prevPickup = undefined;
       if (S.drop) prepareQuote();
       else { S.view = 'home'; render(); openSearch(); }
     };
@@ -692,8 +698,12 @@
     const opt = S.quote.options.find((o) => o.id === S.service);
     const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined };
     if (S.service === 'parcel') body.parcel = S.parcel;
-    try { onTrip(await K.api('/trips', body)); }
+    try { onTrip(await K.api('/trips', body, 'POST', { timeout: 45000 })); }
     catch (e) {
+      if (/too long|reach Kwata/.test(e.message)) { // slow network: the request may have landed
+        const a = await K.api('/trips/active').catch(() => null);
+        if (a && ['requested', 'accepted', 'arrived', 'in_progress'].includes(a.status)) { onTrip(a); return; }
+      }
       btn.disabled = false; btn.textContent = `Request ${svcName(S.service)}`;
       if (/Prices have just changed/.test(e.message)) { K.toast(e.message, 5000); refreshQuote(); return; }
       err.textContent = e.message;
@@ -880,7 +890,9 @@
         <button class="btn btn-link btn-block" id="details" style="min-height:36px">View details</button>
       </div>
       <div class="sheet-foot">
-        ${needsPay ? `<p class="error" id="err" style="margin:0 0 6px;min-height:0"></p><button class="btn btn-primary btn-block btn-lg" id="pay">Pay ${K.ugx(t.payable)}</button>` : ''}
+        ${needsPay ? `<p class="error" id="err" role="alert" style="margin:0 0 6px;min-height:0">${S.config.paymentsAvailable ? '' : `${P.name} isn’t available yet. Pay your ${who(t)} ${K.ugx(t.payable)} in cash.`}</p>
+          ${S.config.paymentsAvailable ? `<button class="btn btn-primary btn-block btn-lg" id="pay">Pay ${K.ugx(t.payable)}</button>` : ''}
+          <button class="btn ${S.config.paymentsAvailable ? 'btn-outline' : 'btn-primary'} btn-block btn-lg" id="cashPaid">I paid in cash</button>` : ''}
         ${!t.riderRated ? `<button class="btn ${needsPay ? '' : 'btn-primary'} btn-block btn-lg" id="rate" ${S.rating ? '' : 'disabled'}>Rate ${who(t)}</button>` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}
       </div>`;
     sheet.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => {
@@ -895,6 +907,12 @@
         const out = await K.api(`/trips/${t.id}/pay`, {});
         if (out.link) location.href = out.link; else { K.toast('Payment received'); S.trip.paymentStatus = 'paid'; render(); }
       } catch (e) { K.$('#err').textContent = e.message; pay.disabled = false; }
+    };
+    const cp = K.$('#cashPaid');
+    if (cp) cp.onclick = async () => {
+      cp.disabled = true;
+      try { await K.api(`/trips/${t.id}/pay-cash`, {}); S.trip.paymentStatus = 'paid'; S.trip.paymentMethod = 'cash'; K.toast('Marked as paid in cash'); render(); }
+      catch (e) { K.$('#err').textContent = e.message; cp.disabled = false; }
     };
     const rate = K.$('#rate');
     if (rate) rate.onclick = async () => {
@@ -1076,9 +1094,9 @@
     clearRoute();
     K.api('/me').then((m) => { S.user = m.user; }).catch(() => {});
     K.api('/trips/history').then((h) => { S.history = h; buildRecent(h); if (S.view === 'home') render(); }).catch(() => {});
-    if (S.gps) { S.pickup = { ...S.gps, address: 'Current location', short: 'Current location' }; map.setView([S.gps.lat, S.gps.lng], 16); setPickup(S.gps.lat, S.gps.lng, 'Current location'); }
-    else if (hadTrip || !S.pickup) { S.pickup = null; locate(false); } // after a trip, ask again rather than reuse an old pickup
-    else map.setView([S.pickup.lat, S.pickup.lng], 16);                // just backed out: keep the pickup they set
+    if (hadTrip || !S.pickup) { S.pickup = null; locate(false); }       // after a trip: find where they are now
+    else if (S.pickup.manual || !S.gps) map.setView([S.pickup.lat, S.pickup.lng], 16); // just backed out: keep the pickup they set
+    else setPickup(S.gps.lat, S.gps.lng, 'Current location');
     render();
   }
 

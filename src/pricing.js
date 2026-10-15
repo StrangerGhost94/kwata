@@ -9,9 +9,9 @@ const db = require('./db');
 //   fare = max(minFare, base + perKm × road km + perMin × trip minutes) × surge
 const PRICING_VERSION = 2;
 const DEFAULT_SERVICES = {
-  boda:    { name: 'Kwata Boda',    icon: '🏍️', vehicle: 'boda', seats: 1, base: 700,  perKm: 570,  perMin: 26, minFare: 2000,  surge: 1, enabled: true, blurb: 'Beat the jam. Helmet provided.' },
+  boda:    { name: 'Kwata Boda',    icon: '🏍️', vehicle: 'boda', seats: 1, base: 700,  perKm: 570,  perMin: 26, minFare: 2000,  surge: 1, enabled: true, blurb: 'Beat the traffic on a motorbike.' },
   car:     { name: 'Kwata Car',     icon: '🚗', vehicle: 'car',  seats: 4, base: 3800, perKm: 1650, perMin: 75, minFare: 6000,  surge: 1, enabled: true, blurb: 'Affordable everyday rides.' },
-  comfort: { name: 'Kwata Comfort', icon: '🚙', vehicle: 'car',  seats: 4, base: 4500, perKm: 2050, perMin: 95, minFare: 9000,  surge: 1, enabled: true, blurb: 'Newer cars, AC, top-rated drivers.' },
+  comfort: { name: 'Kwata Comfort', icon: '🚙', vehicle: 'car',  seats: 4, base: 4500, perKm: 2050, perMin: 95, minFare: 9000,  surge: 1, enabled: true, blurb: 'A step up from Car, for up to 4.' },
   parcel:  { name: 'Kwata Parcel',  icon: '📦', vehicle: 'boda', seats: 0, base: 1000, perKm: 600,  perMin: 20, minFare: 2500,  surge: 1, enabled: true, blurb: 'Send packages across town.' },
   airport: { name: 'Kwata Airport', icon: '✈️', vehicle: 'car',  seats: 4, base: 8000, perKm: 1750, perMin: 50, minFare: 25000, surge: 1, enabled: true, blurb: 'Entebbe & long-distance trips.' },
 };
@@ -34,6 +34,7 @@ const DEFAULTS = {
   },
 };
 
+const OLD_BLURBS = ['Beat the jam. Helmet provided.', 'Newer cars, AC, top-rated drivers.'];
 let cache = null;
 
 async function getSettings() {
@@ -49,6 +50,8 @@ async function getSettings() {
   // make sure new default services appear even if older settings were saved
   for (const [k, v] of Object.entries(DEFAULT_SERVICES)) {
     s.services[k] = { ...v, ...(s.services[k] || {}) };
+    // Earlier placeholder descriptions made promises nobody had confirmed; show the neutral one instead.
+    if (OLD_BLURBS.includes(s.services[k].blurb)) s.services[k].blurb = v.blurb;
   }
   // One-time move to the new real-world rates. Keeps each service's on/off switch and surge.
   const stored = rows.find((r) => r.key === 'pricingVersion');
@@ -81,6 +84,7 @@ async function updateSettings(patch) {
         }
         if (clean.surge !== undefined) clean.surge = Math.min(5, Math.max(1, clean.surge));
         if (svc.enabled !== undefined) clean.enabled = !!svc.enabled;
+        if (typeof svc.blurb === 'string') clean.blurb = svc.blurb.replace(/[<>]/g, '').trim().slice(0, 60);
         value[id] = { ...value[id], ...clean };
       }
     } else if (key === 'growth') {

@@ -184,11 +184,12 @@
     const ids = Object.keys(s.services);
     main.innerHTML = `<h1>Pricing</h1>
       <p class="muted">Fare = (base + per km × distance + per minute × time in traffic, never below the minimum) × surge. Rounded to the nearest UGX 100 (nearest 500 above UGX 20,000). Default rates are set about 8–10% below Bolt’s Kampala prices.</p>
-      <div class="table-wrap"><table class="price"><thead><tr><th>Ride type</th><th>Base</th><th>Per km</th><th>Per min</th><th>Minimum</th><th>Fixed boost ×</th><th>On</th></tr></thead><tbody>
+      <div class="table-wrap"><table class="price"><thead><tr><th>Ride type</th><th>Base</th><th>Per km</th><th>Per min</th><th>Minimum</th><th>Fixed boost ×</th><th>On</th><th>Description riders see</th></tr></thead><tbody>
       ${ids.map((id) => { const v = s.services[id]; return `<tr data-id="${id}"><td>${v.icon} <b>${K.esc(v.name)}</b></td>
         ${['base', 'perKm', 'perMin', 'minFare'].map((f) => `<td><input type="number" min="0" step="50" data-f="${f}" value="${v[f]}" aria-label="${f}"></td>`).join('')}
         <td><input type="number" min="1" max="5" step="0.1" data-f="surge" value="${v.surge}" aria-label="busy multiplier"></td>
-        <td><input type="checkbox" data-f="enabled" ${v.enabled ? 'checked' : ''} style="width:auto" aria-label="enabled"></td></tr>`; }).join('')}
+        <td><input type="checkbox" data-f="enabled" ${v.enabled ? 'checked' : ''} style="width:auto" aria-label="enabled"></td>
+        <td><input type="text" maxlength="60" data-f="blurb" value="${K.esc(v.blurb || '')}" aria-label="${K.esc(v.name)} description" style="min-width:200px"></td></tr>`; }).join('')}
       </tbody></table></div>
       <div class="kpis" style="max-width:720px">
         <div><label for="cp">Kwata commission (%)</label><input id="cp" type="number" min="0" max="50" value="${s.commissionPct}"></div>
@@ -227,7 +228,7 @@
       const services = {};
       main.querySelectorAll('tr[data-id]').forEach((tr) => {
         const o = {};
-        tr.querySelectorAll('[data-f]').forEach((i) => { o[i.dataset.f] = i.type === 'checkbox' ? i.checked : +i.value; });
+        tr.querySelectorAll('[data-f]').forEach((i) => { o[i.dataset.f] = i.type === 'checkbox' ? i.checked : i.type === 'text' ? i.value : +i.value; });
         services[tr.dataset.id] = o;
       });
       await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, supportPhone: K.$('#sp').value,

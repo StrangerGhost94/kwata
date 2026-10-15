@@ -42,6 +42,19 @@ const ok = (cond, msg) => { console.log(`${cond ? '✓' : '✗'} ${msg}`); if (!
   try { await payments.createCheckout({ user: { id: u.id, phone: '+256770000001', name: 'Pay Test' }, amount: 0, purpose: 'topup', method: 'momo', baseUrl: 'http://x' }); ok(false, 'zero amount rejected'); }
   catch (e) { ok(e instanceof payments.PaymentsUnavailable, 'a zero-amount payment is rejected'); }
 
+  // 5. Unpaid Mobile Money trip switched to cash: driver's books move once, trip is paid.
+  const ledger = require(path.join(ROOT, 'src/ledger'));
+  const d = await db.one("INSERT INTO users(name, phone, password_hash, role) VALUES ('Cash Driver', '+256750000002', 'x', 'driver') RETURNING id");
+  await db.query("INSERT INTO drivers(user_id, vehicle_type, services, plate, license_no, momo_number, status) VALUES ($1,'boda','boda,parcel','UAA 111A','DL1','+256750000002','approved')", [d.id]);
+  const trip = await db.one(`INSERT INTO trips(rider_id, driver_id, service, pickup_lat, pickup_lng, pickup_address, drop_lat, drop_lng, drop_address, distance_km, duration_min, fare, payment_method, pin, share_token, status, payment_status, commission, discount)
+    VALUES ($1,$2,'boda',0.31,32.58,'A',0.33,32.57,'B',3,9,5000,'momo','1234','tok-cash','completed','pending',600,1000) RETURNING id`, [u.id, d.id]);
+  const first = await db.tx((t) => ledger.settleAsCash(t, trip.id));
+  const second = await db.tx((t) => ledger.settleAsCash(t, trip.id));
+  const dr = await db.one('SELECT earnings_balance FROM drivers WHERE user_id = $1', [d.id]);
+  const tr = await db.one('SELECT payment_method, payment_status FROM trips WHERE id = $1', [trip.id]);
+  ok(first && !second, 'switching to cash settles once (a second attempt does nothing)');
+  ok(dr.earnings_balance === -600 + 1000 && tr.payment_method === 'cash' && tr.payment_status === 'paid', `cash settlement: driver balance ${dr.earnings_balance} (commission −600, discount +1000), trip paid in cash`);
+
   console.log(failed ? `\n${failed} PAYMENT CHECK(S) FAILED` : '\nALL PAYMENT CHECKS PASSED');
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
