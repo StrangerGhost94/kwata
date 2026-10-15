@@ -239,6 +239,61 @@
     setTimeout(() => { el.remove(); after && after(); }, K.reduced() ? 0 : 330);
   };
 
+  // Light haptic tap (tab change, sheet snapping to a stop, swipe-to-dismiss). Android uses the
+  // vibration API; iOS 18+ gives a system haptic when a switch control is toggled. Silent elsewhere.
+  let hapSw;
+  K.haptic = () => {
+    try {
+      if (K.reduced()) return;
+      if (navigator.vibrate) { navigator.vibrate(8); return; }
+      if (!/iP(hone|ad|od)/.test(navigator.userAgent)) return;
+      if (!hapSw) {
+        hapSw = document.createElement('label');
+        hapSw.setAttribute('aria-hidden', 'true');
+        hapSw.style.cssText = 'position:fixed;left:-99px;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none';
+        hapSw.innerHTML = '<input type="checkbox" switch tabindex="-1">';
+        document.body.appendChild(hapSw);
+      }
+      const keep = document.activeElement;
+      hapSw.click();
+      if (keep && keep !== document.activeElement && keep.focus) keep.focus({ preventScroll: true });
+    } catch {}
+  };
+
+  // Tab bar: the glass lens slides to whichever tab is selected.
+  const syncLens = (bar) => {
+    if (!bar) return;
+    const tabs = [...bar.querySelectorAll('[data-tab]')], i = tabs.findIndex((b) => b.getAttribute('aria-current') === 'page');
+    bar.style.setProperty('--n', tabs.length || 1);
+    if (i >= 0) bar.style.setProperty('--i', i);
+  };
+  new MutationObserver((muts) => {
+    let bar = null;
+    for (const m of muts) {
+      if (m.type === 'attributes') { if (m.target.closest && m.target.getAttribute('aria-current') === 'page') { bar = m.target.closest('.tabbar'); if (bar && m.oldValue !== 'page' && bar._lensReady) K.haptic(); } }
+      else for (const n of m.addedNodes) if (n.nodeType === 1) { const b = n.matches('.tabbar') ? n : n.querySelector && n.querySelector('.tabbar'); if (b) { syncLens(b); b._lensReady = true; } }
+    }
+    if (bar) syncLens(bar);
+  }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-current'], attributeOldValue: true });
+
+  // Navigation bars: the large title collapses into a small centred title once it scrolls under
+  // the bar, and the scroll edge effect (soft blur under the bar) appears once content scrolls.
+  document.addEventListener('scroll', (e) => {
+    const p = e.target;
+    if (!p.classList || !p.classList.contains('page')) return;
+    const top = p.scrollTop, title = p.querySelector('.page-title');
+    p.classList.toggle('edge', top > 2);
+    if (!title) return;
+    if (!p.classList.contains('nav-large') && !p.querySelector(':scope > .nav-bar')) {
+      const bar = document.createElement('div'); bar.className = 'nav-bar'; bar.setAttribute('aria-hidden', 'true');
+      bar.innerHTML = '<span></span>'; p.prepend(bar);
+    }
+    const bar = p.querySelector(':scope > .nav-bar > span');
+    if (bar && bar.textContent !== title.textContent) bar.textContent = title.textContent;
+    const pr = p.getBoundingClientRect(), tr = title.getBoundingClientRect();
+    p.classList.toggle('scrolled', tr.bottom - pr.top < 54 + (parseFloat(getComputedStyle(p).paddingTop) - 10 || 0));
+  }, true);
+
   K.modal = function (html, { drawer = false, onClose } = {}) {
     const ov = document.createElement('div');
     ov.className = 'overlay';
@@ -265,6 +320,48 @@
     ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-close]')) close(); });
     document.addEventListener('keydown', esc);
     document.body.appendChild(ov);
+    // Swipe down to dismiss (from the top of the sheet, or anywhere when it's scrolled to the top).
+    if (!drawer) {
+      let d = null;
+      dlg.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 1) { d = null; return; }
+        const t = e.touches[0];
+        d = { y: t.clientY, x: t.clientX, dy: 0, on: false, s: [[performance.now(), t.clientY]], top: dlg.scrollTop <= 0, field: !!e.target.closest('input, textarea, select') };
+      }, { passive: true });
+      dlg.addEventListener('touchmove', (e) => {
+        if (!d) return;
+        const t = e.touches[0], dy = t.clientY - d.y, dx = t.clientX - d.x;
+        if (!d.on) {
+          if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
+          if (!d.top || d.field || dy <= 0 || Math.abs(dx) > Math.abs(dy)) { d = null; return; }
+          d.on = true; d.y = t.clientY; dlg.classList.add('dragging');
+        }
+        if (e.cancelable) e.preventDefault();
+        d.dy = Math.max(0, t.clientY - d.y);
+        d.s.push([performance.now(), t.clientY]); if (d.s.length > 6) d.s.shift();
+        dlg.style.transform = `translate3d(0,${d.dy}px,0)`;
+        ov.style.backgroundColor = `rgba(0,0,0,${0.2 * Math.max(0, 1 - d.dy / (dlg.offsetHeight || 1))})`;
+      }, { passive: false });
+      const end = () => {
+        if (!d || !d.on) { d = null; return; }
+        const a = d.s[0], b = d.s[d.s.length - 1], vel = (b[1] - a[1]) / Math.max(1, b[0] - a[0]);
+        dlg.classList.remove('dragging');
+        if (d.dy > Math.min(140, dlg.offsetHeight * 0.33) || vel > 0.6) {
+          K.haptic();
+          dlg.classList.add('dragged');
+          dlg.style.transition = 'transform .28s cubic-bezier(.4,0,1,1)';
+          dlg.style.transform = 'translate3d(0,110%,0)';
+          close();
+        } else {
+          dlg.style.transition = 'transform .5s var(--spring-bounce)';
+          dlg.style.transform = '';
+          ov.style.backgroundColor = '';
+        }
+        d = null;
+      };
+      dlg.addEventListener('touchend', end);
+      dlg.addEventListener('touchcancel', end);
+    }
     const first = ov.querySelector('input, select, textarea, button:not([data-close])');
     // On phones, don't pop the keyboard open for a text box; focus the dialog itself instead.
     if (first && (first.tagName === 'BUTTON' || matchMedia('(pointer: fine)').matches)) first.focus({ preventScroll: true });
@@ -788,7 +885,7 @@
     const maxOff = () => Math.max(...Object.values(points()));
     const paint = (v, animate) => {
       off = v;
-      sheet.style.transition = animate ? 'transform .52s cubic-bezier(.32,.72,0,1)' : 'none';
+      sheet.style.transition = animate ? 'transform .55s var(--spring, cubic-bezier(.32,.72,0,1))' : 'none';
       sheet.style.transform = Math.abs(off) > 0.5 ? `translate3d(0,${off}px,0)` : '';
       sheet.classList.toggle('collapsed', snap === 'peek' && off > 0);
       sheet.classList.toggle('lifted', off > 1);
@@ -849,11 +946,13 @@
     const touchEnd = () => {
       if (!t0) return;
       const s = t0.samples, mode = t0.mode, grab = t0.grab; t0 = null;
-      if (!mode && grab) { go(snap === 'full' ? (sheet.restSnap || 'peek') : 'full'); return; } // tap the handle to toggle
+      const was = snap;
+      if (!mode && grab) { go(snap === 'full' ? (sheet.restSnap || 'peek') : 'full'); K.haptic(); return; } // tap the handle to cycle stops
       if (mode !== 'sheet') return;
       const a = s[0], b = s[s.length - 1], dt = Math.max(1, b[0] - a[0]);
       const vel = performance.now() - b[0] > 90 ? 0 : (b[1] - a[1]) / dt;
       go(nearest(Math.max(0, Math.min(maxOff(), off)), vel));
+      if (snap !== was) K.haptic();
     };
     sheet.addEventListener('touchend', touchEnd);
     sheet.addEventListener('touchcancel', touchEnd);
@@ -885,7 +984,11 @@
     sheet.addEventListener('transitionend', () => { anim = false; });
     // Size changes (content loading in) keep the sheet at the same stop; new screens reset to the screen's resting stop.
     if (window.ResizeObserver) new ResizeObserver(() => go(snap, false)).observe(sheet);
-    new MutationObserver(() => { if (sheet._keep) return; go(sheet.restSnap || 'full', true); }).observe(sheet, { childList: true });
+    // The grabber is a real control for VoiceOver and keyboards: it cycles between the stops.
+    const grabA11y = () => { const g = sheet.querySelector('.grabber'); if (g && !g.hasAttribute('role')) { g.setAttribute('role', 'button'); g.tabIndex = 0; g.setAttribute('aria-label', 'Resize sheet'); } };
+    sheet.addEventListener('keydown', (e) => { if (e.target.classList && e.target.classList.contains('grabber') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(snap === 'full' ? (sheet.restSnap || 'peek') : 'full'); } });
+    grabA11y();
+    new MutationObserver(() => { grabA11y(); if (sheet._keep) return; go(sheet.restSnap || 'full', true); }).observe(sheet, { childList: true });
   };
 
   // Space the floating glass tab bar takes at the bottom (content scrolls under it).

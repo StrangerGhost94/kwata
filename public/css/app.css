@@ -1151,3 +1151,169 @@ input, select, textarea { font-size: max(16px, 1em); }
 /* Quick open (not the first launch of the day): fade straight out, no long logo animation */
 .splash.quick, .splash.quick * { animation-duration: .25s !important; animation-delay: 0s !important; }
 .splash.quick.out { transition-duration: .28s !important; filter: none; transform: none; }
+
+/* =====================================================================
+   Apple HIG pass (iOS 26): Liquid Glass, motion, sheets, buttons, type
+   - Liquid Glass only on the navigation/control layer that floats over
+     content (tab bar, map buttons and chips, nav back button, banners).
+     Content (lists, cards, the home sheet) stays solid.
+   - Glass has no colour of its own; only the selected tab and the one
+     primary action carry the accent.
+   - Springs instead of curves; crossfades when Reduce Motion is on;
+     solid surfaces with Reduce Transparency; stronger edges and text
+     with Increase Contrast.
+   ===================================================================== */
+:root {
+  /* Apple system colours (light) */
+  --sys-red: #FF383C; --sys-orange: #FF8D28; --sys-yellow: #FFCC00; --sys-green: #34C759; --sys-blue: #0088FF;
+  --label: #000000; --label-2: rgba(60,60,67,.6); --label-3: rgba(60,60,67,.3);
+  --fill: rgba(120,120,128,.2); --fill-2: rgba(120,120,128,.16); --fill-3: rgba(118,118,128,.12);
+  --accent-ink: #8A6400;           /* the brand yellow as a tint that reads on white and glass (5.2:1) */
+  /* Springs: smooth (no bounce) for navigation and sheets, a little bounce for the glass lens */
+  --spring: linear(0, .04, .131, .243, .358, .466, .562, .645, .715, .774, .821, .859, .89, .914, .934, .949, .96, .97, .977, .982, .986, .99, .992, .994, 1);
+  --spring-bounce: linear(0, .057, .188, .346, .503, .642, .758, .847, .913, .959, .989, 1.007, 1.016, 1.02, 1.02, 1.017, 1.014, 1.011, 1.008, 1.006, 1.004, 1.002, 1.001, 1);
+  /* Liquid Glass, regular variant */
+  --lg-fill: rgba(255,255,255,.5);
+  --lg-blur: blur(14px) saturate(190%) brightness(1.04);
+  --lg-light: inset 0 0 0 .5px rgba(255,255,255,.65), inset 1.5px 1.5px 1px -1px rgba(255,255,255,.95), inset -1px -1px 1px -1px rgba(255,255,255,.6), inset 0 0 14px rgba(255,255,255,.22);
+  --lg-lift: 0 8px 26px rgba(0,0,0,.10), 0 0 0 .5px rgba(0,0,0,.07);
+}
+@supports not (transition-timing-function: linear(0, 1)) {
+  :root { --spring: cubic-bezier(.32,.72,0,1); --spring-bounce: cubic-bezier(.34,1.3,.64,1); }
+}
+
+/* ---- Type: iOS text styles at the default size ---- */
+body { font-size: 17px; line-height: 1.3; letter-spacing: -.022em; }        /* Body 17/22 */
+.btn { font-size: 17px; font-weight: 600; letter-spacing: -.02em; }        /* button label = Headline */
+.btn-sm { font-size: 15px; }                                                /* Subhead */
+input, select, textarea { font-size: 17px; letter-spacing: -.02em; }
+label { font-size: 15px; }                                                  /* Subhead */
+.small, small { letter-spacing: -.005em; }
+
+/* ---- Liquid Glass: navigation and controls only ---- */
+.tabbar, .hello-chip, .fab, .pill-chip, .drv-head, .glass-back, .trip-banner, .nav-back-btn {
+  background: var(--lg-fill); color: var(--label);
+  -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
+  box-shadow: var(--lg-light), var(--lg-lift); border: 0;
+}
+.tabbar::before, .hello-chip::before, .drv-head::before, .trip-banner::before { display: none; }
+.fab:hover { background: rgba(255,255,255,.62); }
+/* Interactive glass: it swells a little and brightens under the finger, then springs back */
+.fab, .hello-chip, .pill-chip, .glass-back, .nav-back-btn, .trip-banner .round { transition: transform .45s var(--spring-bounce), background .2s; }
+.fab:active, .hello-chip:active, .pill-chip:active, .glass-back:active, .nav-back-btn:active { transform: scale(1.08); background: rgba(255,255,255,.72); }
+/* Status banner over the map: light glass with ordinary label colours, not a tinted slab */
+.trip-banner { border-radius: 26px; }
+.trip-banner b { color: var(--label); }
+.trip-banner small { color: var(--label-2); }
+.trip-banner .round { background: var(--fill-2); color: var(--label); }
+.glass-back { color: #fff; background: rgba(255,255,255,.18); }   /* over the dark photo header */
+
+/* ---- Tab bar: monochrome symbols, a glass lens that slides to the selected tab ---- */
+.tabbar { --i: 0; --n: 4; position: absolute; }
+.tabbar::after { content: ''; position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / var(--n)); border-radius: 999px;
+  background: var(--fill-2); transform: translateX(calc(var(--i) * 100%)); transition: transform .55s var(--spring-bounce); pointer-events: none; }
+.tabbar button { position: relative; z-index: 1; color: rgba(0,0,0,.82); transition: color .2s, transform .45s var(--spring-bounce); }
+.tabbar button[aria-current="page"] { background: transparent; color: var(--accent-ink); }
+.tabbar button[aria-current="page"] svg { color: var(--accent-ink); fill: currentColor; fill-opacity: .2; stroke-width: 2.1; }
+.tabbar button:active { transform: scale(1.1); }
+
+/* ---- Navigation bar: circular glass Back (no text), large title that collapses into the bar ---- */
+.page-head [data-x], .page-head [data-back] { width: 44px; height: 44px; min-height: 44px; border-radius: 50%; padding: 0; display: grid; place-items: center; flex: none;
+  background: var(--lg-fill); -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur); box-shadow: var(--lg-light), 0 2px 10px rgba(0,0,0,.08), 0 0 0 .5px rgba(0,0,0,.06);
+  transition: transform .45s var(--spring-bounce); }
+.page-head [data-x]:active, .page-head [data-back]:active { transform: scale(1.08); }
+.page-head [data-x] svg, .page-head [data-back] svg { width: 22px; height: 22px; stroke-width: 2.4; }
+/* Sub-pages: inline title hidden until the large title scrolls under the bar */
+.page.nav-large > .page-inner > .page-head { position: sticky; top: calc(-10px - env(safe-area-inset-top)); z-index: 6; margin: calc(-10px - env(safe-area-inset-top)) -18px 0; padding: calc(10px + env(safe-area-inset-top)) 14px 6px; min-height: 0; }
+.page.nav-large > .page-inner > .page-head h2 { position: absolute; left: 70px; right: 70px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .35s var(--spring); }
+.page.nav-large.scrolled > .page-inner > .page-head h2 { opacity: 1; transform: none; }
+.page.nav-large .page-title { margin-top: 2px; transition: opacity .2s; }
+.page.nav-large.scrolled .page-title { opacity: 0; }
+/* Tab pages: a bar with the inline title appears once the large title scrolls away */
+.nav-bar { position: sticky; top: calc(-10px - env(safe-area-inset-top)); z-index: 6; height: 0; margin: calc(-10px - env(safe-area-inset-top)) -18px 0; pointer-events: none; }
+.nav-bar > span { position: absolute; left: 0; right: 0; top: 0; height: calc(54px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top);
+  display: grid; place-items: center; font-size: 17px; font-weight: 600; letter-spacing: -.022em; opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .35s var(--spring); }
+.page.scrolled > .nav-bar > span { opacity: 1; transform: none; }
+/* Scroll edge effect: content softly blurs and fades under the bar instead of a hard line */
+.page-head::before, .nav-bar::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: calc(70px + env(safe-area-inset-top)); z-index: -1; pointer-events: none; opacity: 0; transition: opacity .25s;
+  background: linear-gradient(180deg, var(--edge-bg, #fff) 0%, color-mix(in srgb, var(--edge-bg, #fff) 82%, transparent) 55%, transparent 100%);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent); mask-image: linear-gradient(180deg, #000 55%, transparent); }
+.page.edge .page-head::before, .page.edge > .nav-bar::before { opacity: 1; }
+.page.grouped { --edge-bg: var(--ios-grouped); }
+
+/* ---- Sheets (modals): float inset with concentric corners on phones, glass, swipe down to dismiss ---- */
+@media (max-width: 759px) {
+  .modal { margin: auto 8px max(8px, calc(var(--sab) - 14px)); width: auto; border-radius: 34px; padding-bottom: 22px; max-height: calc(100% - 16px - env(safe-area-inset-top)); }
+}
+.modal { background: rgba(255,255,255,.93); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%);
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.7), 0 20px 60px rgba(0,0,0,.18); overscroll-behavior: contain; }
+.modal::before { width: 36px; height: 5px; border-radius: 3px; background: var(--label-3); margin: 0 auto 14px; }
+.overlay { background: rgba(0,0,0,.2); }
+.overlay .modal { animation: modalUp .55s var(--spring); }
+.modal.dragging { transition: none !important; }
+.overlay.closing .modal.dragged { animation: none; }
+.sheet .grabber { background: var(--label-3); width: 36px; height: 5px; cursor: pointer; }
+
+/* ---- Buttons: filled capsules without coloured glows; one prominent action per view ---- */
+.btn-primary, .btn-brand, .btn-gold, .btn-danger, .btn-go, .onboard.hero .btn-primary { box-shadow: none; }
+.btn { transition: transform .35s var(--spring-bounce), filter .15s, background .2s, opacity .2s; }
+.btn:active:not(:disabled):not([aria-disabled="true"]) { transform: scale(.96); filter: brightness(.94); }
+.btn-ghost:active, .btn-outline:active { background: var(--fill-3); }
+/* 44pt hit area for small buttons without making them look bigger */
+.btn-sm { position: relative; }
+.btn-sm::after { content: ''; position: absolute; inset: -4px -2px; }
+.btn .spin { margin-right: 8px; vertical-align: -2px; }
+
+/* ---- Motion: springs everywhere ---- */
+.push-in { animation: pushIn .55s var(--spring) both; }
+.push-out { animation: pushOut .35s var(--spring) both; }
+.nav-fwd { animation: navFwd .5s var(--spring) both; }
+.nav-back { animation: navBack .5s var(--spring) both; }
+.sheet-enter { animation: sheetRise .55s var(--spring); }
+
+/* Reduce Motion: no sliding or zooming, short crossfades instead */
+@media (prefers-reduced-motion: reduce) {
+  .push-in, .nav-fwd, .nav-back, .tab-in, .sheet-enter, .overlay .modal { animation: fadeIn .2s ease both !important; }
+  .push-out, .overlay.closing, .overlay.closing .modal { animation: fadeOut .2s ease both !important; }
+  .tabbar::after, .tabbar button, .btn, .fab, .hello-chip, .pill-chip, .glass-back, .nav-back-btn, .page-head [data-x], .nav-bar > span, .page-head h2 { transition: opacity .2s !important; transform: none !important; }
+}
+
+/* Reduce Transparency: glass becomes a solid, slightly grey surface */
+@media (prefers-reduced-transparency: reduce) {
+  .tabbar, .hello-chip, .fab, .pill-chip, .drv-head, .trip-banner, .nav-back-btn, .page-head [data-x], .page-head [data-back], .modal, #toast {
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+  .tabbar, .hello-chip, .fab, .pill-chip, .drv-head, .trip-banner, .page-head [data-x], .page-head [data-back], .modal { background: #F9F9FB !important; }
+  .glass-back { background: rgba(20,20,22,.7) !important; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .page-head::before, .nav-bar::before { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--edge-bg, #fff); -webkit-mask-image: none; mask-image: none; }
+}
+
+/* Increase Contrast: firmer edges, darker secondary text, opaque glass */
+@media (prefers-contrast: more) {
+  :root { --label-2: rgba(60,60,67,.85); --ink-2: #3A3A3F; --ink-3: #48484D; --ios-label2: #3A3A3F; --ios-sep: rgba(60,60,67,.45); --accent-ink: #6B4D00; --fill-2: rgba(120,120,128,.3); }
+  .tabbar, .hello-chip, .fab, .pill-chip, .drv-head, .trip-banner, .page-head [data-x], .page-head [data-back], .modal { background: rgba(255,255,255,.94); box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 6px 18px rgba(0,0,0,.12); }
+  .tabbar button { color: #000; }
+  .btn-outline { border-color: #6C6C70; }
+}
+
+/* No backdrop blur at all (old browsers): solid surfaces */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar, .hello-chip, .fab, .pill-chip, .drv-head, .trip-banner, .page-head [data-x], .page-head [data-back], .modal { background: #F9F9FB; }
+}
+
+/* Hairline separators that always render (1 device pixel on 2x/3x screens) */
+.page.grouped .menu-item::after, .page.grouped .pay-item::after { height: 1px; transform: scaleY(.5); transform-origin: 0 100%; }
+/* Payment option titles are primary labels; only the line under them is secondary */
+.pay-item > .grow { color: var(--ink); font-size: inherit; }
+.pay-item > .grow > span { color: var(--ink-2); }
+
+/* Plain lists (search results): iOS separators start at the text, rows highlight while pressed */
+.lrow { position: relative; border-radius: 12px; }
+.lrow + .lrow { border-top: 0; }
+.lrow + .lrow::before { content: ''; position: absolute; left: 54px; right: 0; top: 0; height: 1px; transform: scaleY(.5); transform-origin: 0 0; background: var(--ios-sep); }
+.lrow:hover { background: transparent; }
+.lrow:active { background: var(--fill-3); transform: none; }
+@media (hover: hover) { .lrow:hover { background: var(--fill-3); } }
+
+/* Phone sheets span the width between their 8pt insets */
+@media (max-width: 759px) { .overlay > .modal { width: calc(100% - 16px); max-width: none; } }

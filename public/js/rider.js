@@ -1188,8 +1188,8 @@
 
   function subPage(title, onBack) {
     const page = document.createElement('div');
-    page.className = 'page push-in grouped'; page.style.zIndex = 860;
-    page.innerHTML = `<div class="page-inner"><div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Back">${K.ic('back')}</button><h2>${title}</h2></div><div data-body></div></div>`;
+    page.className = 'page push-in grouped nav-large'; page.style.zIndex = 860;
+    page.innerHTML = `<div class="page-inner"><div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Back">${K.ic('back')}</button><h2 aria-hidden="true">${title}</h2></div><h1 class="page-title">${title}</h1><div data-body></div></div>`;
     root.querySelector('#app').appendChild(page);
     K.$('[data-x]', page).onclick = () => K.pop(page, onBack);
     return { page, body: K.$('[data-body]', page), close: () => K.pop(page) };
