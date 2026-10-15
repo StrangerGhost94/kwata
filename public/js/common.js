@@ -392,16 +392,9 @@
       const probe = (h) => { const d = document.createElement('div'); d.style.cssText = `position:absolute;top:0;left:0;width:1px;height:${h};visibility:hidden;pointer-events:none`; document.body.appendChild(d); const v = d.offsetHeight; d.remove(); return v; };
       const lvh = probe('100lvh') || innerHeight, inset = probe('env(safe-area-inset-bottom)');
       const short = standalone ? Math.max(0, lvh - innerHeight) : 0;
-      // iOS 26 bug case: size the app to the full screen height (100lvh) so it reaches the bottom
-      // edge, and keep the normal home-bar spacing. (Turn off with localStorage kwata_nofill=1.)
-      let off = false; try { off = localStorage.getItem('kwata_nofill') === '1'; } catch {}
-      const fill = short > 0 && !off;
-      const pad = fill ? inset : Math.max(0, inset - short);
-      const root = document.documentElement;
-      root.classList.toggle('fill', fill);
-      if (fill) root.style.setProperty('--app-h', lvh + 'px');
-      root.style.setProperty('--sab', pad + 'px');
-      K.screen = { view: innerHeight, full: lvh, inset, pad, standalone, short, fill };
+      const pad = Math.max(0, inset - short);
+      document.documentElement.style.setProperty('--sab', pad + 'px');
+      K.screen = { view: innerHeight, full: lvh, inset, pad, standalone };
     } catch {}
   }
   if (!document.body) document.addEventListener('DOMContentLoaded', fitInstalled);
@@ -451,7 +444,7 @@
   if (/[?&]debug=screen/.test(location.search)) addEventListener('load', () => setTimeout(() => {
     const p = document.createElement('div'); p.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom)';
     document.body.appendChild(p);
-    K.toast(JSON.stringify({ inset: p.offsetHeight, innerHeight, screenH: screen.height, ...K.screen }), 15000);
+    K.toast(JSON.stringify({ inset: p.offsetHeight, innerHeight, screenH: screen.height, standalone: navigator.standalone === true || matchMedia('(display-mode: standalone)').matches }), 15000);
     p.remove();
   }, 1500));
 
@@ -1006,7 +999,7 @@
   };
 
   // Space the floating glass tab bar takes at the bottom (content scrolls under it).
-  K.tabSpace = () => { const t = document.getElementById('tabs'); if (!t || t.classList.contains('hidden')) return 0; const h = K.screen.fill ? K.screen.full : innerHeight; return Math.max(0, h - t.getBoundingClientRect().top) + 8; };
+  K.tabSpace = () => { const t = document.getElementById('tabs'); if (!t || t.classList.contains('hidden')) return 0; return Math.max(0, innerHeight - t.getBoundingClientRect().top) + 8; };
   K.underTabs = (sheet, on) => {
     // Wrap the sheet once in a "dock" that can end above the floating tab pill.
     let dock = sheet.parentElement;
