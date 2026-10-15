@@ -8,13 +8,13 @@
 //   so they're served straight from the phone ("cache first") with no network wait.
 //   A new deploy has new ?v= links, so the new files are fetched once and kept.
 // - Maps, payments and live data are never cached.
-const VERSION = 'kwata-v38';
+const VERSION = 'kwata-v39';
 const ASSETS = 'kwata-assets';        // versioned js/css; kept across releases, trimmed below
 const SHELL = [
   '/offline.html', '/socket.io/socket.io.js',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
   '/vendor/maplibre/maplibre-gl.js', '/vendor/maplibre/maplibre-gl.css', '/vendor/maplibre-leaflet/leaflet-maplibre-gl.js',
-  '/icons/icon-192.png', '/icons/driver-192.png', '/img/onboarding.jpg', '/img/vehicles/boda.png', '/img/vehicles/car.png', '/img/vehicles/comfort.png', '/img/vehicles/parcel.png', '/img/vehicles/airport.png', '/manifest.json', '/manifest-driver.json',
+  '/icons/icon-192.png', '/icons/driver-192.png', '/img/onboarding.jpg', '/img/vehicles/boda.svg', '/img/vehicles/car.svg', '/img/vehicles/comfort.svg', '/img/vehicles/parcel.svg', '/img/vehicles/airport.svg', '/manifest.json', '/manifest-driver.json',
 ];
 
 self.addEventListener('install', (e) => {

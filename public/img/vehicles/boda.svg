@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160">
+  <defs>
+    <linearGradient id="tank" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4A4E57"/><stop offset="1" stop-color="#1C1D21"/></linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E9EBEE"/><stop offset="1" stop-color="#9AA0A8"/></linearGradient>
+    <filter id="soft" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>
+  <ellipse cx="120" cy="136" rx="92" ry="6" fill="#000" opacity=".22" filter="url(#soft)"/>
+  <g fill="none" stroke="#1D1E21" stroke-width="9"><circle cx="58" cy="112" r="22"/><circle cx="184" cy="112" r="22"/></g>
+  <g fill="none" stroke="url(#metal)" stroke-width="2"><circle cx="58" cy="112" r="14"/><circle cx="184" cy="112" r="14"/></g>
+  <circle cx="58" cy="112" r="4" fill="#5D636B"/><circle cx="184" cy="112" r="4" fill="#5D636B"/>
+  <path d="M58 112 L92 96" stroke="#2B2D31" stroke-width="6" stroke-linecap="round"/>
+  <path d="M184 112 L166 62" stroke="url(#metal)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M92 94 L136 98 L150 82" fill="none" stroke="#2B2D31" stroke-width="7" stroke-linejoin="round"/>
+  <rect x="98" y="86" width="34" height="24" rx="6" fill="#3A3D44"/>
+  <path d="M104 92 h22 M104 98 h22 M104 104 h22" stroke="#6A7078" stroke-width="2"/>
+  <path d="M84 104 Q72 108 50 104" stroke="url(#metal)" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M66 78 L92 98 L102 98 L84 78 Z" fill="#2B2D31"/>
+  <path d="M72 76 H114 L108 94 H90 Z" fill="#33363C"/>
+  <path d="M58 77 C58 70 64 67 74 67 H112 L116 77 Z" fill="#1A1B1E"/>
+  <path d="M112 70 C112 62 122 58 134 58 C148 58 158 64 160 74 L156 82 H118 C114 82 112 78 112 70 Z" fill="url(#tank)"/>
+  <path d="M120 68 C126 62 144 62 152 70" fill="none" stroke="#F2B705" stroke-width="3" stroke-linecap="round"/>
+  <path d="M156 78 L168 62" stroke="#2B2D31" stroke-width="7" stroke-linecap="round"/>
+  <path d="M150 56 L176 50" stroke="#1D1E21" stroke-width="4" stroke-linecap="round"/>
+  <path d="M166 62 L162 52" stroke="#1D1E21" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="176" cy="64" r="6" fill="#FFF7DA" stroke="#9AA0A8" stroke-width="2"/>
+  <path d="M168 96 C176 90 192 90 200 96" fill="none" stroke="#2B2D31" stroke-width="5" stroke-linecap="round"/>
+  <path d="M40 98 C46 92 66 90 74 94" fill="none" stroke="#2B2D31" stroke-width="5" stroke-linecap="round"/>
+  <rect x="38" y="80" width="10" height="5" rx="2" fill="#9E3B3B"/>
+</svg>

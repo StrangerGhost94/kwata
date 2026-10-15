@@ -71,10 +71,11 @@
   K.starSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
 
   // ---------- vehicle art ----------
-  // Premium 3D vehicle art: Microsoft Fluent 3D (MIT licence, see /img/vehicles/LICENSE-fluentui-emoji.txt)
+  // Kwata's own vehicle illustrations: one side-on style, graphite/silver with a single gold accent.
+  // Standard rides are light, Comfort is a black executive sedan, delivery is a parcel, airport a plane.
   const VEH = { boda: 'Boda boda', car: 'Car', comfort: 'Comfort SUV', parcel: 'Parcel', airport: 'Airport transfer' };
-  K.ART = Object.fromEntries(Object.entries(VEH).map(([k, alt]) => [k, `<img class="art-img" src="/img/vehicles/${k}.png" alt="" data-alt="${alt}" decoding="async">`]));
-  Object.keys(VEH).forEach((k) => { const i = new Image(); i.src = `/img/vehicles/${k}.png`; });
+  K.ART = Object.fromEntries(Object.entries(VEH).map(([k, alt]) => [k, `<img class="art-img" src="/img/vehicles/${k}.svg" alt="" data-alt="${alt}" decoding="async">`]));
+  Object.keys(VEH).forEach((k) => { const i = new Image(); i.src = `/img/vehicles/${k}.svg`; });
   K.artFor = (service, vehicleType) => K.ART[service] || (vehicleType === 'car' ? K.ART.car : K.ART.boda);
 
   // ---------- brand: pin logo & night skyline ----------

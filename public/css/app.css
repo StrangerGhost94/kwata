@@ -1318,3 +1318,17 @@ label { font-size: 15px; }                                                  /* S
 /* Phone sheets span the width between their 8pt insets */
 @media (max-width: 759px) { .overlay > .modal { width: calc(100% - 16px); max-width: none; } }
 
+
+/* Vehicle illustrations: calm neutral tiles; the art carries its own soft ground shadow */
+.art-img { filter: none; }
+.slide .art .art-img { filter: none; }
+.svc-t .tile { background: #F2F2F4; }
+.svc-t[data-svc="parcel"] .tile { background: #F4EFE7; }
+.svc-t .tile .art-img { width: 86%; height: 86%; }
+.fy-parcel { background: linear-gradient(135deg, #F6F1E9, #ECE2D2); color: var(--ink); }
+.fy-air { background: linear-gradient(135deg, #F1F3F6, #E2E6EC); color: var(--ink); }
+.fy-art .art-img { width: 86px; height: 70px; }
+
+/* Sticky sheet footer: a short fade, then the sheet's own solid colour, so rows scrolling
+   underneath never show through the price note or the Request button. */
+.sheet-foot::before { background: linear-gradient(180deg, rgba(253,252,251,0) 0, #FDFCFB 8px); }
