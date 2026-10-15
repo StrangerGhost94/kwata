@@ -57,27 +57,48 @@
     map.on('dragstart', () => { if (S.view === 'home') S.mapTouched = true; });
     root.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => openTab(b.dataset.tab));
 
+    // Fresh data from the server. If we have last-known data for this account, draw the
+    // app with it straight away and let these update it in the background.
+    const fresh = Promise.all([K.api('/me'), K.api('/config'), K.api('/trips/active'), K.api('/trips/history').catch(() => null)]);
+    const cMe = K.cache.get('me'), cCfg = K.cache.get('config');
+    const keep = (me, config, hist) => { K.cache.set('me', me); K.cache.set('config', config); if (hist) K.cache.set('hist', hist.slice(0, 30)); };
+    if (cMe && cCfg) {
+      await null; // let the rest of this file finish loading before we draw
+      boot(cMe, cCfg, null, K.cache.get('hist') || null);
+      fresh.then(([me, config, active, hist]) => {
+        keep(me, config, hist);
+        S.user = me.user; S.config = config;
+        if (hist) { S.history = hist; buildRecent(hist); patchHome('quick'); }
+        if (active) onTrip(active); else { patchHome('forYou'); }
+      }).catch(() => {}); // offline: keep showing what we have; the banner explains
+      return;
+    }
     try {
-      const [me, config, active, hist] = await Promise.all([K.api('/me'), K.api('/config'), K.api('/trips/active'), K.api('/trips/history').catch(() => null)]);
-      S.user = me.user; S.config = config;
-      loadGrowth(); loadUpcoming();
-      S.history = hist; buildRecent(hist);   // null if it failed: Activity then shows an error with Retry, not 'No trips'
-      sock = K.socket(K.token());
-      sock.on('trip:update', onTrip);
-      sock.on('driver:location', (p) => { if (S.trip && p.tripId === S.trip.id) moveDriver(p); });
-      sock.on('toast', (m) => K.toast(m.text));
-      sock.on('chat:message', onChat);
-      sock.on('connect', async () => { const a = await K.api('/trips/active').catch(() => null); if (a) onTrip(a); });
-      if (active) onTrip(active); else {
-        locate(false); render();
-        const svc = params.get('service');
-        if (svc && S.config.services.some((x) => x.id === svc)) { setService(svc); history.replaceState(null, '', location.pathname); openSearch(svc === 'airport' ? { preset: K.PLACES[0] } : {}); }
-        let q = null; try { q = sessionStorage.getItem('kwata_q'); sessionStorage.removeItem('kwata_q'); } catch {}
-        if (q) openSearch({ query: q });
-      }
-      setInterval(loadNearby, 8000);
-      K.ready();
-    } catch (e) { K.ready(); sheet.innerHTML = `<p class="error">${K.esc(e.message)}</p><button class="btn btn-block" onclick="location.reload()">Try again</button>`; }
+      const [me, config, active, hist] = await fresh;
+      keep(me, config, hist);
+      boot(me, config, active, hist);
+    } catch (e) { K.ready(); sheet.innerHTML = `<div class="state-box" role="alert"><b>Couldn’t open Kwata</b><span>${K.esc(e.message)}</span><button class="btn btn-primary btn-sm" onclick="location.reload()">Try again</button></div>`; }
+  }
+
+  function boot(me, config, active, hist) {
+    S.user = me.user; S.config = config;
+    loadGrowth(); loadUpcoming();
+    S.history = hist; buildRecent(hist);   // null if unknown: Activity then loads it (with Retry on failure), never a false 'No trips'
+    sock = K.socket(K.token());
+    sock.on('trip:update', onTrip);
+    sock.on('driver:location', (p) => { if (S.trip && p.tripId === S.trip.id) moveDriver(p); });
+    sock.on('toast', (m) => K.toast(m.text));
+    sock.on('chat:message', onChat);
+    sock.on('connect', async () => { const a = await K.api('/trips/active').catch(() => null); if (a) onTrip(a); });
+    if (active) onTrip(active); else {
+      locate(false); render();
+      const svc = params.get('service');
+      if (svc && S.config.services.some((x) => x.id === svc)) { setService(svc); history.replaceState(null, '', location.pathname); openSearch(svc === 'airport' ? { preset: K.PLACES[0] } : {}); }
+      let q = null; try { q = sessionStorage.getItem('kwata_q'); sessionStorage.removeItem('kwata_q'); } catch {}
+      if (q) openSearch({ query: q });
+    }
+    setInterval(loadNearby, 8000);
+    K.ready();
   }
 
   function buildRecent(hist) {
@@ -1092,7 +1113,7 @@
     S.messages = []; S.unread = 0; routedPhase = null; phaseKm = null;
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
     clearRoute();
-    K.api('/me').then((m) => { S.user = m.user; }).catch(() => {});
+    K.api('/me').then((m) => { S.user = m.user; K.cache.set('me', m); }).catch(() => {});
     K.api('/trips/history').then((h) => { S.history = h; buildRecent(h); if (S.view === 'home') render(); }).catch(() => {});
     if (hadTrip || !S.pickup) { S.pickup = null; locate(false); }       // after a trip: find where they are now
     else if (S.pickup.manual || !S.gps) map.setView([S.pickup.lat, S.pickup.lng], 16); // just backed out: keep the pickup they set

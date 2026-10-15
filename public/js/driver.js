@@ -17,8 +17,21 @@
   async function start() {
     root.innerHTML = '<div class="onb"></div>'; // the opening animation covers this moment
     let me0, config, docs;
-    try { [me0, config, docs] = await Promise.all([K.api('/me'), K.api('/config'), K.api('/driver/documents').catch(() => ({ uploaded: {} }))]); }
-    catch (e) { K.ready(); root.innerHTML = `<div class="onb"><p class="error">${K.esc(e.message)}</p><button class="btn btn-block" onclick="location.reload()">Try again</button></div>`; return; }
+    const fresh = Promise.all([K.api('/me'), K.api('/config'), K.api('/driver/documents').catch(() => ({ uploaded: {} }))]);
+    const cached = K.cache.get('boot');
+    if (cached && cached[0].driver && cached[0].driver.status === 'approved') {
+      // Open straight away with last-known data; if anything important changed, reload once.
+      [me0, config, docs] = cached;
+      await null; // let the rest of this file finish loading before we draw
+      fresh.then((r) => {
+        K.cache.set('boot', r);
+        if (!r[0].driver || r[0].driver.status !== 'approved') { location.reload(); return; }
+        S.user = r[0].user; S.driver = r[0].driver; S.config = r[1];
+      }).catch(() => {});
+    } else {
+      try { [me0, config, docs] = await fresh; K.cache.set('boot', [me0, config, docs]); }
+      catch (e) { K.ready(); root.innerHTML = `<div class="onb" style="text-align:center"><div class="state-box" role="alert" style="margin-top:30vh"><b>Couldn’t open Kwata Driver</b><span>${K.esc(e.message)}</span><button class="btn btn-primary btn-sm" onclick="location.reload()">Try again</button></div></div>`; return; }
+    }
     S.user = me0.user; S.driver = me0.driver; S.config = config; S.docs = docs; S.hasPhoto = !!(docs.uploaded || {}).photo;
     if (S.hasPhoto) K.api('/driver/photo').then((r) => { S.photoData = r.url; if (S.tab === 'home') topbar(); }).catch(() => {});
     K.ready();

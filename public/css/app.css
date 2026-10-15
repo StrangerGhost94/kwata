@@ -1147,3 +1147,7 @@ input, select, textarea { font-size: max(16px, 1em); }
 
 /* Section footers / small print */
 .page.grouped > .page-inner > p.small.muted, .page.grouped [data-body] > p.small.muted { padding: 0 16px; font-size: 13px; color: var(--ios-label2); }
+
+/* Quick open (not the first launch of the day): fade straight out, no long logo animation */
+.splash.quick, .splash.quick * { animation-duration: .25s !important; animation-delay: 0s !important; }
+.splash.quick.out { transition-duration: .28s !important; filter: none; transform: none; }

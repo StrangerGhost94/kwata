@@ -159,9 +159,17 @@
   K.session = {
     get() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch { return null; } },
     set(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch {} },
-    clear() { try { localStorage.removeItem(KEY); } catch {} },
+    clear() { try { localStorage.removeItem(KEY); localStorage.removeItem(KEY + '_cache'); } catch {} },
   };
   K.token = () => (K.session.get() || {}).token;
+
+  // Last-known data (profile, settings, trips) so the app can draw instantly on open,
+  // then refresh from the server. Tied to the signed-in account; cleared on log out.
+  K.cache = {
+    all() { try { const c = JSON.parse(localStorage.getItem(KEY + '_cache')); return c && c.t === K.token() ? c : { t: K.token(), d: {} }; } catch { return { t: K.token(), d: {} }; } },
+    get(name) { return this.all().d[name]; },
+    set(name, value) { try { const c = this.all(); c.d[name] = value; localStorage.setItem(KEY + '_cache', JSON.stringify(c)); } catch {} },
+  };
 
   K.api = async function (path, body, method, { timeout = 20000 } = {}) {
     const headers = { 'Content-Type': 'application/json' };
@@ -287,8 +295,13 @@
   }
   if (!document.body) document.addEventListener('DOMContentLoaded', fitInstalled);
   fitInstalled();
-  addEventListener('resize', fitInstalled);
-  addEventListener('orientationchange', () => setTimeout(fitInstalled, 300));
+  // Re-measure only when the screen really changes (rotation, window resize). The keyboard
+  // opening shrinks the height and would make the menu bar jump if we re-measured then.
+  let lastW = innerWidth, maxH = innerHeight;
+  addEventListener('resize', () => {
+    if (innerWidth !== lastW || innerHeight > maxH) { lastW = innerWidth; maxH = Math.max(maxH, innerHeight); fitInstalled(); }
+  });
+  addEventListener('orientationchange', () => setTimeout(() => { lastW = innerWidth; maxH = innerHeight; fitInstalled(); }, 300));
 
   // ---------- the strip below the app (iOS 26) ----------
   // When iOS cuts the installed app short, the band under it takes the page's
@@ -336,8 +349,12 @@
   K.ready = function () {
     const sp = document.getElementById('splash');
     if (!sp || sp.classList.contains('out')) return;
-    const wait = Math.max(0, 2100 - (performance.now() - T0)); // let the logo animation finish
-    setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 800); }, wait);
+    // The full logo animation once a day; after that the app opens almost straight away.
+    let quick = false;
+    try { const last = Number(localStorage.getItem('kwata_opened')) || 0; quick = Date.now() - last < 12 * 3600e3; localStorage.setItem('kwata_opened', String(Date.now())); } catch {}
+    if (quick) sp.classList.add('quick');
+    const wait = Math.max(0, (quick ? 350 : 2100) - (performance.now() - T0));
+    setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), quick ? 300 : 800); }, wait);
   };
 
   // ---------- installable app ----------
@@ -719,6 +736,10 @@
   // Live connection for trip updates. If it drops while the phone is online, say so
   // after a short grace period (so brief blips stay invisible) and clear it on reconnect.
   K.socket = (token) => {
+    if (typeof io !== 'function') { // opened offline before the live-connection library was saved: reload when back online
+      addEventListener('online', () => location.reload(), { once: true });
+      return { on() {}, emit(ev, data, cb) { if (typeof cb === 'function') cb({ ok: false, error: 'You’re offline.' }); }, connected: false };
+    }
     const sock = io({ auth: { token }, transports: ['websocket', 'polling'] });
     let t;
     sock.on('disconnect', () => { clearTimeout(t); t = setTimeout(() => { if (!sock.connected && navigator.onLine !== false) K.netBanner(true, 'Reconnecting to Kwata…'); }, 4000); });

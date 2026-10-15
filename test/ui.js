@@ -95,6 +95,26 @@ const api = async (path, body, token) => {
   ok(/valid Ugandan mobile number/.test(await p2.textContent('.error')), 'login form checks the phone number before sending');
   await c2.close();
 
+  // ---- 6. Second open is served from the phone; offline reopen still shows the app
+  const c3 = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'allow' });
+  const p3 = await c3.newPage(); p3.on('pageerror', (e) => errors.push(e.message));
+  await p3.addInitScript((s) => { localStorage.setItem('kwata_rider', s); localStorage.setItem('kwata_onboarded', '1'); localStorage.setItem('kwata_loc_asked', '1');
+    navigator.geolocation.getCurrentPosition = (ok, fail) => setTimeout(() => fail({ code: 1 }), 50); }, JSON.stringify(user));
+  await p3.goto(BASE + '/'); await p3.waitForSelector('#whereBtn', { timeout: 20000 });
+  await p3.evaluate(() => navigator.serviceWorker.ready); await p3.waitForTimeout(800);
+  await p3.reload(); await p3.waitForSelector('#whereBtn', { timeout: 20000 }); // first controlled load fills the cache
+  const fromNet = [];
+  p3.on('response', (r) => { if (/\/(js|css)\/.*\?v=/.test(r.url()) && !r.fromServiceWorker()) fromNet.push(r.url()); });
+  const sw = [];
+  p3.on('response', (r) => { if (/\/(js|css)\/.*\?v=/.test(r.url()) && r.fromServiceWorker()) sw.push(r.url()); });
+  const t0 = Date.now(); await p3.reload(); await p3.waitForSelector('#whereBtn', { timeout: 20000 });
+  ok(sw.length >= 3 && fromNet.length === 0, `reopen: app code comes from the phone (${sw.length} files, ${fromNet.length} from network)`);
+  ok(Date.now() - t0 < 4000, `reopen with saved data shows Home in ${Date.now() - t0} ms`);
+  await c3.setOffline(true);
+  await p3.reload().catch(() => {}); await p3.waitForSelector('#whereBtn', { timeout: 20000 }).catch(() => {});
+  ok(await p3.evaluate(() => !!document.querySelector('#whereBtn')), 'offline reopen still shows the app (with the offline banner)');
+  await c3.close();
+
   ok(errors.length === 0, `no script errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await b.close();
   console.log(failed ? `\n${failed} UI CHECK(S) FAILED` : '\nALL UI CHECKS PASSED');

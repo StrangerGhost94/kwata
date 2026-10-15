@@ -1,8 +1,17 @@
-// Kwata service worker: opens instantly from the home screen and shows a
-// friendly screen when there's no connection. Bump VERSION on each release.
-const VERSION = 'kwata-v31';
+// Kwata service worker: opens instantly from the home screen, stays current, and
+// shows a friendly screen when there's no connection. Bump VERSION on each release.
+//
+// How it stays fast AND fresh:
+// - Pages (HTML) come from the network, so a new deploy shows on the next open. If the
+//   network is slow (3s) or down, the last saved page is used instead.
+// - Each page links its scripts/styles with ?v=<deploy id>. Those exact files never change,
+//   so they're served straight from the phone ("cache first") with no network wait.
+//   A new deploy has new ?v= links, so the new files are fetched once and kept.
+// - Maps, payments and live data are never cached.
+const VERSION = 'kwata-v32';
+const ASSETS = 'kwata-assets';        // versioned js/css; kept across releases, trimmed below
 const SHELL = [
-  '/', '/driver', '/offline.html', '/css/app.css', '/js/common.js', '/js/rider.js', '/js/driver.js',
+  '/offline.html', '/socket.io/socket.io.js',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
   '/vendor/maplibre/maplibre-gl.js', '/vendor/maplibre/maplibre-gl.css', '/vendor/maplibre-leaflet/leaflet-maplibre-gl.js',
   '/icons/icon-192.png', '/icons/driver-192.png', '/img/onboarding.jpg', '/img/vehicles/boda.png', '/img/vehicles/car.png', '/img/vehicles/comfort.png', '/img/vehicles/parcel.png', '/img/vehicles/airport.png', '/manifest.json', '/manifest-driver.json',
@@ -13,33 +22,60 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil((async () => {
+    for (const k of await caches.keys()) if (k !== VERSION && k !== ASSETS) await caches.delete(k);
+    // Keep only the newest ~40 versioned files (two or three releases' worth).
+    const c = await caches.open(ASSETS), keys = await c.keys();
+    for (const r of keys.slice(0, Math.max(0, keys.length - 40))) await c.delete(r);
+    if (self.registration.navigationPreload) await self.registration.navigationPreload.enable();
+    await self.clients.claim();
+  })());
 });
+
+const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), ms));
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;            // maps, payments: straight to network
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return; // live data is never cached
+  const isSocketLib = url.pathname === '/socket.io/socket.io.js';                 // the client library itself can be saved
+  if (url.pathname.startsWith('/api/') || (url.pathname.startsWith('/socket.io/') && !isSocketLib)) return; // live data is never cached
 
-  // Our own app code and styles: always the latest when online, so updates show on the very next open.
-  if (url.pathname.startsWith('/js/') || url.pathname.startsWith('/css/') || url.pathname.endsWith('.json')) {
-    e.respondWith(fetch(req, { cache: 'no-cache' }).then((res) => {
-      if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
+  // Versioned app code (?v=deploy): the file for that version never changes → phone first.
+  if ((url.pathname.startsWith('/js/') || url.pathname.startsWith('/css/')) && url.searchParams.has('v')) {
+    e.respondWith(caches.open(ASSETS).then(async (c) => {
+      const hit = await c.match(req);
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (res.ok) c.put(req, res.clone());
       return res;
-    }).catch(() => caches.match(req, { ignoreSearch: true })));
+    }));
+    return;
+  }
+
+  // Unversioned app code and manifests: network, falling back to any saved copy.
+  if (url.pathname.startsWith('/js/') || url.pathname.startsWith('/css/') || url.pathname.endsWith('.json')) {
+    e.respondWith(fetch(req, { cache: 'no-cache' }).catch(() => caches.match(req, { ignoreSearch: true })));
     return;
   }
 
   if (req.mode === 'navigate') {
-    // Pages: fresh from the network when online, cached copy (or offline screen) when not.
-    e.respondWith(fetch(req).then((res) => {
-      const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); return res;
-    }).catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r || caches.match('/offline.html'))));
+    // Pages: fresh from the network, but never keep the rider waiting on a bad connection.
+    e.respondWith((async () => {
+      const net = (async () => {
+        const pre = e.preloadResponse && await e.preloadResponse;
+        const res = pre || await fetch(req);
+        if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(new URL(req.url).pathname, copy)); }
+        return res;
+      })();
+      const saved = await caches.match(new URL(req.url).pathname);
+      try { return await (saved ? Promise.race([net, timeout(3000)]) : net); }
+      catch { return saved || (await caches.match('/offline.html')); }
+    })());
     return;
   }
 
-  // Static files: serve from cache instantly, refresh in the background.
+  // Images, icons, map library: from the phone instantly, refreshed in the background.
   e.respondWith(caches.match(req).then((cached) => {
     const fresh = fetch(req).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }

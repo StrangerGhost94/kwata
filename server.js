@@ -47,9 +47,13 @@ app.get('/sw.js', (req, res) => { res.setHeader('Cache-Control', 'no-cache'); re
 app.use('/vendor/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist'), { maxAge: '7d' }));
 app.use('/vendor/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist'), { maxAge: '7d' }));
 app.use('/vendor/maplibre-leaflet', express.static(path.join(__dirname, 'node_modules', '@maplibre', 'maplibre-gl-leaflet'), { maxAge: '7d' }));
-// Our own code and styles: always check with the server for a newer copy.
-app.use(['/js', '/css'], (req, res, next) => { res.setHeader('Cache-Control', 'no-cache'); next(); });
-app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], setHeaders: (res, p) => { if (/\.(js|css)$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); } }));
+// Our own code and styles. Files requested with this deploy's ?v= stamp never change, so
+// phones may keep them for a year; anything else must be re-checked every time.
+app.use(['/js', '/css'], (req, res, next) => { res.locals.versioned = req.query.v === BUILD; next(); });
+app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], setHeaders: (res, p) => {
+  if (/\.(js|css)$/.test(p)) res.setHeader('Cache-Control', res.locals.versioned ? 'public, max-age=31536000, immutable' : 'no-cache');
+  else if (/\/(img|icons)\//.test(p)) res.setHeader('Cache-Control', 'public, max-age=604800');
+} }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
