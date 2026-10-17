@@ -289,7 +289,6 @@ r.post('/auth/check', limit(20, 10 * 60e3), wrap(async (req, res) => {
 
 // ---------- Sign in with an SMS code ----------
 const OTP_TTL = 5 * 60e3, OTP_RESEND = 30e3, OTP_PER_HOUR = 5, OTP_TRIES = 5;
-const otpDomain = () => { try { return new URL(process.env.PUBLIC_URL || ('https://' + process.env.RAILWAY_PUBLIC_DOMAIN)).hostname; } catch { return ''; } };
 r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
   if (!sms.enabled()) return bad(res, 'SMS sign-in isn’t set up yet.', 503);
   const p = auth.normalizePhone((req.body || {}).phone);
@@ -303,8 +302,8 @@ r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
   await db.query(`INSERT INTO otp_codes(phone, code_hash, expires_at, attempts, sent_at, hour_start, sends_hour) VALUES ($1,$2,$3,0,$4,$5,$6)
     ON CONFLICT (phone) DO UPDATE SET code_hash = $2, expires_at = $3, attempts = 0, sent_at = $4, hour_start = $5, sends_hour = $6`,
     [p, auth.hashCode(p, code), now + OTP_TTL, now, sameHour ? Number(row.hour_start) : now, sameHour ? row.sends_hour + 1 : 1]);
-  const dom = otpDomain();
-  try { await sms.send(p, `${code} is your Flytte code. It expires in 5 minutes. Never share it with anyone.${dom ? `\n\n@${dom} #${code}` : ''}`); }
+  // Plain text only: networks often hold SMS that contain a web address.
+  try { await sms.send(p, `${code} is your Flytte code. It expires in 5 minutes. Never share it with anyone.`); }
   catch { await db.query('DELETE FROM otp_codes WHERE phone = $1', [p]); return bad(res, 'We couldn’t send the SMS. Check the number and try again.', 502); }
   const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
   res.json({ ok: true, exists: !!u, role: u ? u.role : null, resendIn: OTP_RESEND / 1000, ...(sms.demo() ? { demoCode: code } : {}) });
