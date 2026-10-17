@@ -1,12 +1,13 @@
 {
   "name": "flytte",
   "version": "1.0.0",
-  "description": "Flytte \u2014 ride-hailing for Uganda: boda, car, parcel, airport",
+  "description": "Flytte — ride-hailing for Uganda: boda, car, parcel, airport",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node test/payments.js && node test/e2e.js && node test/growth.js && node test/flows.js",
+    "test": "node test/payments.js && node test/e2e.js && node test/growth.js && node test/flows.js && node test/drivers.js",
+    "test:drivers": "node test/drivers.js",
     "test:ui": "node test/ui.js",
     "test:payments": "node test/payments.js",
     "test:flows": "node test/flows.js"
@@ -24,7 +25,8 @@
     "leaflet": "^1.9.4",
     "maplibre-gl": "^4.7.1",
     "pg": "^8.23.1",
-    "socket.io": "^4.8.4"
+    "socket.io": "^4.8.4",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "playwright-core": "^1.64.1",

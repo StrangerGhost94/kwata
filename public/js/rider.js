@@ -847,6 +847,7 @@
           <span style="text-align:right"><span class="plate-chip">${K.esc(d.plate)}</span><span style="display:block;width:70px;height:44px;margin-top:4px">${K.artFor(t.service, d.vehicleType)}</span></span></div>
         <div class="eta-line"><span id="etaTxt">${arrived ? `Meet ${K.esc(K.first(d.name))} now` : mins ? `Arriving in ${mins} min` : 'On the way'}</span><span class="small muted" style="font-weight:600">${t.service === 'parcel' ? 'Parcel pickup' : 'Pickup'}</span></div>
         <div class="bar"><i id="etaBar" style="width:${pct}%"></i></div>
+        ${arrived && S.config.drivers ? `<p class="wait-note">${K.ic('clock', 'sm')}<span>Your ${who(t)} waits up to ${S.config.drivers.freeWaitMin} min for free.${S.config.drivers.noShowFee ? ` After that they can leave, and a ${K.ugx(S.config.drivers.noShowFee)} no-show fee is taken from your wallet if it has enough.` : ' After that they can leave.'}</span></p>` : ''}
         <div class="act-row">${callBtn('act') || '<span></span>'}<button class="act" id="chatBtn">${K.ic('msg')} Message</button></div>
         <div class="pin-box"><span><b>${t.passenger ? `${K.esc(K.first(t.passenger.name))}’s trip PIN` : 'Your trip PIN'}</b><br><span class="small muted">${t.passenger ? 'Send it to them below' : `Tell your ${who(t)} to start`}</span></span>${pinDigits(t.pin)}</div>
         ${extrasHtml(t)}

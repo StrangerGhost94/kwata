@@ -209,7 +209,43 @@ async function migrate() {
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
-  );`;
+  );
+  CREATE TABLE IF NOT EXISTS app_keys (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT UNIQUE NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS push_user_idx ON push_subscriptions(user_id);
+  CREATE TABLE IF NOT EXISTS driver_events (
+    id SERIAL PRIMARY KEY,
+    driver_id INTEGER NOT NULL,
+    trip_id INTEGER,
+    kind TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS driver_events_idx ON driver_events(driver_id, created_at);
+  CREATE TABLE IF NOT EXISTS bonus_payouts (
+    driver_id INTEGER NOT NULL,
+    bonus_id TEXT NOT NULL,
+    period_key TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (driver_id, bonus_id, period_key)
+  );
+  ALTER TABLE driver_docs ADD COLUMN IF NOT EXISTS expires_on DATE;
+  ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_lat DOUBLE PRECISION;
+  ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_lng DOUBLE PRECISION;
+  ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_address TEXT;
+  ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_uses_day TEXT;
+  ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_uses INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS no_show_fee INTEGER NOT NULL DEFAULT 0`;
   for (const s of statements.split(';').map((x) => x.trim()).filter(Boolean)) {
     await query(s);
   }

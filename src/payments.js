@@ -28,7 +28,7 @@ async function createCheckout({ user, amount, purpose, tripId, method, baseUrl }
   amount = Math.round(amount);
   if (!available()) throw new PaymentsUnavailable('Mobile Money and card payments aren’t available yet. Pay with cash for now.');
   if (!(amount > 0)) throw new PaymentsUnavailable('Nothing to pay.');
-  const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : 'FLY-TRP');
+  const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : purpose === 'debt' ? 'FLY-DBT' : 'FLY-TRP');
   await db.query(
     'INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount) VALUES ($1,$2,$3,$4,$5)',
     [tx_ref, user.id, purpose, tripId || null, amount]
@@ -52,7 +52,7 @@ async function createCheckout({ user, amount, purpose, tripId, method, baseUrl }
     },
     customizations: {
       title: 'Flytte',
-      description: purpose === 'topup' ? 'Flytte wallet top-up' : `Flytte trip #${tripId}`,
+      description: purpose === 'topup' ? 'Flytte wallet top-up' : purpose === 'debt' ? 'Flytte commission payment' : `Flytte trip #${tripId}`,
     },
   };
   const r = await fetch('https://api.flutterwave.com/v3/payments', {
@@ -103,6 +103,10 @@ async function applyPayment(tx_ref, providerRef) {
     await t.query("UPDATE payments SET status = 'successful', provider_ref = $1 WHERE tx_ref = $2", [providerRef, tx_ref]);
     if (p.purpose === 'topup') {
       await ledger.creditWallet(t, p.user_id, p.amount, `Top-up ${tx_ref}`);
+    } else if (p.purpose === 'debt') {
+      // A driver paying the commission owed on cash trips.
+      await t.query('UPDATE drivers SET earnings_balance = earnings_balance + $1 WHERE user_id = $2', [p.amount, p.user_id]);
+      await t.query("INSERT INTO transactions(user_id, type, amount, note) VALUES ($1,'debt_payment',$2,$3)", [p.user_id, p.amount, `Paid to Flytte by Mobile Money (${tx_ref})`]);
     } else if (p.purpose === 'trip' && p.trip_id) {
       await ledger.markTripPaid(t, p.trip_id);
     }

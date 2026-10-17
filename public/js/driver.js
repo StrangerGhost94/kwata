@@ -2,8 +2,8 @@
 // Welcome → Become a driver → Verify documents → Home (Go Online) → Ride request → Active trip → Earnings / Profile
 (function () {
   const root = document.getElementById('root');
-  const S = { user: null, driver: null, online: false, offer: null, trip: null, loc: null, manual: false, earnings: null, rating: 0, config: null, messages: [], unread: 0, chatOpen: false, tab: 'home', hasPhoto: false };
-  let map, sock, sheet, me, targetMarker, routeLayer, watchId, offerTimer, wakeLock, lastSent = 0, routedFor = null;
+  const S = { user: null, driver: null, online: false, offer: null, trip: null, next: null, ov: null, loc: null, manual: false, earnings: null, rating: 0, config: null, messages: [], unread: 0, chatOpen: false, tab: 'home', hasPhoto: false };
+  let map, sock, sheet, me, targetMarker, routeLayer, watchId, offerTimer, waitTimer, wakeLock, lastSent = 0, routedFor = null;
 
   if (!K.token()) K.authScreen(root, { role: 'driver', onDone: start });
   else start();
@@ -13,6 +13,130 @@
   const photo = (cls = 'photo') => `<span class="${cls}">${photoUrl() ? `<img src="${photoUrl()}" alt="">` : K.initials(S.user.name)}</span>`;
   const fmtKm = (km) => (km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km');
   const customer = (t) => (t.service === 'parcel' ? 'sender' : 'customer');
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
+  const DOC_LABEL = { license: 'Driving permit', insurance: 'Insurance sticker' };
+  const mmss = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+
+  // ---------- ride alerts (Web Push) ----------
+  // With alerts on, a request still rings when the phone is locked or Flytte Driver is in the background.
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const b64ToU8 = (b64) => { const pad = '='.repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, (c) => c.charCodeAt(0)); };
+  async function enablePush(silent) {
+    if (!pushSupported()) {
+      if (!silent) K.toast(isIOS && !K.standalone() ? 'Add Flytte Driver to your Home Screen first (Share → Add to Home Screen), then turn on ride alerts.' : 'This browser can’t show ride alerts.', 6000);
+      return false;
+    }
+    try {
+      const perm = Notification.permission === 'granted' ? 'granted' : (silent ? Notification.permission : await Notification.requestPermission());
+      if (perm !== 'granted') { if (!silent) K.toast('Ride alerts are blocked. Allow notifications for Flytte Driver in your phone settings.', 6000); return false; }
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) { const { key } = await K.api('/push/key'); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) }); }
+      await K.api('/push/subscribe', { subscription: sub.toJSON() });
+      if (S.ov) S.ov.push = true;
+      if (!silent) K.toast('Ride alerts are on. Requests will ring even when your phone is locked.', 5000);
+      return true;
+    } catch (e) {
+      if (!silent) K.toast(`Couldn’t turn on ride alerts: ${e.message}`, 6000);
+      return false;
+    }
+  }
+  async function disablePush() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) { await K.api('/push/unsubscribe', { endpoint: sub.endpoint }); await sub.unsubscribe(); }
+      if (S.ov) S.ov.push = false;
+      K.toast('Ride alerts are off. Keep the app open to get requests.', 4500);
+    } catch (e) { K.toast(e.message); }
+  }
+
+  // ---------- overview: alerts, money owed, documents, heading home, bonuses ----------
+  async function loadOverview() {
+    try { S.ov = await K.api('/driver/overview'); } catch { return; }
+    if (!S.ov.push && pushSupported() && Notification.permission === 'granted') enablePush(true); // quietly re-link this phone
+    const el = K.$('#tools');
+    if (el && S.tab === 'home' && !S.trip) { el.innerHTML = toolsHtml(); bindTools(el); }
+  }
+  setInterval(() => { if (!S.trip && S.tab === 'home' && document.visibilityState === 'visible') loadOverview(); }, 90e3);
+
+  function toolsHtml() {
+    const o = S.ov; if (!o) return '';
+    const cards = [];
+    if (!o.push && S.online) {
+      const can = pushSupported();
+      cards.push(`<div class="tool-card info"><span class="ic">${K.ic('bell')}</span><span class="grow"><b>Get requests when your phone is locked</b>
+        <span>${can ? 'Turn on ride alerts so you don’t miss trips when the screen is off.' : isIOS && !K.standalone() ? 'Add Flytte Driver to your Home Screen (Share → Add to Home Screen), then open it from there to turn on ride alerts.' : 'This browser can’t show ride alerts. Keep the app open while online.'}</span></span>
+        ${can ? '<button class="btn btn-sm btn-dark" data-t="push">Turn on</button>' : ''}</div>`);
+    }
+    if (o.owed > 0) {
+      cards.push(`<div class="tool-card ${o.cashPaused ? 'bad' : 'warn'}"><span class="ic">${K.ic('wallet')}</span><span class="grow"><b>You owe ${K.ugx(o.owed)} in commission</b>
+        <span>${o.cashPaused ? 'Cash trips are paused until you pay. Mobile Money and wallet trips still come to you.' : `From cash trips. Cash trips pause if it reaches ${K.ugx(o.debtLimit)}.`}${S.config.paymentsAvailable ? '' : ' It also clears from your next Mobile Money or wallet trips.'}</span></span>
+        ${S.config.paymentsAvailable ? '<button class="btn btn-sm btn-dark" data-t="pay">Pay now</button>' : ''}</div>`);
+    }
+    for (const d of o.docs || []) {
+      const what = DOC_LABEL[d.kind] || d.kind;
+      cards.push(`<div class="tool-card ${d.expired ? 'bad' : 'warn'}"><span class="ic">${K.ic('idcard')}</span><span class="grow"><b>${what} ${d.expired ? 'has expired' : d.days === 0 ? 'expires today' : `expires in ${d.days} day${d.days === 1 ? '' : 's'}`}</b>
+        <span>${d.expired ? 'Renew it and upload the new one to keep driving.' : 'Renew it and upload the new one before it runs out.'}</span></span><button class="btn btn-sm btn-dark" data-t="docs">Update</button></div>`);
+    }
+    if (S.online && o.homePerDay > 0) {
+      cards.push(o.home
+        ? `<div class="tool-card home on"><span class="ic">${K.ic('home')}</span><span class="grow"><b>Heading home</b><span>Only trips towards ${K.esc(String(o.home.address).split(',')[0])}</span></span><button class="btn btn-sm" data-t="homeoff">Turn off</button></div>`
+        : `<div class="tool-card home"><span class="ic">${K.ic('home')}</span><span class="grow"><b>Heading home</b><span>${o.homeUsesLeft ? `Only get trips going your way · ${o.homeUsesLeft} left today` : 'Used up for today. It resets at midnight.'}</span></span>${o.homeUsesLeft ? '<button class="btn btn-sm" data-t="home">Set</button>' : ''}</div>`);
+    }
+    const bonus = (o.bonuses || []).map((b) => `<div class="bonus ${b.paid ? 'paid' : ''}">
+        <div class="bonus-top"><b>${K.esc(b.title)}</b><span>${b.paid ? 'Earned ✓' : `+${K.ugx(b.reward)}`}</span></div>
+        <div class="bonus-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${b.trips}" aria-valuenow="${b.done}" aria-label="${b.done} of ${b.trips} trips"><i style="width:${Math.round((b.done / b.trips) * 100)}%"></i></div>
+        <span class="tiny muted">${b.done} of ${b.trips} trips ${b.period === 'day' ? 'today' : 'this week'}${b.paid ? ' · added to your balance' : ''}</span></div>`).join('');
+    return cards.join('') + (bonus ? `<div class="section-label">Bonuses</div>${bonus}` : '');
+  }
+  function bindTools(el) {
+    el.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => ({
+      push: async () => { if (await enablePush(false)) loadOverview(); },
+      pay: payDebt,
+      docs: openDocs,
+      home: chooseHome,
+      homeoff: async () => { try { await K.api('/driver/home', { on: false }); S.ov.home = null; K.toast('Heading home is off.'); vHome(); } catch (e) { K.toast(e.message); } },
+    })[b.dataset.t]());
+  }
+
+  async function payDebt() {
+    const o = S.ov;
+    const m = K.modal(`<h2>Pay commission</h2><p class="muted">You owe ${K.ugx(o.owed)} in commission from cash trips. Pay it by Mobile Money and cash trips ${o.cashPaused ? 'start again straight away' : 'keep coming'}.</p>
+      <button class="btn btn-primary btn-block btn-lg" id="paynow">Pay ${K.ugx(o.owed)}</button><button class="btn btn-block" style="margin-top:8px" data-close>Not now</button><p class="error" id="perr"></p>`);
+    K.$('#paynow', m.el).onclick = async (ev) => {
+      const b = ev.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span>Starting payment…';
+      try {
+        const r = await K.api('/driver/pay-debt', {});
+        if (r.link) { location.href = r.link; return; }
+        m.close(); K.toast('Payment received. Thank you!'); await loadEarnings(); loadOverview();
+      } catch (e) { b.disabled = false; b.textContent = 'Try again'; K.$('#perr', m.el).textContent = e.message; }
+    };
+  }
+
+  // Heading home: choose a place; only trips towards it are offered until you arrive or turn it off.
+  function chooseHome() {
+    const o = S.ov, saved = o.savedHome;
+    const m = K.modal(`<h2>Where are you heading?</h2><p class="muted">You’ll only get trips that take you closer. It switches off when you arrive. ${o.homeUsesLeft} left today.</p>
+      ${saved ? `<button class="lrow" data-h="saved"><span class="ic">${K.ic('home')}</span><span class="grow"><span class="t">Last place</span><span class="s ellipsis" style="display:block">${K.esc(saved.address)}</span></span></button>` : ''}
+      ${K.PLACES.map((p, i) => [p, i]).filter(([p]) => p.icon !== 'plane').slice(0, 6).map(([p, i]) => `<button class="lrow" data-h="${i}"><span class="ic">${K.ic('pin')}</span><span class="grow"><span class="t">${K.esc(p.name)}</span><span class="s">${K.esc(p.address || '')}</span></span></button>`).join('')}
+      <button class="lrow" data-h="map"><span class="ic">${K.ic('locate')}</span><span class="grow"><span class="t">Pick on the map</span><span class="s">Tap where you’re heading</span></span></button>`);
+    m.el.querySelectorAll('[data-h]').forEach((b) => b.onclick = () => {
+      const h = b.dataset.h;
+      m.close();
+      if (h === 'map') { S.pickHome = true; K.toast('Tap the map where you’re heading.', 5000); return; }
+      const p = h === 'saved' ? saved : K.PLACES[+h];
+      setHome({ lat: p.lat, lng: p.lng, address: h === 'saved' ? p.address : [p.name, p.address].filter(Boolean).join(', ') });
+    });
+  }
+  async function setHome(place) {
+    try {
+      const r = await K.api('/driver/home', { on: true, place });
+      S.ov.home = r.home; S.ov.homeUsesLeft = r.usesLeft;
+      K.toast(`Heading home to ${String(r.home.address).split(',')[0]}. You’ll only get trips going your way.`, 4500);
+      vHome();
+    } catch (e) { K.toast(e.message, 5000); }
+  }
 
   async function start() {
     root.innerHTML = '<div class="onb"></div>'; // the opening animation covers this moment
@@ -51,7 +175,10 @@
     sheet = K.$('#sheet');
     K.draggableSheet(sheet);
     map = K.map('map');
-    map.on('click', (e) => { if (S.manual) { const had = !!S.loc; setLoc(e.latlng.lat, e.latlng.lng); if (!had && S.tab === 'home' && !S.trip) render(); } });
+    map.on('click', (e) => {
+      if (S.pickHome) { S.pickHome = false; setHome({ lat: e.latlng.lat, lng: e.latlng.lng, address: 'Pinned place' }); return; }
+      if (S.manual) { const had = !!S.loc; setLoc(e.latlng.lat, e.latlng.lng); if (!had && S.tab === 'home' && !S.trip) render(); }
+    });
     root.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => openTab(b.dataset.tab));
 
     sock = K.socket(K.token());
@@ -68,9 +195,17 @@
     sock.on('chat:message', onChat);
     sock.on('driver:forced_offline', () => { S.online = false; render(); K.toast('You were taken offline by Flytte support.'); });
     sock.on('driver:status', () => location.reload());
+    sock.on('driver:home', (h) => { if (S.ov) S.ov.home = null; if (h && h.arrived) K.toast('You’re nearly home. Heading home is off.', 5000); if (!S.trip && S.tab === 'home') vHome(); });
+    // Tell the server when the app is on screen, so requests also ring as alerts when it isn't.
+    document.addEventListener('visibilitychange', () => { sock.emit('driver:visible', document.visibilityState === 'visible'); if (document.visibilityState === 'visible' && !S.trip) loadOverview(); });
+    const pay = new URLSearchParams(location.search).get('payment');
+    if (pay) {
+      history.replaceState(null, '', location.pathname);
+      setTimeout(() => K.toast(pay === 'success' ? 'Commission paid. Thank you!' : pay === 'pending' ? 'Payment is being confirmed. It shows here shortly.' : 'The payment didn’t go through. Try again.', 5000), 800);
+    }
 
     startGps();
-    await loadEarnings();
+    await Promise.all([loadEarnings(), loadOverview()]);
     const active = await K.api('/trips/active').catch(() => null);
     if (active) onTrip(active); else render();
   }
@@ -154,7 +289,7 @@
     if (!S.loc) { K.toast(S.gpsState === 'finding' ? 'Still finding your location…' : 'Set your position first: turn on location or tap the map.', 4000); return; }
     sock.emit('driver:online', true, (res) => {
       if (!res.ok) { K.toast(res.error); return; }
-      S.online = true; keepAwake(); render();
+      S.online = true; keepAwake(); render(); loadOverview();
     });
   }
   async function keepAwake() { try { wakeLock = await navigator.wakeLock.request('screen'); } catch {} }
@@ -181,6 +316,7 @@
     K.underTabs(sheet, !inTrip);
     topbar();
     sheet.classList.remove('sheet-enter'); void sheet.offsetWidth; sheet.classList.add('sheet-enter');
+    clearInterval(waitTimer);
     if (S.trip) (S.trip.status === 'completed' ? vDone : vTrip)();
     else vHome();
     if (S.offer) vOffer(); else { const r = K.$('#req'); if (r) r.remove(); }
@@ -211,6 +347,7 @@
       ${S.online ? '' : locHtml()}
       ${S.online ? `<div class="online-banner"><span class="pulse"></span><span class="grow">You’re online<br><span class="tiny" style="opacity:.7;font-weight:500">Ride requests near you will pop up here</span></span></div>` : ''}
       <div id="demand">${demandHtml()}</div>
+      <div id="tools">${toolsHtml()}</div>
       <button class="earn-card" id="earn"><span><small>Today’s earnings</small><b>${K.ugx(e.today.net)}</b></span>${K.ic('chev')}</button>
       <div class="stats3">
         <div><b>${e.today.trips}</b><span>Trips today</span></div>
@@ -226,12 +363,14 @@
     const on = K.$('#on'); if (on) on.onclick = () => setOnline(true);
     const off = K.$('#off'); if (off) off.onclick = () => setOnline(false);
     K.installCard(K.$('#installHost'), 'Flytte Driver', '/icons/flytte-driver-192.png');
+    bindTools(K.$('#tools'));
   }
 
   // Screen 18: new ride request
   function onOffer(o) {
-    if (S.trip && S.trip.status !== 'completed') return;
-    if (S.trip && S.trip.status === 'completed') S.trip = null;
+    const lineUp = o.queued && S.trip && S.trip.status === 'in_progress' && !S.next;
+    if (S.trip && S.trip.status !== 'completed' && !lineUp) return;
+    if (S.trip && S.trip.status === 'completed' && !lineUp) S.trip = null;
     S.offer = o; S.offer.left = o.expiresIn;
     openTab('home');
     try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400]); } catch {}
@@ -244,14 +383,36 @@
       const tx = K.$('#ringTx'); if (tx) tx.textContent = Math.max(0, S.offer.left);
       if (S.offer.left <= 0) closeOffer();
     }, 1000);
-    showTarget(o.pickup, 'pickup');
+    if (!o.queued) showTarget(o.pickup, 'pickup');
     render();
   }
   function closeOffer() { S.offer = null; clearInterval(offerTimer); clearTarget(); render(); }
 
+  // A small sketch of the trip: you → pickup (dashed) → destination (gold).
+  function routeSketch(o) {
+    const pts = [S.loc, o.pickup, o.drop].filter(Boolean);
+    const W = 300, H = 92, pad = 14;
+    const kx = Math.cos((o.pickup.lat * Math.PI) / 180);
+    const xs = pts.map((p) => p.lng * kx), ys = pts.map((p) => -p.lat);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const sc = Math.min((W - 2 * pad) / Math.max(maxX - minX, 1e-4), (H - 2 * pad) / Math.max(maxY - minY, 1e-4));
+    const ox = (W - (maxX - minX) * sc) / 2, oy = (H - (maxY - minY) * sc) / 2;
+    const P = (p) => [ox + (p.lng * kx - minX) * sc, oy + (-p.lat - minY) * sc].map((v) => v.toFixed(1));
+    const [px, py] = P(o.pickup), [dx, dy] = P(o.drop);
+    const you = S.loc ? P(S.loc) : null;
+    return `<svg class="route-sketch" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+      ${you ? `<line x1="${you[0]}" y1="${you[1]}" x2="${px}" y2="${py}" stroke="#8E8E93" stroke-width="2.5" stroke-dasharray="4 5" stroke-linecap="round"/>` : ''}
+      <line x1="${px}" y1="${py}" x2="${dx}" y2="${dy}" stroke="#F2B705" stroke-width="4" stroke-linecap="round"/>
+      ${you ? `<circle cx="${you[0]}" cy="${you[1]}" r="6" fill="#0A84FF" stroke="#fff" stroke-width="2.5"/>` : ''}
+      <circle cx="${px}" cy="${py}" r="6.5" fill="#fff" stroke="#141414" stroke-width="3"/>
+      <rect x="${(dx - 6).toFixed(1)}" y="${(dy - 6).toFixed(1)}" width="12" height="12" rx="2" fill="#141414"/></svg>`;
+  }
+
   function vOffer() {
     const o = S.offer;
     const pickMin = Math.max(1, Math.round((o.pickupKm * 1.3 / 20) * 60));
+    const totalMin = pickMin + Math.round(o.durationMin);
+    const perKm = Math.round(o.earning / Math.max(0.5, o.pickupKm + o.distanceKm) / 10) * 10;
     let el = K.$('#req');
     if (!el) { el = document.createElement('div'); el.id = 'req'; el.className = 'req'; el.setAttribute('role', 'alertdialog'); el.setAttribute('aria-label', 'New ride request'); root.querySelector('#app').appendChild(el); }
     el.innerHTML = `
@@ -259,7 +420,9 @@
         <text id="ringTx" x="27" y="33" text-anchor="middle" font-weight="800" font-size="17" fill="#fff">${o.left}</text></svg>
       <h2>New ${o.service === 'parcel' ? 'delivery' : 'ride'} request</h2>
       <div class="req-card">
-        <div class="away">${K.ic('nav')}<span class="grow">${pickMin} min away</span><span class="small muted" style="font-weight:600">${o.pickupKm} km</span></div>
+        ${o.queued ? `<div class="next-note">${K.ic('clock', 'sm')} Next trip · starts after you drop off your current ${customer(S.trip || o)}</div>` : ''}
+        ${routeSketch(o)}
+        <div class="away">${K.ic('nav')}<span class="grow">${pickMin} min to pickup</span><span class="small muted" style="font-weight:600">${o.pickupKm} km</span></div>
         <div class="row" style="margin:6px 0 2px"><span class="avatar" style="width:38px;height:38px;font-size:.8rem">${K.initials(o.rider.name)}</span>
           <span class="grow"><b>${K.esc(K.first(o.rider.name))}</b><br><span class="rating"><span class="star-ic">★</span><b>${o.rider.rating || 'New'}</b></span></span>
           <span class="badge" style="background:var(--ink);color:#fff">${K.esc(K.SERVICE_LABEL[o.service])}</span></div>
@@ -267,7 +430,8 @@
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(o.pickup.address)}</b></span></div>
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination · ${o.distanceKm.toFixed(1)} km, ${Math.round(o.durationMin)} min</small><b class="ellipsis">${K.esc(o.drop.address)}</b></span></div>
         </div>
-        <div class="est"><small>You earn</small><b>${K.ugx(o.earning)}</b>
+        <div class="est"><div class="est-row"><span><small>You earn</small><b>${K.ugx(o.earning)}</b></span>
+          <span class="est-side"><b>${totalMin} min</b><small>in total</small><b>${K.ugx(perKm)}</b><small>per km</small></span></div>
           <span class="small muted" style="display:block">${o.paymentMethod === 'cash' && o.discount ? `Collect ${K.ugx(o.payable)} cash · Flytte pays the ${K.ugx(o.discount)} discount` : `Fare ${K.ugx(o.fare)} · ${o.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[o.paymentMethod]}`}</span>
           ${o.bookedBy ? `<span class="small muted" style="display:block">Booked by ${K.esc(K.first(o.bookedBy))} for ${K.esc(o.rider.name)}</span>` : ''}</div>
       </div>
@@ -289,10 +453,21 @@
   }
 
   function onTrip(t) {
+    if (t.next) { S.next = t.next; delete t.next; }
+    // The lined-up next trip lives beside the current one until the current trip is finished.
+    const isNext = S.next && t.id === S.next.id;
+    if (isNext && (t.status === 'cancelled' || t.status === 'requested')) { S.next = null; K.toast(`Your next ${customer(t)} cancelled.`); render(); return; }
+    if (isNext || (S.trip && S.trip.status === 'in_progress' && t.id !== S.trip.id && t.status === 'accepted')) {
+      const fresh = !S.next || S.next.id !== t.id;
+      S.next = t; if (fresh) { if (S.offer && S.offer.id === t.id) { S.offer = null; clearInterval(offerTimer); } K.toast('Next trip lined up. Finish this one first.', 4000); }
+      render(); return;
+    }
     if (t.status === 'cancelled' || t.status === 'requested') {
       if (S.trip && S.trip.id === t.id) {
-        if (t.cancelledBy === 'rider') K.toast(`The ${customer(t)} cancelled this trip.`);
-        S.trip = null; routedFor = null; clearTarget(); render();
+        if (t.cancelReason === 'no_show') K.toast(t.noShowFee ? `Marked as a no-show. ${K.ugx(t.noShowFee)} was added to your balance.` : 'Marked as a no-show. You’re free for the next trip.', 5000);
+        else if (t.cancelledBy === 'rider') K.toast(`The ${customer(t)} cancelled this trip.`);
+        S.trip = S.next || null; S.next = null; routedFor = null; clearTarget(); render();
+        if (!S.trip) loadOverview();
       }
       return;
     }
@@ -319,7 +494,10 @@
 
   // Screen 19: active trip
   function vTrip() {
+    clearInterval(waitTimer);
     const t = S.trip, r = t.rider;
+    const nx = S.next;
+    const nextChip = nx ? `<div class="next-chip">${K.ic('clock', 'sm')}<span class="grow">Next: pickup at <b>${K.esc(String(nx.pickup.address).split(',')[0])}</b> after this trip</span></div>` : '';
     const toPickup = t.status !== 'in_progress';
     showTarget(toPickup ? t.pickup : t.drop, toPickup ? 'pickup' : 'drop');
     const parcel = t.parcel ? `<div class="card small" style="margin:10px 0">${K.ic('gift', 'sm')} <b>${K.esc(t.parcel.item)}</b><br>Deliver to ${K.esc(t.parcel.recipientName)} · <a href="tel:${K.esc(t.parcel.recipientPhone)}"><b>${K.esc(prettyPhone(t.parcel.recipientPhone))}</b></a></div>` : '';
@@ -330,7 +508,9 @@
           <span class="small muted" style="display:block">${K.esc(K.SERVICE_LABEL[t.service])} · ${t.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[t.paymentMethod]}${t.bookedBy ? ` · booked by ${K.esc(K.first(t.bookedBy))}` : ''}</span></span>
         ${r.phone ? `<a class="round go" href="tel:${K.esc(r.phone)}" aria-label="Call ${customer(t)}">${K.ic('phone')}</a>` : ''}
         <button class="round brand" id="chatBtn" aria-label="Message ${customer(t)}">${K.ic('msg')}${S.unread ? '<span class="dot"></span>' : ''}</button></div>
+      ${nextChip}
       ${parcel}
+      ${t.status === 'arrived' ? '<div class="wait-box" id="wait" role="timer" aria-live="off"></div>' : ''}
       <div class="stops">
         <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
@@ -361,7 +541,39 @@
     } });
     K.$('#chatBtn').onclick = openChat;
     K.$('#sos').onclick = safety;
+    if (t.status === 'arrived') {
+      // Free waiting time, then the driver may leave and mark a no-show.
+      const free = ((S.config.drivers && S.config.drivers.freeWaitMin) ?? 5) * 60;
+      const fee = (S.config.drivers && S.config.drivers.noShowFee) || 0;
+      const since = t.arrivedAt ? Date.parse(t.arrivedAt) : Date.now();
+      const tick = () => {
+        const box = K.$('#wait'); if (!box) return clearInterval(waitTimer);
+        const sec = Math.max(0, (Date.now() - since) / 1000);
+        const over = sec >= free;
+        const was = box.dataset.over === '1';
+        if (was && over) { const tt = K.$('#waitT', box); if (tt) tt.textContent = mmss(sec); return; }
+        box.dataset.over = over ? '1' : '0';
+        box.classList.toggle('over', over);
+        box.innerHTML = over
+          ? `<span class="grow"><b>Waited <span id="waitT">${mmss(sec)}</span></b><span>The free waiting time is over.${fee ? ` If the ${customer(t)} doesn’t come, you get ${K.ugx(fee)} when their wallet covers it.` : ''}</span></span><button class="btn btn-sm btn-danger-soft" id="noshow">${customer(t) === 'sender' ? 'Sender' : 'Customer'} didn’t come</button>`
+          : `<span class="grow"><b>Waiting <span id="waitT">${mmss(sec)}</span></b><span>Free waiting ends at ${mmss(free)}</span></span><span class="wait-ring" style="--p:${Math.min(1, sec / Math.max(1, free))}"></span>`;
+        if (!over) { const ring = box.querySelector('.wait-ring'); if (ring) ring.style.setProperty('--p', Math.min(1, sec / Math.max(1, free))); }
+        const ns = K.$('#noshow', box); if (ns) ns.onclick = noShow;
+      };
+      tick(); waitTimer = setInterval(() => { const box = K.$('#wait'); if (!box) return clearInterval(waitTimer); if (box.dataset.over !== '1') { box.dataset.over = ''; } tick(); }, 1000);
+    }
     const c = K.$('#cancel'); if (c) c.onclick = cancelTrip;
+  }
+
+  function noShow() {
+    const t = S.trip, fee = (S.config.drivers && S.config.drivers.noShowFee) || 0;
+    const m = K.modal(`<h2>Leave as a no-show?</h2><p class="muted">Only do this if you’ve tried calling or messaging the ${customer(t)}. The trip is cancelled${fee ? ` and you get ${K.ugx(fee)} if their wallet covers it` : ''}. It doesn’t count against your cancellation rate.</p>
+      <button class="btn btn-danger btn-block btn-lg" id="ns">Cancel as no-show</button><button class="btn btn-block" style="margin-top:8px" data-close>Keep waiting</button><p class="error" id="nerr"></p>`);
+    K.$('#ns', m.el).onclick = async (ev) => {
+      ev.currentTarget.disabled = true;
+      try { await K.api(`/trips/${t.id}/noshow`, {}); m.close(); }
+      catch (e) { ev.currentTarget.disabled = false; K.$('#nerr', m.el).textContent = e.message; }
+    };
   }
 
   async function step(action, body) {
@@ -371,10 +583,10 @@
   }
 
   function cancelTrip() {
-    const m = K.modal(`<h2>Cancel this trip?</h2><p class="muted">The ${customer(S.trip)} will be matched with someone else. Frequent cancellations lower your standing.</p>
+    const m = K.modal(`<h2>Cancel this trip?</h2><p class="muted">The ${customer(S.trip)} will be matched with someone else. Cancellations count towards your cancellation rate, shown on your profile.</p>
       <button class="btn btn-danger btn-block btn-lg" id="yes">Cancel trip</button><button class="btn btn-block" style="margin-top:8px" data-close>Keep trip</button>`);
     K.$('#yes', m.el).onclick = async () => {
-      try { await K.api(`/trips/${S.trip.id}/cancel`, {}); m.close(); S.trip = null; routedFor = null; clearTarget(); render(); } catch (e) { K.toast(e.message); }
+      try { await K.api(`/trips/${S.trip.id}/cancel`, {}); m.close(); S.trip = S.next || null; S.next = null; routedFor = null; clearTarget(); render(); } catch (e) { K.toast(e.message); }
     };
   }
 
@@ -382,7 +594,15 @@
     const m = K.modal(`<h2>Safety</h2><p class="muted">An emergency alert sends your location and this trip to the Flytte team. If you are in danger, call the police.</p>
       <button class="btn btn-danger btn-block btn-lg" id="sos">${K.ic('sos')} Send emergency alert</button>
       <a class="btn btn-block" href="tel:999" style="margin-top:8px">Call Police (999)</a>
+      ${S.trip.shareToken ? `<button class="btn btn-block" id="shareTrip" style="margin-top:8px">${K.ic('share', 'sm')} Share trip with family</button>` : ''}
       ${S.config.supportPhone ? `<a class="btn btn-block" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}" style="margin-top:8px">Call driver support</a>` : ''}`);
+    const sh = K.$('#shareTrip', m.el);
+    if (sh) sh.onclick = async () => {
+      const url = `${location.origin}/t/${S.trip.shareToken}`;
+      const text = `I’m driving a Flytte trip. Follow it live: ${url}`;
+      try { if (navigator.share) await navigator.share({ title: 'My Flytte trip', text, url }); else { await navigator.clipboard.writeText(url); K.toast('Trip link copied. Send it to someone you trust.'); } }
+      catch {}
+    };
     K.$('#sos', m.el).onclick = async (ev) => {
       const b = ev.currentTarget; b.disabled = true; b.textContent = 'Sending alert…';
       try {
@@ -412,14 +632,17 @@
         ${!t.driverRated ? `<h3>Rate ${K.esc(K.first(t.rider.name))}</h3>
           <div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" aria-label="${n} stars" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>` : ''}
       </div>
-      <div class="sheet-foot"><button class="btn btn-primary btn-block btn-lg" id="next">${S.online ? 'Find next trip' : 'Done'}</button></div>`;
+      <div class="sheet-foot"><button class="btn btn-primary btn-block btn-lg" id="next">${S.next ? 'Go to next pickup' : S.online ? 'Find next trip' : 'Done'}</button></div>`;
     sheet.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => {
       S.rating = +b.dataset.n;
       sheet.querySelectorAll('[data-n]').forEach((x) => x.classList.toggle('on', +x.dataset.n <= S.rating));
     });
     K.$('#next').onclick = async () => {
       if (S.rating && !t.driverRated) await K.api(`/trips/${t.id}/rate`, { stars: S.rating }).catch((e) => K.toast(`Rating not saved: ${e.message}`, 4000));
-      S.rating = 0; S.trip = null; routedFor = null; render();
+      S.rating = 0; routedFor = null;
+      if (S.next) { S.trip = S.next; S.next = null; S.messages = []; S.unread = 0; K.api(`/trips/${S.trip.id}/messages`).then((m) => { S.messages = m; }).catch(() => {}); }
+      else S.trip = null;
+      render(); if (!S.trip) loadOverview();
     };
   }
 
@@ -521,11 +744,14 @@
       <div class="kv"><span>Cash collected</span><b>${K.ugx(e.cashWeek)}</b></div>
       <div class="kv"><span>Flytte commission</span><b>−${K.ugx(e.commissionWeek)}</b></div>
       <div class="card" style="margin-top:16px"><span class="small muted">Balance you can cash out</span><div class="money">${K.ugx(e.balance)}</div>
-        ${e.balance < 0 ? '<p class="small" style="margin:6px 0 0">Negative because commission on cash trips is taken here. It clears from your next Mobile Money or wallet trips.</p>' : ''}
+        ${e.balance < 0 ? `<p class="small" style="margin:6px 0 0">Negative because commission on cash trips is taken here. It clears from your next Mobile Money or wallet trips${S.config.paymentsAvailable ? ', or pay it now' : ''}.</p>${S.config.paymentsAvailable ? '<button class="btn btn-dark btn-sm" id="payd" style="margin-top:8px">Pay commission by Mobile Money</button>' : ''}` : ''}
         <label for="wamt">Cash out to ${K.esc(prettyPhone(e.momoNumber))}</label>
         <div class="row"><input id="wamt" class="fill" type="number" inputmode="numeric" min="${S.config.minWithdrawal}" value="${Math.max(0, e.balance)}"><button class="btn btn-primary" id="wd">Cash out</button></div>
         <p class="error" id="err"></p></div>
       ${e.withdrawals.length ? `<h3 style="margin-top:18px">Cash outs</h3>${e.withdrawals.map((w) => `<div class="tx"><span>${K.when(w.created_at)}</span><span>${K.ugx(w.amount)} <span class="badge ${w.status === 'paid' ? 'ok' : w.status === 'rejected' ? 'bad' : 'warn'}">${w.status}</span></span></div>`).join('')}` : ''}
+      <h3 style="margin-top:18px">Trips</h3>
+      <div class="seg-tabs" id="tr"><button aria-pressed="true" data-d="1">Today</button><button aria-pressed="false" data-d="7">7 days</button><button aria-pressed="false" data-d="30">30 days</button></div>
+      <div id="tlist">${K.skeleton('list', 2)}</div>
       <h3 style="margin-top:18px">Activity</h3>
       ${e.transactions.length ? e.transactions.map((x) => `<div class="tx"><span>${K.esc(x.note || x.type)}<br><span class="tiny faint">${K.when(x.created_at)}</span></span><span class="${x.amount > 0 ? 'pos' : 'neg'}">${x.amount > 0 ? '+' : ''}${K.ugx(x.amount)}</span></div>`).join('') : '<p class="small muted">Complete your first trip to see earnings here.</p>'}`;
     const range = (r) => {
@@ -539,6 +765,65 @@
       try { await K.api('/driver/withdraw', { amount: +K.$('#wamt', el).value }); K.toast('Cash out requested'); drawEarnings(el); }
       catch (err) { K.$('#err', el).textContent = err.message; }
     };
+    const pd = K.$('#payd', el); if (pd) pd.onclick = async () => { if (!S.ov) await loadOverview(); if (S.ov) payDebt(); };
+    el.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { el.querySelectorAll('[data-d]').forEach((x) => x.setAttribute('aria-pressed', x === b)); drawTrips(K.$('#tlist', el), +b.dataset.d); });
+    drawTrips(K.$('#tlist', el), 1);
+  }
+
+  // Trip-by-trip breakdown, plus a statement the driver can save or print.
+  const PERIOD = { 1: 'Today', 7: 'Last 7 days', 30: 'Last 30 days' };
+  async function drawTrips(host, days) {
+    host.innerHTML = K.skeleton('list', 2);
+    let d;
+    try { d = await K.api(`/driver/trips?days=${days}`); }
+    catch (e) { host.innerHTML = `<div class="state-box" role="alert"><b>Couldn’t load trips</b><span>${K.esc(e.message)}</span></div>`; return; }
+    if (!host.isConnected) return;
+    const tt = d.totals;
+    host.innerHTML = `
+      <div class="sum-grid">
+        <div><span>Trips</span><b>${tt.trips}</b></div><div><span>Fares</span><b>${K.ugx(tt.fare)}</b></div>
+        <div><span>Commission</span><b>−${K.ugx(tt.commission)}</b></div><div><span>Tips, fees & bonuses</span><b>${K.ugx(tt.tips + tt.noShowFees + tt.bonuses)}</b></div>
+        <div class="wide"><span>You earned</span><b>${K.ugx(tt.earning)}</b></div></div>
+      ${d.trips.length ? d.trips.map((t) => `<div class="trip-line">
+          <div class="tl-top"><b class="ellipsis">${t.noShow ? 'No-show fee' : `${K.esc(String(t.from).split(',')[0])} → ${K.esc(String(t.to).split(',')[0])}`}</b><b>${K.ugx(t.earning)}</b></div>
+          <div class="tl-sub"><span>${K.when(t.at)} · ${K.SERVICE_LABEL[t.service] || ''}${t.noShow ? '' : ` · ${K.PAY_LABEL[t.method] || t.method}`}</span>
+            ${t.noShow ? '' : `<span>Fare ${K.ugx(t.fare)} · commission −${K.ugx(t.commission)}${t.discount ? ` · discount covered ${K.ugx(t.discount)}` : ''}${t.tip ? ` · tip ${K.ugx(t.tip)}${t.tipMethod === 'cash' ? ' cash' : ''}` : ''}</span>`}</div></div>`).join('')
+        : '<p class="small muted">No trips in this period yet.</p>'}
+      ${d.bonuses.map((b) => `<div class="trip-line"><div class="tl-top"><b>${K.esc(b.note)}</b><b>${K.ugx(b.amount)}</b></div><div class="tl-sub"><span>${K.when(b.created_at)}</span></div></div>`).join('')}
+      <div class="row" style="margin-top:12px;gap:8px">
+        <button class="btn btn-outline btn-sm fill" id="stmt">${K.ic('receipt', 'sm')} Statement</button>
+        <button class="btn btn-outline btn-sm fill" id="csv">${K.ic('list', 'sm')} Download CSV</button></div>`;
+    K.$('#csv', host).onclick = () => downloadCsv(d);
+    K.$('#stmt', host).onclick = () => statement(d);
+  }
+  function downloadCsv(d) {
+    const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const rows = [['Date', 'Trip', 'Service', 'Payment', 'From', 'To', 'Fare (UGX)', 'Commission (UGX)', 'Discount covered (UGX)', 'Tip (UGX)', 'No-show fee (UGX)', 'You earned (UGX)']];
+    for (const t of d.trips) rows.push([new Date(t.at).toISOString().slice(0, 16).replace('T', ' '), t.id, t.service, t.noShow ? 'no-show' : t.method, t.from, t.to, t.fare, t.commission, t.discount, t.tip, t.noShowFee, t.earning]);
+    for (const b of d.bonuses) rows.push([new Date(b.created_at).toISOString().slice(0, 16).replace('T', ' '), '', 'bonus', '', b.note, '', '', '', '', '', '', b.amount]);
+    const csv = rows.map((r) => r.map(q).join(',')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' }));
+    a.download = `flytte-earnings-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function statement(d) {
+    const tt = d.totals, from = new Date(d.since), to = new Date();
+    const fmt = (x) => x.toLocaleDateString('en-UG', { day: 'numeric', month: 'short', year: 'numeric' });
+    const page = document.createElement('div');
+    page.className = 'page push-in statement'; page.style.zIndex = 870;
+    page.innerHTML = `<div class="page-inner">
+      <div class="page-head no-print"><button class="btn icon-btn btn-ghost" data-x aria-label="Back">${K.ic('back')}</button><h2>Statement</h2></div>
+      <div class="st-head"><div><b class="st-brand">Flytte Driver</b><span>Earnings statement</span></div><div class="st-right"><b>${K.esc(S.user.name)}</b><span>${K.esc(prettyPhone(S.user.phone))} · ${K.esc(S.driver.plate)}</span><span>${fmt(from)} – ${fmt(to)}</span></div></div>
+      <table class="st-table"><thead><tr><th>Date</th><th>Trip</th><th class="n">Fare</th><th class="n">Commission</th><th class="n">Earned</th></tr></thead><tbody>
+        ${d.trips.map((t) => `<tr><td>${new Date(t.at).toLocaleDateString('en-UG', { day: 'numeric', month: 'short' })}</td><td>${t.noShow ? 'No-show fee' : `${K.esc(String(t.from).split(',')[0])} → ${K.esc(String(t.to).split(',')[0])}<br><small>${K.SERVICE_LABEL[t.service] || ''} · ${K.PAY_LABEL[t.method] || t.method}${t.tip ? ` · tip ${K.ugx(t.tip)}` : ''}</small>`}</td><td class="n">${t.noShow ? '' : K.ugx(t.fare)}</td><td class="n">${t.noShow ? '' : '−' + K.ugx(t.commission)}</td><td class="n">${K.ugx(t.earning)}</td></tr>`).join('')}
+        ${d.bonuses.map((b) => `<tr><td>${new Date(b.created_at).toLocaleDateString('en-UG', { day: 'numeric', month: 'short' })}</td><td>${K.esc(b.note)}</td><td></td><td></td><td class="n">${K.ugx(b.amount)}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td colspan="2">${tt.trips} trip${tt.trips === 1 ? "" : "s"}</td><td class="n">${K.ugx(tt.fare)}</td><td class="n">−${K.ugx(tt.commission)}</td><td class="n">${K.ugx(tt.earning)}</td></tr></tfoot></table>
+      <p class="tiny muted">Cash fares were collected by you; commission on them is taken from your Flytte balance. Discounts are paid by Flytte and added to your balance.</p>
+      <button class="btn btn-primary btn-block no-print" id="print">${K.ic('receipt', 'sm')} Save as PDF or print</button></div>`;
+    root.querySelector('#app').appendChild(page);
+    K.$('[data-x]', page).onclick = () => K.pop(page);
+    K.$('#print', page).onclick = () => window.print();
   }
 
   function drawProfile(el) {
@@ -552,8 +837,10 @@
       <div class="card row" style="margin-bottom:8px"><span style="width:84px;height:52px;flex:none">${K.artFor(null, d.vehicleType)}</span>
         <span class="grow"><b>${K.esc([d.vehicleColor, d.vehicleMake].filter(Boolean).join(' ') || (d.vehicleType === 'car' ? 'Car' : 'Boda boda'))}</b><br><span class="plate-chip">${K.esc(d.plate)}</span></span>
         <span class="rating"><span class="star-ic">★</span><b>${S.user.rating || 'New'}</b></span></div>
+      ${statsHtml()}
       <button class="menu-item" data-a="trips"><span class="ic">${K.ic('receipt')}</span><span class="grow">Trip history</span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="docs"><span class="ic">${K.ic('idcard')}</span><span class="grow">Documents<br><span class="small muted">ID, driving permit, vehicle, photo</span></span>${K.ic('chev', 'sm')}</button>
+      <button class="menu-item" data-a="docs"><span class="ic">${K.ic('idcard')}</span><span class="grow">Documents<br><span class="small muted">${S.ov && S.ov.docs && S.ov.docs.length ? `<span style="color:var(--stop)">${S.ov.docs.length} need${S.ov.docs.length === 1 ? 's' : ''} attention</span>` : 'ID, driving permit, insurance, vehicle, photo'}</span></span>${K.ic('chev', 'sm')}</button>
+      <button class="menu-item" data-a="alerts"><span class="ic">${K.ic('bell')}</span><span class="grow">Ride alerts<br><span class="small muted">${S.ov && S.ov.push ? 'On · requests ring when your phone is locked' : pushSupported() ? 'Off · turn on to get requests when your phone is locked' : isIOS && !K.standalone() ? 'Add the app to your Home Screen to use them' : 'Not available in this browser'}</span></span>${S.ov && S.ov.push ? '<span class="badge ok">On</span>' : K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="manual"><span class="ic">${K.ic('pin')}</span><span class="grow">${S.manual ? 'Use phone GPS' : 'Set position on map'}<br><span class="small muted">For testing without GPS</span></span></button>
       ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Driver support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
       <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
@@ -565,14 +852,67 @@
     };
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => ({
       trips: openTrips,
-      docs: () => {
-        const host = document.createElement('div'); host.className = 'page push-in'; host.style.zIndex = 870; host.style.padding = 0;
-        root.querySelector('#app').appendChild(host);
-        K.verifyDocs(host, { onDone: () => K.pop(host), back: () => K.pop(host) });
-      },
+      docs: openDocs,
+      alerts: async () => { if (S.ov && S.ov.push) await disablePush(); else await enablePush(false); await loadOverview(); drawProfile(el); },
       manual: () => { if (S.manual) { S.manual = false; startGps(); } else { S.manual = true; navigator.geolocation && navigator.geolocation.clearWatch(watchId); K.toast('Tap the map to move your position.'); } openTab('home'); },
       out: () => { if (S.online) setOnline(false); K.session.clear(); location.reload(); },
     })[b.dataset.a]());
+  }
+
+  function statsHtml() {
+    const st = S.ov && S.ov.stats;
+    if (!st) return '';
+    const pct = (v) => (v == null ? '–' : v + '%');
+    return `<div class="card stats-card"><div class="stats3">
+        <div><b>${pct(st.acceptanceRate)}</b><span>Acceptance</span></div>
+        <div><b>${pct(st.cancellationRate)}</b><span>Cancellation</span></div>
+        <div><b>${st.offers}</b><span>Requests</span></div></div>
+      <p class="tiny muted" style="margin:8px 0 0">Last ${st.days} days. Missed requests count as not accepted. No-shows don’t count as cancellations.</p></div>`;
+  }
+
+  // Documents: replace a photo or set the expiry date on the ones that run out.
+  async function openDocs() {
+    const page = document.createElement('div');
+    page.className = 'page push-in grouped nav-large'; page.style.zIndex = 870;
+    page.innerHTML = `<div class="page-inner"><div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Back">${K.ic('back')}</button><h2 aria-hidden="true">Documents</h2></div><h1 class="page-title">Documents</h1><div data-body>${K.skeleton('list', 4)}</div></div>`;
+    root.querySelector('#app').appendChild(page);
+    K.$('[data-x]', page).onclick = () => K.pop(page, () => { loadOverview(); if (S.tab === 'profile') openTab('profile'); });
+    const body = K.$('[data-body]', page);
+    const draw = async () => {
+      let info;
+      try { info = await K.api('/driver/documents'); }
+      catch (e) { body.innerHTML = `<div class="state-box" role="alert"><b>Couldn’t load your documents</b><span>${K.esc(e.message)}</span></div>`; return; }
+      const all = { ...info.kinds, ...info.optional };
+      const alerts = Object.fromEntries(((S.ov && S.ov.docs) || []).map((d) => [d.kind, d]));
+      body.innerHTML = `${Object.entries(all).map(([k, label]) => {
+          const up = info.uploaded[k], exp = info.expires && info.expires[k], al = alerts[k];
+          const expiring = info.expiring.includes(k);
+          return `<div class="doc-row ${al ? (al.expired ? 'bad' : 'warn') : ''}">
+            <div class="dr-top"><span class="grow"><b>${K.esc(label)}${info.optional[k] ? ' <span class="tiny muted">optional</span>' : ''}</b>
+              <span class="small muted">${up ? `Uploaded ${K.when(up)}` : 'Not uploaded'}${al ? ` · <b style="color:${al.expired ? 'var(--stop)' : '#8A5200'}">${al.expired ? 'Expired' : `Expires in ${al.days} day${al.days === 1 ? '' : 's'}`}</b>` : ''}</span></span>
+              <label class="btn btn-sm btn-outline">${up ? 'Replace' : 'Upload'}<input type="file" accept="image/*" data-k="${k}" hidden ${k === 'photo' ? 'capture="user"' : 'capture="environment"'}></label></div>
+            ${expiring ? `<div class="dr-exp"><label for="e-${k}">Expiry date</label><div class="row"><input type="date" id="e-${k}" value="${exp || ''}" class="fill"><button class="btn btn-sm" data-save="${k}" ${up ? '' : 'disabled'}>Save</button></div></div>` : ''}
+          </div>`;
+        }).join('')}
+        <p class="error" id="derr"></p>
+        <p class="small muted" style="padding:0 16px">We remind you on your home screen before your driving permit or insurance runs out. Keep them current to stay on the road.</p>`;
+      body.querySelectorAll('input[type=file]').forEach((inp) => inp.onchange = async () => {
+        const f = inp.files[0]; if (!f) return;
+        const lbl = inp.parentElement; lbl.firstChild.textContent = 'Uploading…';
+        const k = inp.dataset.k, e = K.$(`#e-${k}`, body);
+        try {
+          await K.api('/driver/documents', { kind: k, image: await K.compressImage(f, k === 'photo' ? 800 : 1400), expiresOn: e && e.value ? e.value : undefined }, 'POST', { timeout: 90000 });
+          if (k === 'photo') { S.hasPhoto = true; K.api('/driver/photo').then((r) => { S.photoData = r.url; topbar(); }).catch(() => {}); }
+          K.toast('Uploaded'); await loadOverview(); draw();
+        } catch (ex) { K.$('#derr', body).textContent = ex.message; lbl.firstChild.textContent = 'Try again'; }
+      });
+      body.querySelectorAll('[data-save]').forEach((b) => b.onclick = async () => {
+        const k = b.dataset.save, v = K.$(`#e-${k}`, body).value;
+        try { await K.api('/driver/documents/expiry', { kind: k, expiresOn: v }); K.toast('Expiry date saved'); await loadOverview(); draw(); }
+        catch (ex) { K.$('#derr', body).textContent = ex.message; }
+      });
+    };
+    draw();
   }
 
   async function openTrips() {

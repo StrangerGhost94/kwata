@@ -34,6 +34,21 @@ Open the Railway link in Chrome on Android: Flytte shows an **Install** card on 
 
 When you release changes to the app, bump `VERSION` at the top of `public/sw.js` so phones pick up the new version right away.
 
+## Driver tools
+
+Set in **Admin → Driver rules**:
+
+- **Free waiting and no-show fee.** After the free waiting time the driver can leave as a no-show; the fee goes to the driver from the rider's wallet when it covers it. Defaults: 5 minutes, UGX 2,000.
+- **Cash commission limit.** Commission on cash trips is taken from the driver's balance. When a driver owes more than the limit, they stop getting cash trips (Mobile Money and wallet trips continue) until they pay it from the app by Mobile Money. Default: UGX 30,000.
+- **Heading home.** A driver picks a place and only gets trips that take them closer, up to N times a day. Default: 2.
+- **Next trip lined up.** A request close to where the current trip ends can be offered just before drop-off.
+- **Bonuses.** Trip targets per day or week; Flytte pays the reward into the driver's balance when it's reached. None are switched on until you add them.
+- **Document reminders** before a driving permit or insurance expires. Default: 14 days.
+
+**Ride alerts:** drivers who turn them on get requests on a locked phone (Web Push). On iPhone this needs iOS 16.4+ and the app added to the Home Screen. A driver with alerts on stays online for 15 minutes after the app goes to the background.
+
+Acceptance and cancellation rates (last 30 days) show on the driver's profile and in Admin → Drivers.
+
 ## Run it on your Mac
 
 ```bash

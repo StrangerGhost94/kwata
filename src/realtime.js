@@ -6,6 +6,8 @@ const anonId = (id) => crypto.createHash('sha1').update(SALT + id).digest('hex')
 const db = require('./db');
 const auth = require('./auth');
 const { getSettings, haversineKm } = require('./pricing');
+const dtools = require('./drivers');
+const AWAY_MS = 15 * 60e3; // a locked phone with ride alerts stays online this long
 
 let io;
 const drivers = new Map(); // userId -> live state
@@ -44,7 +46,8 @@ function view(t, role) {
     fare: t.fare, paymentMethod: t.payment_method, paymentStatus: t.payment_status,
     parcel: t.parcel ? JSON.parse(t.parcel) : null, notes: t.notes,
     createdAt: t.created_at, acceptedAt: t.accepted_at, startedAt: t.started_at, completedAt: t.completed_at,
-    cancelledBy: t.cancelled_by,
+    cancelledBy: t.cancelled_by, cancelReason: t.cancel_reason === 'no_show' ? 'no_show' : undefined, noShowFee: t.no_show_fee || 0,
+    arrivedAt: t.arrived_at || null,
     discount: t.discount || 0, payable: t.fare - (t.discount || 0), promoLabel: t.promo_label || null,
     tip: t.tip || 0, tipMethod: t.tip_method || null,
     scheduledFor: t.scheduled_for || null,
@@ -59,7 +62,7 @@ function view(t, role) {
   if (role === 'public') {
     v.rider = { name: (t.rider_name || '').split(' ')[0] };
     delete v.fare; delete v.paymentMethod; delete v.paymentStatus; delete v.parcel; delete v.notes;
-    delete v.discount; delete v.payable; delete v.promoLabel; delete v.tip; delete v.tipMethod;
+    delete v.discount; delete v.payable; delete v.promoLabel; delete v.tip; delete v.tipMethod; delete v.noShowFee;
     if (v.passenger) v.rider = { name: String(v.passenger.name).split(' ')[0] };
     delete v.passenger;
     if (v.driver) v.driver = { name: t.driver_name, plate: t.plate, vehicle: v.driver.vehicle, vehicleType: t.vehicle_type, photo: v.driver.photo, location: v.driver.location };
@@ -75,6 +78,7 @@ function view(t, role) {
   }
   if (role === 'driver') {
     v.commission = t.commission; v.earning = t.fare - t.commission; v.driverRated = t.driver_rating != null;
+    v.shareToken = t.share_token; // drivers can share their trip with family too
     if (live2) v.rider.phone = t.rider_phone;
     // Booked for someone else: the driver meets and calls the passenger.
     if (v.passenger) { v.bookedBy = v.rider.name; v.rider = { ...v.rider, name: v.passenger.name, phone: live2 ? v.passenger.phone : undefined }; }
@@ -91,6 +95,8 @@ async function broadcast(tripId) {
   const t = await loadTrip(tripId);
   if (!t) return null;
   if (['completed', 'cancelled', 'no_drivers'].includes(t.status)) setTimeout(() => chats.delete(t.id), 10 * 60e3);
+  const ld = t.driver_id && drivers.get(t.driver_id);
+  if (ld && ld.tripId === t.id) { ld.tripStatus = t.status; ld.drop = { lat: t.drop_lat, lng: t.drop_lng }; }
   io.to(`user:${t.rider_id}`).emit('trip:update', view(t, 'rider'));
   if (t.driver_id) io.to(`user:${t.driver_id}`).emit('trip:update', view(t, 'driver'));
   io.to(`share:${t.id}`).emit('trip:update', view(t, 'public'));
@@ -106,15 +112,40 @@ function notify(userId, event, payload) {
 async function candidates(trip, tried) {
   const s = await getSettings();
   const pickup = { lat: trip.pickup_lat, lng: trip.pickup_lng };
+  const drop = { lat: trip.drop_lat, lng: trip.drop_lng };
   const list = [];
   for (const [id, d] of drivers) {
-    if (!d.online || d.busy || !d.lat || tried.has(id) || id === trip.rider_id) continue;
+    if (!d.online || !d.lat || tried.has(id) || id === trip.rider_id) continue;
     if (!d.services.includes(trip.service)) continue;
-    if (!io.sockets.adapter.rooms.get(`user:${id}`)) continue; // not connected
-    const km = haversineKm(pickup, d);
-    if (km <= s.dispatchRadiusKm) list.push({ id, km });
+    const connected = !!io.sockets.adapter.rooms.get(`user:${id}`);
+    // Phone locked or app in the background: still reachable through a ride alert, for a while.
+    const reachable = connected || (d.away && d.push && d.updatedAt && Date.now() - d.updatedAt < AWAY_MS);
+    if (!reachable) continue;
+    let km = haversineKm(pickup, d), queued = false;
+    if (d.busy) {
+      // Next trip lined up: only when the current trip is nearly over and ends near this pickup.
+      if (!s.drivers.queueNext || d.queuedTripId || d.tripStatus !== 'in_progress' || !d.drop) continue;
+      const left = haversineKm(d, d.drop), gap = haversineKm(d.drop, pickup);
+      if (left > 2 || gap > 2) continue;
+      km = left + gap; queued = true;
+    }
+    if (km > s.dispatchRadiusKm) continue;
+    if (d.home) {
+      // Heading home: the trip must take the driver closer to home, without a big detour to the pickup.
+      const now = haversineKm(d, d.home);
+      if (!(haversineKm(drop, d.home) <= now - 1 && haversineKm(pickup, d.home) <= now + 2)) continue;
+    }
+    list.push({ id, km, queued, away: !connected || d.visible === false });
   }
-  return list.sort((a, b) => a.km - b.km);
+  // Commission owed on cash trips: past the limit, a driver gets no new cash trips until they pay.
+  if (trip.payment_method === 'cash' && s.drivers.cashDebtLimit > 0 && list.length) {
+    const ids = list.map((x) => x.id);
+    const { rows } = await db.query(`SELECT user_id, earnings_balance FROM drivers WHERE user_id IN (${ids.map((_, i) => '$' + (i + 1)).join(',')})`, ids);
+    const owing = new Set(rows.filter((r) => r.earnings_balance <= -s.drivers.cashDebtLimit).map((r) => r.user_id));
+    for (let i = list.length - 1; i >= 0; i--) if (owing.has(list[i].id)) list.splice(i, 1);
+  }
+  // Free drivers first, then by distance.
+  return list.sort((a, b) => (a.queued - b.queued) || (a.km - b.km));
 }
 
 async function dispatch(tripId, excludeDriverId) {
@@ -148,14 +179,27 @@ async function dispatch(tripId, excludeDriverId) {
   state.tried.add(next.id);
   state.current = next.id;
   const full = await loadTrip(tripId);
-  const offer = { ...view(full, 'driver'), pickupKm: Math.round(next.km * 10) / 10, expiresIn: s.offerTimeoutSec };
+  // A driver reached through a ride alert needs a little longer to unlock the phone.
+  const secs = next.away ? Math.max(s.offerTimeoutSec, 40) : s.offerTimeoutSec;
+  const offer = { ...view(full, 'driver'), pickupKm: Math.round(next.km * 10) / 10, expiresIn: secs, queued: next.queued };
   offer.earning = full.fare - Math.round((full.fare * s.commissionPct) / 100);
   delete offer.rider.phone;
+  state.offer = offer; state.expiresAt = Date.now() + secs * 1000;
   notify(next.id, 'trip:offer', offer);
+  const d = drivers.get(next.id);
+  if (d && d.push && next.away) {
+    const what = full.service === 'parcel' ? 'delivery' : 'ride';
+    dtools.push(next.id, {
+      type: 'offer', tripId, tag: `offer-${tripId}`,
+      title: `New ${what} request · UGX ${offer.earning.toLocaleString()}`,
+      body: `${offer.pickupKm} km away · ${String(full.pickup_address || 'Pickup').split(',')[0]} → ${String(full.drop_address || 'Destination').split(',')[0]}. Open within ${secs} seconds.`,
+    }, { ttl: secs }).catch(() => {});
+  }
   state.timer = setTimeout(() => {
     notify(next.id, 'trip:offer_expired', { id: tripId });
+    dtools.logEvent(next.id, tripId, 'offer_missed');
     dispatch(tripId).catch(console.error);
-  }, s.offerTimeoutSec * 1000);
+  }, secs * 1000);
 }
 
 function clearOffer(tripId) {
@@ -171,6 +215,7 @@ async function respond(driverId, tripId, accept) {
   const st = offers.get(tripId);
   if (!st || st.current !== driverId) return { ok: false, error: 'This request is no longer available.' };
   clearTimeout(st.timer);
+  dtools.logEvent(driverId, tripId, accept ? 'offer_accepted' : 'offer_declined');
   if (!accept) { dispatch(tripId).catch(console.error); return { ok: true }; }
 
   const row = await db.one(
@@ -182,14 +227,22 @@ async function respond(driverId, tripId, accept) {
   io.in(`user:${row.rider_id}`).socketsJoin(`trip:${tripId}`);
   io.in(`user:${driverId}`).socketsJoin(`trip:${tripId}`);
   const d = drivers.get(driverId);
-  if (d) { d.busy = true; d.tripId = tripId; }
+  if (d) {
+    if (d.busy && d.tripId && d.tripId !== tripId) d.queuedTripId = tripId; // lined up after the current trip
+    else { d.busy = true; d.tripId = tripId; d.tripStatus = 'accepted'; }
+  }
   await broadcast(tripId);
   return { ok: true };
 }
 
-function setDriverFree(driverId) {
+// A trip ended or was cancelled. If it was the lined-up next trip, only that is cleared;
+// if it was the current trip, the lined-up one (if any) becomes current.
+function setDriverFree(driverId, tripId) {
   const d = drivers.get(driverId);
-  if (d) { d.busy = false; d.tripId = null; }
+  if (!d) return;
+  if (tripId && d.queuedTripId === tripId) { d.queuedTripId = null; return; }
+  if (d.queuedTripId) { d.tripId = d.queuedTripId; d.queuedTripId = null; d.busy = true; d.tripStatus = 'accepted'; d.drop = null; return; }
+  d.busy = false; d.tripId = null; d.tripStatus = null; d.drop = null;
 }
 
 // ---------- Socket server ----------
@@ -240,11 +293,12 @@ function init(server) {
     if (u.role === 'admin') socket.join('admin');
 
     // Re-join an active trip after reconnecting
-    const active = await db.one(
-      `SELECT id FROM trips WHERE (rider_id = $1 OR driver_id = $1) AND status = ANY($2) ORDER BY id DESC LIMIT 1`,
+    const { rows: actives } = await db.query(
+      `SELECT id, status FROM trips WHERE (rider_id = $1 OR driver_id = $1) AND status = ANY($2) ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'arrived' THEN 1 ELSE 2 END, id`,
       [u.id, ACTIVE]
     );
-    if (active) socket.join(`trip:${active.id}`);
+    for (const a of actives) socket.join(`trip:${a.id}`);
+    const active = actives[0] || null;
 
     if (u.role === 'driver') {
       const dv = await db.one('SELECT * FROM drivers WHERE user_id = $1', [u.id]);
@@ -254,7 +308,16 @@ function init(server) {
       const d = drivers.get(u.id);
       d.services = dv ? dv.services.split(',') : [];
       d.name = u.name; d.plate = dv && dv.plate; d.vehicle = dv && dv.vehicle_type;
-      if (active) { d.busy = true; d.tripId = active.id; }
+      if (active) { d.busy = true; d.tripId = active.id; d.tripStatus = active.status; d.queuedTripId = actives[1] ? actives[1].id : null; }
+      d.away = false; d.visible = true; clearTimeout(d.awayTimer);
+      dtools.hasPush(u.id).then((v) => { d.push = v; }).catch(() => {});
+      // Came back from a ride alert: show the request that is still waiting for this driver.
+      for (const [tid, st] of offers) {
+        if (st.current === u.id && st.offer && st.expiresAt > Date.now() + 2000) {
+          socket.emit('trip:offer', { ...st.offer, expiresIn: Math.floor((st.expiresAt - Date.now()) / 1000) });
+        }
+      }
+      socket.on('driver:visible', (v) => { d.visible = !!v; });
 
       socket.on('driver:online', async (on, cb) => {
         const fresh = await db.one('SELECT status FROM drivers WHERE user_id = $1', [u.id]);
@@ -263,6 +326,7 @@ function init(server) {
         }
         if (on && !d.lat) return cb && cb({ ok: false, error: 'We need your position before you can go online.' });
         d.online = !!on;
+        if (!d.online) d.home = null;
         cb && cb({ ok: true, online: d.online });
         // pick up any riders already waiting nearby
         if (d.online) {
@@ -279,6 +343,8 @@ function init(server) {
         if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return;
         d.lat = lat; d.lng = lng; d.heading = Number(loc.heading) || null; d.updatedAt = Date.now();
         if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
+        if (d.queuedTripId) io.to(`trip:${d.queuedTripId}`).emit('driver:location', { tripId: d.queuedTripId, lat, lng, heading: d.heading });
+        if (d.home && haversineKm(d, d.home) < 0.8) { d.home = null; notify(u.id, 'driver:home', { on: false, arrived: true }); }
       });
 
       socket.on('trip:respond', async ({ tripId, accept } = {}, cb) => {
@@ -291,7 +357,17 @@ function init(server) {
 
       socket.on('disconnect', async () => {
         const still = io.sockets.adapter.rooms.get(`user:${u.id}`);
-        if (!still) d.online = false; // all tabs closed
+        if (still) return;
+        if (d.online && d.push) {
+          // Locked phone or app in the background: stay online and reachable by ride alerts for a while.
+          d.away = true; d.awaySince = Date.now();
+          clearTimeout(d.awayTimer);
+          d.awayTimer = setTimeout(() => {
+            if (!d.away || io.sockets.adapter.rooms.get(`user:${u.id}`)) return;
+            d.online = false; d.away = false; d.home = null;
+            dtools.push(u.id, { type: 'offline', tag: 'offline', title: 'You’re offline now', body: 'Flytte set you offline after 15 minutes away. Open the app to go online again.' }, { ttl: 3600, urgency: 'normal' }).catch(() => {});
+          }, AWAY_MS);
+        } else d.online = false; // all tabs closed and no ride alerts
       });
     }
   });
@@ -327,15 +403,25 @@ function updateDriverServices(driverId, services) {
   if (d) d.services = services;
 }
 
+function setHome(driverId, place) {
+  const d = drivers.get(driverId);
+  if (d) d.home = place ? { lat: place.lat, lng: place.lng, address: place.address } : null;
+}
+function driverState(driverId) {
+  const d = drivers.get(driverId);
+  return d ? { online: d.online, home: d.home || null, push: !!d.push } : { online: false, home: null, push: false };
+}
+function markPush(driverId, on) { const d = drivers.get(driverId); if (d) d.push = !!on; }
+
 function forceOffline(driverId) {
   const d = drivers.get(driverId);
-  if (d) d.online = false;
+  if (d) { d.online = false; d.home = null; }
   notify(driverId, 'driver:forced_offline', {});
 }
 
 module.exports = {
   init, broadcast, messages, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
-  liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, ACTIVE,
+  liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, setHome, driverState, markPush, ACTIVE,
   driversSnapshot: () => [...drivers.values()],
   get io() { return io; },
 };

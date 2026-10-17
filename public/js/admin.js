@@ -1,7 +1,7 @@
 // Flytte admin console
 (function () {
   const root = document.getElementById('root');
-  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['safety', 'Safety'], ['payouts', 'Payouts']];
+  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['driverRules', 'Driver rules'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['safety', 'Safety'], ['payouts', 'Payouts']];
   let tab = location.hash.slice(1) || 'overview';
   let stats = {}, liveMap, liveLayer, liveTimer, sock;
 
@@ -35,7 +35,7 @@
     root.querySelectorAll('[data-t]').forEach((b) => b.setAttribute('aria-current', b.dataset.t === tab ? 'page' : 'false'));
     const main = K.$('#main');
     main.innerHTML = K.skeleton('title-list', 5);
-    ({ overview, drivers, riders, trips, pricing, promos, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
+    ({ overview, drivers, driverRules, riders, trips, pricing, promos, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
   }
 
   const badge = (s) => `<span class="badge ${({ approved: 'ok', completed: 'ok', paid: 'ok', pending: 'warn', requested: 'warn', accepted: 'warn', arrived: 'warn', in_progress: 'warn', suspended: 'bad', rejected: 'bad', cancelled: 'bad', no_drivers: 'bad' })[s] || ''}">${K.esc(String(s).replace('_', ' '))}</span>`;
@@ -84,10 +84,12 @@
     main.innerHTML = `<div class="row" style="align-items:flex-end;margin-bottom:6px"><div class="grow"><h1 style="margin:0">Drivers</h1>
         <p class="muted" style="margin:6px 0 0">Drivers apply in the Driver app and upload their documents. Check them here before approving, or add a driver you’ve met in person.</p></div>
         <button class="btn btn-primary" id="addDriver" style="flex:none">${K.ic('plus')} Add driver</button></div>
-      <div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>Driver</th><th>Vehicle</th><th>Permit</th><th>Trips</th><th>Rating</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>
+      <div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>Driver</th><th>Vehicle</th><th>Permit</th><th>Trips</th><th>Rating</th><th title="Last 30 days: requests accepted · trips cancelled by the driver">Accept · cancel</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>
       ${list.map((d) => `<tr><td><b>${K.esc(d.name)}</b><br><span class="small muted">${K.esc(d.phone)}</span></td>
         <td>${K.vehicleEmoji(d.vehicleType)} <span class="plate-tag">${K.esc(d.plate)}</span><br><span class="small muted">${K.esc(d.vehicle)}</span></td>
-        <td>${K.esc(d.licenseNo)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td><td>${K.ugx(d.balance)}</td><td>${badge(d.status)}</td>
+        <td>${K.esc(d.licenseNo)}${expiryTag(d.nextExpiry)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td>
+        <td>${d.acceptanceRate == null ? '<span class="muted">—</span>' : `${d.acceptanceRate}% / ${d.cancellationRate ?? 0}%`}</td>
+        <td>${d.balance < 0 ? `<span style="color:var(--stop)">${K.ugx(d.balance)}</span><br><span class="tiny muted">owes commission</span>` : K.ugx(d.balance)}</td><td>${badge(d.status)}</td>
         <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}">Documents (${d.docs || 0}/4)</button>
         ${d.status !== 'approved' ? `<button class="btn btn-primary btn-sm" data-id="${d.id}" data-s="approved">Approve</button>` : `<button class="btn btn-sm" data-id="${d.id}" data-s="suspended">Suspend</button>`}
         <button class="btn btn-ghost btn-sm" data-pw="${d.id}" data-name="${K.esc(d.name)}">Reset password</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">No drivers yet. Click “Add driver” after you’ve met and checked them.</td></tr>'}
@@ -99,6 +101,60 @@
     bindReset(main);
     K.$('#addDriver').onclick = addDriver;
     main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status));
+  }
+
+  function expiryTag(day) {
+    if (!day) return '';
+    const days = Math.round((Date.parse(day) - Date.parse(new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10))) / 86400e3);
+    if (days < 0) return `<br><span class="badge bad">Document expired ${day}</span>`;
+    if (days <= 30) return `<br><span class="badge warn">Expires in ${days} day${days === 1 ? '' : 's'}</span>`;
+    return `<br><span class="tiny muted">Next expiry ${day}</span>`;
+  }
+
+  // Driver rules: waiting time, no-show fee, cash commission limit, heading home, next trips, bonuses.
+  async function driverRules(main) {
+    const s = await K.api('/admin/settings');
+    const d = s.drivers, bonuses = s.bonuses.slice();
+    const draw = () => {
+      main.innerHTML = `<h1>Driver rules</h1>
+        <p class="muted" style="max-width:720px">These protect drivers and keep commission collected. Changes apply to new trips straight away.</p>
+        <div class="kpis" style="max-width:720px">
+          <div><label for="fw">Free waiting at pickup (min)</label><input id="fw" type="number" min="0" max="30" value="${d.freeWaitMin}"></div>
+          <div><label for="nf">No-show fee to driver (UGX)</label><input id="nf" type="number" min="0" step="500" value="${d.noShowFee}"></div>
+          <div><label for="dl">Pause cash trips when owed (UGX)</label><input id="dl" type="number" min="0" step="1000" value="${d.cashDebtLimit}"></div>
+          <div><label for="hh">Heading home uses per day</label><input id="hh" type="number" min="0" max="10" value="${d.headingHomePerDay}"></div>
+          <div><label for="rd">Document reminder (days before)</label><input id="rd" type="number" min="1" max="90" value="${d.docReminderDays}"></div>
+          <div><label><input type="checkbox" id="qn" ${d.queueNext ? 'checked' : ''} style="width:auto"> Line up the next trip near drop-off</label></div>
+        </div>
+        <p class="small muted" style="max-width:720px">The no-show fee is taken from the rider’s wallet only when it covers it. Set the cash limit to 0 to never pause cash trips. Set heading home to 0 to switch it off.</p>
+        <h2 style="margin-top:26px">Bonuses</h2>
+        <p class="muted" style="max-width:720px">Flytte pays these into the driver’s balance as soon as the target is reached, once per day or week (Kampala time). Drivers see their progress on the home screen.</p>
+        <div class="table-wrap" style="max-width:820px"><table><thead><tr><th>Name drivers see</th><th>Trips</th><th>Reward (UGX)</th><th>Every</th><th>On</th><th></th></tr></thead><tbody>
+          ${bonuses.map((b, i) => `<tr data-i="${i}"><td><input data-f="title" maxlength="60" value="${K.esc(b.title)}"></td>
+            <td><input data-f="trips" type="number" min="1" max="200" value="${b.trips}" style="width:80px"></td>
+            <td><input data-f="reward" type="number" min="0" step="500" value="${b.reward}" style="width:110px"></td>
+            <td><select data-f="period"><option value="day" ${b.period === 'day' ? 'selected' : ''}>Day</option><option value="week" ${b.period === 'week' ? 'selected' : ''}>Week</option></select></td>
+            <td><input data-f="active" type="checkbox" ${b.active ? 'checked' : ''} style="width:auto"></td>
+            <td><button class="btn btn-ghost btn-sm" data-del="${i}">Remove</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">No bonuses yet.</td></tr>'}
+        </tbody></table></div>
+        <button class="btn btn-sm" id="addB" style="margin:10px 0 22px" ${bonuses.length >= 10 ? 'disabled' : ''}>${K.ic('plus', 'sm')} Add bonus</button><br>
+        <button class="btn btn-primary" id="saveR">Save driver rules</button>`;
+      const read = () => main.querySelectorAll('tr[data-i]').forEach((tr) => {
+        const b = bonuses[+tr.dataset.i];
+        tr.querySelectorAll('[data-f]').forEach((x) => { b[x.dataset.f] = x.type === 'checkbox' ? x.checked : x.type === 'number' ? +x.value : x.value; });
+      });
+      K.$('#addB').onclick = () => { read(); bonuses.push({ title: 'Complete 10 trips today', trips: 10, reward: 5000, period: 'day', active: false }); draw(); };
+      main.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => { read(); bonuses.splice(+b.dataset.del, 1); draw(); });
+      K.$('#saveR').onclick = async () => {
+        read();
+        try {
+          const out = await K.api('/admin/settings', { drivers: { freeWaitMin: +K.$('#fw').value, noShowFee: +K.$('#nf').value, cashDebtLimit: +K.$('#dl').value, headingHomePerDay: +K.$('#hh').value, docReminderDays: +K.$('#rd').value, queueNext: K.$('#qn').checked }, bonuses }, 'PUT');
+          Object.assign(d, out.drivers); bonuses.splice(0, bonuses.length, ...out.bonuses);
+          K.toast('Driver rules saved.'); draw();
+        } catch (e) { K.toast(e.message); }
+      };
+    };
+    draw();
   }
 
   async function showDocs(id, name, status) {

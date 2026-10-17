@@ -7,6 +7,7 @@ const rt = require('./realtime');
 const ledger = require('./ledger');
 const payments = require('./payments');
 const growth = require('./growth');
+const dtools = require('./drivers');
 const { getSettings, updateSettings, quote } = require('./pricing');
 const surge = require('./surge');
 const { haversineKm: haversine } = require('./pricing');
@@ -68,6 +69,7 @@ r.get('/config', wrap(async (req, res) => {
     supportPhone: supportPhone(s),
     minWithdrawal: s.minWithdrawal,
     growth: { firstRide: s.growth.firstRide, referral: s.growth.referral, rewards: s.growth.rewards },
+    drivers: { freeWaitMin: s.drivers.freeWaitMin, noShowFee: s.drivers.noShowFee, cashDebtLimit: s.drivers.cashDebtLimit, headingHomePerDay: s.drivers.headingHomePerDay },
   });
 }));
 
@@ -142,20 +144,43 @@ r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
 
 // ---------- Driver documents ----------
 const DOC_KINDS = { national_id: 'National ID', license: 'Driving permit', vehicle: 'Vehicle photo', photo: 'Profile photo' };
+const OPTIONAL_DOCS = { insurance: 'Insurance sticker' };
+const ALL_DOCS = { ...DOC_KINDS, ...OPTIONAL_DOCS };
+// Expiry dates (YYYY-MM-DD) for the documents that run out.
+function expiryDate(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || '').trim());
+  if (!m) return null;
+  const t = Date.parse(m[0] + 'T00:00:00Z');
+  if (!Number.isFinite(t) || +m[1] < 2000 || +m[1] > 2100) return null;
+  return m[0];
+}
+r.post('/driver/documents/expiry', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const { kind } = req.body || {};
+  if (!dtools.EXPIRING_KINDS.includes(kind)) return bad(res, 'That document has no expiry date.');
+  const exp = expiryDate((req.body || {}).expiresOn);
+  if (!exp) return bad(res, 'Choose the expiry date.');
+  const row = await db.one('UPDATE driver_docs SET expires_on = $1 WHERE user_id = $2 AND kind = $3 RETURNING kind', [exp, req.user.id, kind]);
+  if (!row) return bad(res, 'Upload the document first.');
+  res.json({ ok: true });
+}));
 r.post('/driver/documents', auth.requireAuth('driver'), wrap(async (req, res) => {
   const { kind, image } = req.body || {};
-  if (!DOC_KINDS[kind]) return bad(res, 'Unknown document.');
+  if (!ALL_DOCS[kind]) return bad(res, 'Unknown document.');
   const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(image || ''));
   if (!m) return bad(res, 'Upload a photo (JPG or PNG).');
   if (m[2].length > 2.8e6) return bad(res, 'That photo is too large. Try again.');
-  await db.query(`INSERT INTO driver_docs(user_id, kind, mime, data) VALUES ($1,$2,$3,$4)
-    ON CONFLICT (user_id, kind) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, created_at = NOW()`, [req.user.id, kind, m[1], m[2]]);
+  const exp = dtools.EXPIRING_KINDS.includes(kind) ? expiryDate((req.body || {}).expiresOn) : null;
+  await db.query(`INSERT INTO driver_docs(user_id, kind, mime, data, expires_on) VALUES ($1,$2,$3,$4,$5)
+    ON CONFLICT (user_id, kind) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, created_at = NOW(), expires_on = COALESCE(EXCLUDED.expires_on, driver_docs.expires_on)`, [req.user.id, kind, m[1], m[2], exp]);
   rt.io.to('admin').emit('admin:new_driver', { id: req.user.id, name: req.user.name });
   res.json({ ok: true });
 }));
 r.get('/driver/documents', auth.requireAuth('driver'), wrap(async (req, res) => {
-  const { rows } = await db.query('SELECT kind, created_at FROM driver_docs WHERE user_id = $1', [req.user.id]);
-  res.json({ kinds: DOC_KINDS, uploaded: Object.fromEntries(rows.map((x) => [x.kind, x.created_at])) });
+  const { rows } = await db.query('SELECT kind, created_at, expires_on FROM driver_docs WHERE user_id = $1', [req.user.id]);
+  const day = (v) => (v ? (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10) : null);
+  res.json({ kinds: DOC_KINDS, optional: OPTIONAL_DOCS, expiring: dtools.EXPIRING_KINDS,
+    uploaded: Object.fromEntries(rows.map((x) => [x.kind, x.created_at])),
+    expires: Object.fromEntries(rows.filter((x) => x.expires_on).map((x) => [x.kind, day(x.expires_on)])) });
 }));
 // Driver profile photos are shown to riders on the trip screen.
 // Only approved drivers' photos are public; applicants' photos stay private.
@@ -384,15 +409,19 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
 
 r.get('/trips/active', auth.requireAuth(), wrap(async (req, res) => {
   const col = req.user.role === 'driver' ? 'driver_id' : 'rider_id';
-  // Also return a just-finished trip that still needs rating or payment.
-  const t = await db.one(`
-    SELECT id FROM trips WHERE ${col} = $1 AND (
+  const driver = req.user.role === 'driver';
+  // Also return a just-finished trip that still needs rating or payment. For drivers the trip
+  // under way comes first; a lined-up next trip is returned alongside it.
+  const { rows } = await db.query(`
+    SELECT id, status FROM trips WHERE ${col} = $1 AND (
       status IN ('requested','accepted','arrived','in_progress')
       OR (status = 'completed' AND completed_at > NOW() - INTERVAL '2 hours' AND (
-        ${req.user.role === 'driver' ? 'driver_rating IS NULL' : "rider_rating IS NULL OR payment_status = 'pending'"}))
-    ) ORDER BY id DESC LIMIT 1`, [req.user.id]);
-  if (!t) return res.json(null);
-  res.json(rt.view(await rt.loadTrip(t.id), req.user.role === 'driver' ? 'driver' : 'rider'));
+        ${driver ? 'driver_rating IS NULL' : "rider_rating IS NULL OR payment_status = 'pending'"}))
+    ) ORDER BY ${driver ? "CASE status WHEN 'in_progress' THEN 0 WHEN 'arrived' THEN 1 WHEN 'accepted' THEN 2 ELSE 3 END, id" : 'id DESC'} LIMIT 2`, [req.user.id]);
+  if (!rows.length) return res.json(null);
+  const out = rt.view(await rt.loadTrip(rows[0].id), driver ? 'driver' : 'rider');
+  if (driver && rows[1] && rows[0].status !== 'completed' && rows[1].status === 'accepted') out.next = rt.view(await rt.loadTrip(rows[1].id), 'driver');
+  res.json(out);
 }));
 
 r.get('/trips/history', auth.requireAuth(), wrap(async (req, res) => {
@@ -420,7 +449,8 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
   if (role === 'driver') {
     // Don't strand the rider: put the request back and find another driver.
     await db.query("UPDATE trips SET status = 'requested', driver_id = NULL, accepted_at = NULL, arrived_at = NULL WHERE id = $1", [t.id]);
-    rt.setDriverFree(req.user.id);
+    rt.setDriverFree(req.user.id, t.id);
+    dtools.logEvent(req.user.id, t.id, 'driver_cancelled');
     rt.io.in(`user:${req.user.id}`).socketsLeave(`trip:${t.id}`);
     rt.notify(t.rider_id, 'toast', { text: 'Your driver cancelled. Finding you another one…' });
     rt.notify(req.user.id, 'trip:update', { id: t.id, status: 'cancelled', cancelledBy: 'driver' });
@@ -431,7 +461,10 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
   await db.query("UPDATE trips SET status = 'cancelled', cancelled_by = $1, cancel_reason = $2 WHERE id = $3",
     [role, clean((req.body || {}).reason, 200), t.id]);
   rt.clearOffer(t.id);
-  if (t.driver_id) rt.setDriverFree(t.driver_id);
+  if (t.driver_id) {
+    rt.setDriverFree(t.driver_id, t.id);
+    if (['accepted', 'arrived'].includes(t.status)) dtools.push(t.driver_id, { type: 'cancelled', tag: `trip-${t.id}`, title: 'Trip cancelled', body: 'The rider cancelled. You’re free for the next request.' }, { ttl: 300 }).catch(() => {});
+  }
   await rt.broadcast(t.id);
   res.json({ ok: true });
 }));
@@ -508,6 +541,47 @@ r.post('/trips/:id/arrived', auth.requireAuth('driver'), wrap(async (req, res) =
   res.json({ ok: true });
 }));
 
+// The rider didn't come out. After the free waiting time the driver can leave; the no-show
+// fee goes to the driver from the rider's wallet when the wallet covers it.
+r.post('/trips/:id/noshow', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'driver');
+  if (!t) return;
+  if (t.status !== 'arrived' || !t.arrived_at) return bad(res, 'Mark that you have arrived at the pickup first.');
+  const s = await getSettings();
+  const waited = (Date.now() - new Date(t.arrived_at).getTime()) / 60000;
+  if (waited < s.drivers.freeWaitMin) {
+    const left = Math.ceil(s.drivers.freeWaitMin - waited);
+    return bad(res, `Please wait ${left} more minute${left === 1 ? '' : 's'} for the ${t.passenger ? 'passenger' : 'rider'}.`);
+  }
+  let fee = 0, done = false;
+  await db.tx(async (tx) => {
+    const fresh = await tx.one("UPDATE trips SET status = 'cancelled', cancelled_by = 'rider', cancel_reason = 'no_show' WHERE id = $1 AND status = 'arrived' RETURNING id", [t.id]);
+    if (!fresh) return;
+    done = true;
+    const want = s.drivers.noShowFee;
+    if (want > 0) {
+      const rider = await tx.one('SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE', [t.rider_id]);
+      if (rider && rider.wallet_balance >= want) {
+        fee = want;
+        await tx.query('UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id = $2', [fee, t.rider_id]);
+        await tx.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'no_show_fee',$2,$3,'No-show fee: the driver waited at your pickup')", [t.rider_id, -fee, t.id]);
+        await tx.query('UPDATE drivers SET earnings_balance = earnings_balance + $1 WHERE user_id = $2', [fee, req.user.id]);
+        await tx.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'no_show_fee',$2,$3,'No-show fee from the rider')", [req.user.id, fee, t.id]);
+        await tx.query('UPDATE trips SET no_show_fee = $1 WHERE id = $2', [fee, t.id]);
+      }
+    }
+  });
+  if (!done) return bad(res, 'This trip has already changed. Pull down to refresh.');
+  rt.setDriverFree(req.user.id, t.id);
+  dtools.logEvent(req.user.id, t.id, 'no_show');
+  const mins = Math.floor(waited);
+  rt.notify(t.rider_id, 'toast', { text: fee
+    ? `Your driver waited ${mins} minutes and had to leave. A UGX ${fee.toLocaleString()} no-show fee was taken from your wallet.`
+    : `Your driver waited ${mins} minutes and had to leave. Book again when you’re ready.` });
+  await rt.broadcast(t.id);
+  res.json({ ok: true, fee });
+}));
+
 r.post('/trips/:id/start', auth.requireAuth('driver'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'driver');
   if (!t) return;
@@ -525,13 +599,14 @@ r.post('/trips/:id/complete', auth.requireAuth('driver'), wrap(async (req, res) 
   if (t.drop_code && String((req.body || {}).code || '').trim() !== t.drop_code) {
     return bad(res, 'Wrong delivery code. Ask the recipient for the 4-digit code the sender shared with them.');
   }
-  let settled;
+  let settled, bonuses = [];
   await db.tx(async (tx) => {
     const fresh = await tx.one("UPDATE trips SET status = 'completed', completed_at = NOW() WHERE id = $1 AND status = 'in_progress' RETURNING *", [t.id]);
-    if (fresh) settled = await ledger.settleCompletedTrip(tx, fresh);
+    if (fresh) { settled = await ledger.settleCompletedTrip(tx, fresh); bonuses = await dtools.payBonuses(tx, req.user.id); }
   });
-  rt.setDriverFree(req.user.id);
+  rt.setDriverFree(req.user.id, t.id);
   await rt.broadcast(t.id);
+  for (const b of bonuses) rt.notify(req.user.id, 'toast', { text: `🎉 Bonus reached: ${b.title}. UGX ${b.reward.toLocaleString()} added to your balance.` });
   if (settled && settled.referral && settled.referral.referrerReward) {
     rt.notify(settled.referral.referrerId, 'toast', { text: `🎉 Your friend took their first Flytte trip. UGX ${settled.referral.referrerReward.toLocaleString()} added to your wallet.` });
   }
@@ -615,17 +690,17 @@ r.post('/wallet/topup', auth.requireAuth('rider'), wrap(async (req, res) => {
 // ---------- Payments (Flutterwave) ----------
 r.get('/payments/callback', wrap(async (req, res) => {
   const ref = String(req.query.tx_ref || '').slice(0, 80);
-  const result = /^(?:FLY|KWT)-(TOP|TRP)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
+  const result = /^(?:FLY|KWT)-(TOP|TRP|DBT)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
   const p = ref && await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
   if (p && p.trip_id && result.ok) await rt.broadcast(p.trip_id);
   if (p && result.ok) rt.notify(p.user_id, 'toast', { text: 'Payment received ✅' });
-  res.redirect(`/?payment=${result.ok ? 'success' : (result.reason === 'unreachable' ? 'pending' : 'failed')}`);
+  res.redirect(`${p && p.purpose === 'debt' ? '/driver' : '/'}?payment=${result.ok ? 'success' : (result.reason === 'unreachable' ? 'pending' : 'failed')}`);
 }));
 
 r.post('/payments/webhook', wrap(async (req, res) => {
   if (!payments.webhookAuthentic(req)) return res.status(401).end();
   const ref = req.body && req.body.data && String(req.body.data.tx_ref || '');
-  if (ref && /^(?:FLY|KWT)-(TOP|TRP)-\d+-[0-9a-f]{8}$/.test(ref)) {
+  if (ref && /^(?:FLY|KWT)-(TOP|TRP|DBT)-\d+-[0-9a-f]{8}$/.test(ref)) {
     const result = await payments.verifyAndApply(ref);
     const p = await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
     if (p && result.ok) {
@@ -660,6 +735,102 @@ r.get('/driver/earnings', auth.requireAuth('driver'), wrap(async (req, res) => {
     FROM trips WHERE driver_id = $1 AND status = 'completed' AND completed_at > NOW() - INTERVAL '7 days'`, [req.user.id]);
   const all = await db.one("SELECT COUNT(*)::int AS trips FROM trips WHERE driver_id = $1 AND status = 'completed'", [req.user.id]);
   res.json({ balance: d.earnings_balance, momoNumber: d.momo_number, today, week, days, cashWeek: mix.cash, commissionWeek: mix.commission, allTrips: all.trips, transactions: tx, withdrawals: wd });
+}));
+
+// ---------- Driver tools ----------
+const todayKla = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+
+// Everything the driver home screen needs beyond the trip itself.
+r.get('/driver/overview', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const s = await getSettings();
+  const d = await db.one('SELECT earnings_balance, home_lat, home_lng, home_address, home_uses_day, home_uses FROM drivers WHERE user_id = $1', [req.user.id]);
+  const used = d.home_uses_day === todayKla() ? d.home_uses : 0;
+  const live = rt.driverState(req.user.id);
+  res.json({
+    stats: await dtools.stats(req.user.id),
+    bonuses: await dtools.bonusProgress(req.user.id),
+    docs: await dtools.docAlerts(req.user.id),
+    balance: d.earnings_balance,
+    owed: Math.max(0, -d.earnings_balance),
+    debtLimit: s.drivers.cashDebtLimit,
+    cashPaused: s.drivers.cashDebtLimit > 0 && d.earnings_balance <= -s.drivers.cashDebtLimit,
+    home: live.home,
+    savedHome: d.home_lat != null ? { lat: d.home_lat, lng: d.home_lng, address: d.home_address } : null,
+    homeUsesLeft: Math.max(0, s.drivers.headingHomePerDay - used),
+    homePerDay: s.drivers.headingHomePerDay,
+    push: await dtools.hasPush(req.user.id),
+  });
+}));
+
+// Heading home: only trips that take the driver towards a chosen place.
+r.post('/driver/home', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const b = req.body || {};
+  if (!b.on) { rt.setHome(req.user.id, null); return res.json({ ok: true, home: null }); }
+  const s = await getSettings();
+  if (s.drivers.headingHomePerDay <= 0) return bad(res, 'Heading home isn’t available right now.');
+  if (!rt.driverState(req.user.id).online) return bad(res, 'Go online first, then switch on Heading home.');
+  const d = await db.one('SELECT home_lat, home_lng, home_address, home_uses_day, home_uses FROM drivers WHERE user_id = $1', [req.user.id]);
+  const place = point(b.place) || (d.home_lat != null ? { lat: d.home_lat, lng: d.home_lng, address: d.home_address } : null);
+  if (!place) return bad(res, 'Choose where you’re heading.');
+  const used = d.home_uses_day === todayKla() ? d.home_uses : 0;
+  if (used >= s.drivers.headingHomePerDay) return bad(res, `You can use Heading home ${s.drivers.headingHomePerDay} time${s.drivers.headingHomePerDay === 1 ? '' : 's'} a day. It resets at midnight.`);
+  await db.query('UPDATE drivers SET home_lat = $1, home_lng = $2, home_address = $3, home_uses_day = $4, home_uses = $5 WHERE user_id = $6',
+    [place.lat, place.lng, place.address, todayKla(), used + 1, req.user.id]);
+  rt.setHome(req.user.id, place);
+  res.json({ ok: true, home: place, usesLeft: s.drivers.headingHomePerDay - used - 1 });
+}));
+
+// Trip-by-trip earnings for a period, for the breakdown and the statement.
+r.get('/driver/trips', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const days = [1, 7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+  const since = days === 1 ? new Date(Date.parse(todayKla() + 'T00:00:00Z') - 3 * 3600e3) : new Date(Date.now() - days * 86400e3);
+  const { rows } = await db.query(`SELECT id, service, payment_method, fare, discount, commission, tip, tip_method, no_show_fee, status, cancel_reason,
+      pickup_address, drop_address, distance_km, completed_at, created_at
+    FROM trips WHERE driver_id = $1 AND (
+      (status = 'completed' AND completed_at >= $2) OR (status = 'cancelled' AND cancel_reason = 'no_show' AND created_at >= $2))
+    ORDER BY COALESCE(completed_at, created_at) DESC LIMIT 300`, [req.user.id, since]);
+  const { rows: bon } = await db.query("SELECT amount, note, created_at FROM transactions WHERE user_id = $1 AND type = 'bonus' AND created_at >= $2 ORDER BY id DESC", [req.user.id, since]);
+  const trips = rows.map((x) => {
+    const noShow = x.status === 'cancelled';
+    const walletTip = x.tip_method === 'wallet' ? x.tip : 0;
+    return {
+      id: x.id, at: x.completed_at || x.created_at, service: x.service, method: x.payment_method, noShow,
+      from: x.pickup_address, to: x.drop_address, km: x.distance_km,
+      fare: noShow ? 0 : x.fare, discount: noShow ? 0 : x.discount, commission: noShow ? 0 : x.commission,
+      tip: x.tip || 0, tipMethod: x.tip_method, noShowFee: x.no_show_fee || 0,
+      earning: noShow ? x.no_show_fee : x.fare - x.commission + walletTip,
+    };
+  });
+  const sum = (k) => trips.reduce((a, t) => a + (t[k] || 0), 0);
+  const bonusTotal = bon.reduce((a, b) => a + b.amount, 0);
+  res.json({ days, since, trips, bonuses: bon, totals: { trips: trips.filter((t) => !t.noShow).length, fare: sum('fare'), commission: sum('commission'), discount: sum('discount'), tips: sum('tip'), noShowFees: sum('noShowFee'), bonuses: bonusTotal, earning: sum('earning') + bonusTotal } });
+}));
+
+// Pay the commission owed on cash trips by Mobile Money.
+r.post('/driver/pay-debt', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const d = await db.one('SELECT earnings_balance FROM drivers WHERE user_id = $1', [req.user.id]);
+  const owed = Math.max(0, -d.earnings_balance);
+  if (!owed) return bad(res, 'You don’t owe anything right now.');
+  let amount = Math.round(Number((req.body || {}).amount) || owed);
+  amount = Math.min(owed, Math.max(Math.min(1000, owed), amount));
+  let out;
+  try { out = await payments.createCheckout({ user: req.user, amount, purpose: 'debt', method: 'momo', baseUrl: baseUrl(req) }); }
+  catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message.replace('Pay with cash for now.', 'Your balance clears from your next Mobile Money or wallet trips.'), 503); throw e; }
+  const after = await db.one('SELECT earnings_balance FROM drivers WHERE user_id = $1', [req.user.id]);
+  res.json({ ...out, balance: after.earnings_balance });
+}));
+
+// Ride alerts on a locked phone (Web Push).
+r.get('/push/key', wrap(async (req, res) => res.json({ key: (await dtools.vapidKeys()).pub })));
+r.post('/push/subscribe', auth.requireAuth(), wrap(async (req, res) => {
+  if (!(await dtools.subscribe(req.user.id, (req.body || {}).subscription))) return bad(res, 'That subscription couldn’t be saved.');
+  rt.markPush(req.user.id, true);
+  res.json({ ok: true });
+}));
+r.post('/push/unsubscribe', auth.requireAuth(), wrap(async (req, res) => {
+  await dtools.unsubscribe(req.user.id, (req.body || {}).endpoint);
+  rt.markPush(req.user.id, await dtools.hasPush(req.user.id));
+  res.json({ ok: true });
 }));
 
 r.post('/driver/withdraw', auth.requireAuth('driver'), wrap(async (req, res) => {
@@ -709,7 +880,11 @@ r.get('/admin/drivers', admin, wrap(async (req, res) => {
   const { rows } = await db.query(`
     SELECT u.id, u.name, u.phone, u.blocked, u.rating_sum, u.rating_count, u.created_at, d.*,
       (SELECT COUNT(*)::int FROM trips t WHERE t.driver_id = u.id AND t.status = 'completed') AS trips,
-      (SELECT COUNT(*)::int FROM driver_docs dd WHERE dd.user_id = u.id) AS docs
+      (SELECT COUNT(*)::int FROM driver_docs dd WHERE dd.user_id = u.id) AS docs,
+      (SELECT MIN(dd.expires_on) FROM driver_docs dd WHERE dd.user_id = u.id AND dd.expires_on IS NOT NULL) AS next_expiry,
+      (SELECT COUNT(*)::int FROM driver_events e WHERE e.driver_id = u.id AND e.kind = 'offer_accepted' AND e.created_at > NOW() - INTERVAL '30 days') AS ev_acc,
+      (SELECT COUNT(*)::int FROM driver_events e WHERE e.driver_id = u.id AND e.kind IN ('offer_declined','offer_missed') AND e.created_at > NOW() - INTERVAL '30 days') AS ev_rej,
+      (SELECT COUNT(*)::int FROM driver_events e WHERE e.driver_id = u.id AND e.kind = 'driver_cancelled' AND e.created_at > NOW() - INTERVAL '30 days') AS ev_can
     FROM drivers d JOIN users u ON u.id = d.user_id
     ORDER BY CASE d.status WHEN 'pending' THEN 0 ELSE 1 END, u.id DESC LIMIT 300`);
   res.json(rows.map((x) => ({
@@ -717,7 +892,14 @@ r.get('/admin/drivers', admin, wrap(async (req, res) => {
     vehicle: [x.vehicle_color, x.vehicle_make].filter(Boolean).join(' '), licenseNo: x.license_no, momoNumber: x.momo_number,
     balance: x.earnings_balance, trips: x.trips, rating: x.rating_count ? Math.round((x.rating_sum / x.rating_count) * 10) / 10 : null,
     createdAt: x.created_at, docs: x.docs,
+    nextExpiry: x.next_expiry ? (x.next_expiry instanceof Date ? x.next_expiry.toISOString() : String(x.next_expiry)).slice(0, 10) : null,
+    acceptanceRate: x.ev_acc + x.ev_rej ? Math.round((x.ev_acc / (x.ev_acc + x.ev_rej)) * 100) : null,
+    cancellationRate: x.ev_acc ? Math.round((x.ev_can / x.ev_acc) * 100) : null,
   })));
+}));
+r.get('/admin/drivers/:id/insights', admin, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  res.json({ stats: await dtools.stats(id), docs: await dtools.docAlerts(id), bonuses: await dtools.bonusProgress(id) });
 }));
 
 // Onboard a verified driver. They sign in to the driver app with this phone and password.

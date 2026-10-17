@@ -32,6 +32,18 @@ const DEFAULTS = {
     referral: { enabled: true, referrer: 3000, friend: 2000 },  // wallet credit once the friend finishes a first trip
     rewards: { enabled: true, pointsPer1000: 1, redeemPoints: 100, redeemValue: 2000 }, // ~2% back
   },
+  // Driver protections and tools. All of these can be changed in Admin → Drivers.
+  drivers: {
+    cashDebtLimit: 30000,   // commission owed (UGX) before new cash trips pause; Mobile Money/wallet trips continue
+    freeWaitMin: 5,         // free waiting at pickup before the driver may cancel as a no-show
+    noShowFee: 2000,        // paid to the driver from the rider's wallet on a no-show (only if the wallet covers it)
+    headingHomePerDay: 2,   // how many times a day a driver can switch on "Heading home"
+    queueNext: true,        // offer a nearby next trip when the current one is about to finish
+    docReminderDays: 14,    // remind drivers this many days before a document expires
+  },
+  // Driver bonuses set by the team, e.g. { id, title, trips: 10, reward: 5000, period: 'day', active: true }.
+  // Flytte pays these; none are switched on until the team adds them.
+  bonuses: [],
 };
 
 const OLD_BLURBS = ['Beat the jam. Helmet provided.', 'Newer cars, AC, top-rated drivers.'];
@@ -45,6 +57,8 @@ async function getSettings() {
     try { s[r.key] = JSON.parse(r.value); } catch { /* ignore bad rows */ }
   }
   s.dynamic = { ...DEFAULTS.dynamic, ...(s.dynamic || {}) };
+  s.drivers = { ...DEFAULTS.drivers, ...(s.drivers || {}) };
+  if (!Array.isArray(s.bonuses)) s.bonuses = [];
   const g = s.growth || {};
   s.growth = { firstRide: { ...DEFAULTS.growth.firstRide, ...(g.firstRide || {}) }, referral: { ...DEFAULTS.growth.referral, ...(g.referral || {}) }, rewards: { ...DEFAULTS.growth.rewards, ...(g.rewards || {}) } };
   // make sure new default services appear even if older settings were saved
@@ -72,7 +86,7 @@ async function getSettings() {
 
 async function updateSettings(patch) {
   const current = await getSettings();
-  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'supportPhone', 'dynamic', 'growth'];
+  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'supportPhone', 'dynamic', 'growth', 'drivers', 'bonuses'];
   for (const key of allowed) {
     if (patch[key] === undefined) continue;
     let value = patch[key];
@@ -106,6 +120,28 @@ async function updateSettings(patch) {
       if (value.maxBoda !== undefined) d.maxBoda = Math.min(3, Math.max(1, Number(value.maxBoda) || 1.8));
       if (value.maxCar !== undefined) d.maxCar = Math.min(3, Math.max(1, Number(value.maxCar) || 2));
       value = d;
+    } else if (key === 'drivers') {
+      const num = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+      const c = { ...current.drivers, ...(value || {}) };
+      value = {
+        cashDebtLimit: num(c.cashDebtLimit, 0, 1000000, 30000),
+        freeWaitMin: num(c.freeWaitMin, 0, 30, 5),
+        noShowFee: num(c.noShowFee, 0, 50000, 2000),
+        headingHomePerDay: num(c.headingHomePerDay, 0, 10, 2),
+        queueNext: c.queueNext !== false && c.queueNext !== 'false',
+        docReminderDays: num(c.docReminderDays, 1, 90, 14),
+      };
+    } else if (key === 'bonuses') {
+      if (!Array.isArray(value)) continue;
+      const num = (v, lo, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo; };
+      value = value.slice(0, 10).map((b) => ({
+        id: /^[a-z0-9]{4,16}$/.test(String(b.id || '')) ? String(b.id) : require('crypto').randomBytes(4).toString('hex'),
+        title: String(b.title || '').replace(/[<>]/g, '').trim().slice(0, 60) || 'Trip bonus',
+        trips: num(b.trips, 1, 200),
+        reward: num(b.reward, 0, 1000000),
+        period: b.period === 'week' ? 'week' : 'day',
+        active: !!b.active,
+      }));
     } else if (key === 'supportPhone') {
       value = String(value || '').trim();
       if (value && !/^\+?[0-9][0-9 ]{7,17}$/.test(value)) continue; // digits, spaces and an optional +

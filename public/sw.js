@@ -8,7 +8,7 @@
 //   so they're served straight from the phone ("cache first") with no network wait.
 //   A new deploy has new ?v= links, so the new files are fetched once and kept.
 // - Maps, payments and live data are never cached.
-const VERSION = 'flytte-v44';
+const VERSION = 'flytte-v46';
 const ASSETS = 'flytte-assets';        // versioned js/css; kept across releases, trimmed below
 const SHELL = [
   '/offline.html', '/socket.io/socket.io.js',
@@ -83,4 +83,33 @@ self.addEventListener('fetch', (e) => {
     }).catch(() => cached);
     return cached || fresh;
   }));
+});
+
+// ---------- Ride alerts (Web Push) ----------
+// A new request rings on a locked phone; tapping it opens Flytte Driver on the request.
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'Flytte', body: e.data ? e.data.text() : '' }; }
+  const offer = d.type === 'offer';
+  e.waitUntil(self.registration.showNotification(d.title || 'Flytte Driver', {
+    body: d.body || '',
+    tag: d.tag || 'flytte',
+    renotify: true,
+    requireInteraction: offer,
+    icon: '/icons/flytte-driver-192.png',
+    badge: '/icons/flytte-driver-192.png',
+    vibrate: offer ? [400, 150, 400, 150, 400] : [200],
+    data: { url: '/driver', tripId: d.tripId || null },
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/driver';
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = all.find((c) => new URL(c.url).pathname.startsWith('/driver'));
+    if (open) { await open.focus(); return; }
+    await self.clients.openWindow(url);
+  })());
 });
