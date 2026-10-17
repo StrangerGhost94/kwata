@@ -428,8 +428,10 @@
     stripRaf = requestAnimationFrame(() => {
       const q = (sel) => document.querySelector(sel);
       let c = STRIP.page;
-      const splash = q('#splash:not(.out)') || q('.splash');
-      if (q('#req') || q('.onboard') || splash) c = STRIP.dark;
+      // The launch screen is white when signed in, so it only counts as dark on the signed-out launch,
+      // and stops counting the moment it starts fading (otherwise the bottom fade flashes black).
+      const darkLaunch = document.documentElement.classList.contains('launch-dark') && q('.splash:not(.out)');
+      if (q('#req') || q('.onboard') || darkLaunch) c = STRIP.dark;
       else if (q('.page.grouped:not(.hidden)')) c = STRIP.grouped;
       else if (q('.page:not(.hidden)') || q('.onb')) c = STRIP.page;
       else if (q('#sheet.collapsed') || q('.sheet-dock.floating') || (q('#map') && !q('#sheet'))) c = STRIP.map;
