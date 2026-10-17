@@ -1641,3 +1641,6 @@ html.launch-dark .sp-mark .wm-tag { color: #E9E9EE; }
 html.launch-dark .sp-mark .wm-k { filter: none; }
 html.launch-dark .sp-mark .wm *, html.launch-dark .sp-mark .wm-k * { animation: none !important; }
 html.launch-dark .splash.quick .sp-mark .wm { animation: none; }
+.ch-tg .ch-ic { background: #2AABEE; color: #fff; }
+.ch-switch { line-height: 1.6; }
+.ch-switch .link-btn { white-space: nowrap; }

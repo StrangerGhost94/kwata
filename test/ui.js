@@ -98,10 +98,11 @@ const api = async (path, body, token) => {
   p2.on('response', async (r) => { if (r.url().endsWith('/api/auth/otp/send')) { try { lastCode = (await r.json()).demoCode; } catch {} } });
   await p2.fill('#ph', user.user.phone.replace(/^\+?256/, '0')); await p2.click('button[type=submit]');
   await p2.waitForSelector('.ch-sheet [data-ch=whatsapp]', { timeout: 10000 });
-  ok((await p2.$$('.ch-sheet [data-ch]')).length === 2, 'asks where to send the code: WhatsApp or SMS');
+  ok((await p2.$$eval('.ch-sheet [data-ch]', (b) => b.map((x) => x.dataset.ch))).join() === 'whatsapp,telegram,sms', 'asks where to send the code: WhatsApp, Telegram or SMS');
   await p2.click('.ch-sheet [data-ch=whatsapp]');
   await p2.waitForSelector('#otp', { timeout: 10000 });
-  ok(/on WhatsApp/.test(await p2.textContent('.lead')) && /by SMS instead/.test(await p2.textContent('[data-switch]')), 'WhatsApp chosen: the code screen says WhatsApp and offers SMS instead');
+  await p2.waitForSelector('[data-switch=sms]', { timeout: 5000 });
+  ok(/on WhatsApp/.test(await p2.textContent('.lead')) && !!(await p2.$('[data-switch=telegram]')) && !!(await p2.$('[data-switch=sms]')), 'WhatsApp chosen: the code screen says WhatsApp and offers Telegram or SMS instead');
   ok(/Enter the code/.test(await p2.textContent('h1')) && (await p2.$$('.otp-boxes i')).length === 6 && await p2.getAttribute('#otp', 'autocomplete') === 'one-time-code', 'a registered number gets the 6-box SMS code screen with code autofill');
   ok(/Send a new code in \d+s/.test(await p2.textContent('[data-resend]')), 'resend waits with a countdown');
   await p2.waitForFunction(() => true); for (let i = 0; i < 20 && !lastCode; i++) await p2.waitForTimeout(100);

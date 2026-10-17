@@ -803,7 +803,7 @@
           const cfg = await K.cfg().catch(() => ({}));
           if (cfg.smsLogin) {
             const chans = cfg.codeChannels && cfg.codeChannels.length ? cfg.codeChannels : ['sms'];
-            const ch = chans.length > 1 ? await pickChannel() : chans[0];
+            const ch = chans.length > 1 ? await pickChannel(chans) : chans[0];
             if (!ch) { busy(f, false); return; }
             await sendCode(ch); codeStep(); return;
           }
@@ -815,12 +815,18 @@
     // Where should the code go? WhatsApp or SMS, asked each time (like Faras / Bolt).
     const WA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z"/></svg>';
     const SMSI = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/><path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M8 11h.01M12 11h.01M16 11h.01"/></svg>';
-    const pickChannel = () => new Promise((resolve) => {
+    const TGI = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.7 4.3 3.4 11a.9.9 0 0 0 0 1.7l4.3 1.4 1.7 5.2c.2.6.9.8 1.4.4l2.4-2 4.3 3.2c.5.4 1.3.1 1.4-.5l3-14.1c.2-.8-.5-1.4-1.2-1Zm-3.2 3.4-7.6 6.8-.3 3.1-1.3-4.1 8.6-5.5c.4-.3.8.1.6-.3Z"/></svg>';
+    // Where codes can go, in the order they're offered.
+    const CH = {
+      whatsapp: { name: 'WhatsApp', on: 'on WhatsApp', icon: WA, cls: 'ch-wa', sub: 'Fastest, works on Wi-Fi' },
+      telegram: { name: 'Telegram', on: 'in Telegram', icon: TGI, cls: 'ch-tg', sub: 'Arrives in your Telegram app' },
+      sms: { name: 'SMS', on: 'by SMS', icon: SMSI, cls: 'ch-sms', sub: 'A text message to this number' },
+    };
+    const pickChannel = (chans) => new Promise((resolve) => {
       let done = false;
       const m = K.modal(`<div class="ch-sheet"><h2>Where should we send your code?</h2>
         <p class="muted">We’ll send a 6-digit code to <b>${K.esc(K.prettyPhone(draft.e164))}</b></p>
-        <button class="ch-opt ch-wa" data-ch="whatsapp"><span class="ch-ic">${WA}</span><span class="grow"><b>WhatsApp</b><small>Fastest, works on Wi-Fi</small></span>${K.ic('chev')}</button>
-        <button class="ch-opt ch-sms" data-ch="sms"><span class="ch-ic">${SMSI}</span><span class="grow"><b>SMS</b><small>A text message to this number</small></span>${K.ic('chev')}</button></div>`,
+        ${Object.keys(CH).filter((k) => chans.includes(k)).map((k) => `<button class="ch-opt ${CH[k].cls}" data-ch="${k}"><span class="ch-ic">${CH[k].icon}</span><span class="grow"><b>${CH[k].name}</b><small>${CH[k].sub}</small></span>${K.ic('chev')}</button>`).join('')}</div>`,
         { onClose: () => { if (!done) resolve(null); } });
       m.el.querySelectorAll('[data-ch]').forEach((b) => b.onclick = () => { done = true; K.haptic(); m.close(); resolve(b.dataset.ch); });
     });
@@ -831,13 +837,13 @@
       const out = await K.api('/auth/otp/send', { phone: draft.e164, channel: ch });
       channel = out.channel || ch;
       resendAt = Date.now() + (out.resendIn || 30) * 1000;
-      if (out.demoCode) K.toast(`Test mode (no ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} set up): your code is ${out.demoCode}`, 8000);
+      if (out.demoCode) K.toast(`Test mode (no ${(CH[channel] || CH.sms).name} set up): your code is ${out.demoCode}`, 8000);
       return out;
     }
     function codeStep() {
       shell(`<form id="f" novalidate class="auth-body code-step">
         <h1>Enter the code</h1>
-        <p class="lead">We sent a 6-digit code ${channel === 'whatsapp' ? 'on WhatsApp' : 'by SMS'} to</p>
+        <p class="lead">We sent a 6-digit code ${(CH[channel] || CH.sms).on} to</p>
         ${phoneChip()}
         <label for="otp" class="sr-only">6-digit code</label>
         <div class="otp-wrap"><input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" spellcheck="false">
@@ -845,7 +851,7 @@
         <p class="error" role="alert"></p>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
         <p class="fine"><button type="button" class="link-btn" data-resend disabled></button></p>
-        <p class="fine hidden" data-switch-wrap><button type="button" class="link-btn" data-switch>${channel === 'whatsapp' ? 'Get the code by SMS instead' : 'Get the code on WhatsApp instead'}</button></p>
+        <p class="fine hidden ch-switch" data-switch-wrap></p>
       </form>`, phoneStep);
       bindChip();
       const f = root.querySelector('#f'), inp = f.otp, boxes = f.querySelectorAll('.otp-boxes i'), rs = f.querySelector('[data-resend]'), err = f.querySelector('.error');
@@ -857,13 +863,19 @@
       const timer = () => { const left = Math.ceil((resendAt - Date.now()) / 1000); rs.disabled = left > 0; rs.textContent = left > 0 ? `Send a new code in ${left}s` : 'Send a new code'; if (left <= 0) clearInterval(tick); };
       tick = setInterval(timer, 1000); timer();
       rs.onclick = async () => { rs.disabled = true; try { await sendCode(); K.toast('New code sent'); inp.value = ''; paint(); } catch (ex) { err.textContent = ex.message; } clearInterval(tick); tick = setInterval(timer, 1000); timer(); };
-      // Didn't arrive? Switch to the other channel (shown once the wait is over, if both are on).
-      const other = channel === 'whatsapp' ? 'sms' : 'whatsapp', sw = f.querySelector('[data-switch]'), swWrap = f.querySelector('[data-switch-wrap]');
-      K.cfg().then((c) => { if ((c.codeChannels || []).includes(other)) swWrap.classList.remove('hidden'); }).catch(() => {});
-      sw.onclick = async () => {
-        if (Date.now() < resendAt) { err.textContent = `Wait ${Math.ceil((resendAt - Date.now()) / 1000)} seconds, then try again.`; return; }
-        sw.disabled = true; try { await sendCode(other); clearInterval(tick); dir = 'fwd'; codeStep(); K.toast(other === 'whatsapp' ? 'Code sent on WhatsApp' : 'Code sent by SMS'); } catch (ex) { err.textContent = ex.message; sw.disabled = false; }
-      };
+      // Didn't arrive? Offer the other ways that are switched on.
+      const swWrap = f.querySelector('[data-switch-wrap]');
+      K.cfg().then((c) => {
+        const others = Object.keys(CH).filter((k) => k !== channel && (c.codeChannels || []).includes(k));
+        if (!others.length) return;
+        swWrap.innerHTML = `Didn’t get it? ${others.map((k) => `<button type="button" class="link-btn" data-switch="${k}">Send ${CH[k].on}</button>`).join(' · ')}`;
+        swWrap.classList.remove('hidden');
+        swWrap.querySelectorAll('[data-switch]').forEach((sw) => sw.onclick = async () => {
+          if (Date.now() < resendAt) { err.textContent = `Wait ${Math.ceil((resendAt - Date.now()) / 1000)} seconds, then try again.`; return; }
+          const to = sw.dataset.switch;
+          sw.disabled = true; try { await sendCode(to); clearInterval(tick); dir = 'fwd'; codeStep(); K.toast(`Code sent ${CH[to].on}`); } catch (ex) { err.textContent = ex.message; sw.disabled = false; }
+        });
+      }).catch(() => {});
       // Android Chrome can read the code straight from the SMS.
       if ('OTPCredential' in window) { const ac = new AbortController(); f.addEventListener('submit', () => ac.abort(), { once: true }); navigator.credentials.get({ otp: { transport: ['sms'] }, signal: ac.signal }).then((c) => { if (c && c.code) { inp.value = c.code; paint(); f.requestSubmit(); } }).catch(() => {}); }
       f.onsubmit = async (e) => {
