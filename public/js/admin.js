@@ -93,7 +93,7 @@
         <td>${K.esc(d.licenseNo)}${expiryTag(d.nextExpiry)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td>
         <td>${d.acceptanceRate == null ? '<span class="muted">—</span>' : `${d.acceptanceRate}% / ${d.cancellationRate ?? 0}%`}</td>
         <td>${d.balance < 0 ? `<span style="color:var(--stop)">${K.ugx(d.balance)}</span><br><span class="tiny muted">owes commission</span>` : K.ugx(d.balance)}</td><td>${badge(d.status)}</td>
-        <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}">Documents (${d.docs || 0}/4)</button>
+        <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}" data-plate="${K.esc(d.plate)}" data-veh="${K.esc(d.vehicle)}">${d.status === 'pending' ? 'Check & approve' : 'Documents'} (${d.docs || 0}/4)</button>
         ${d.status !== 'approved' ? `<button class="btn btn-primary btn-sm" data-id="${d.id}" data-s="approved">Approve</button>` : `<button class="btn btn-sm" data-id="${d.id}" data-s="suspended">Suspend</button>`}
         <button class="btn btn-ghost btn-sm" data-pw="${d.id}" data-name="${K.esc(d.name)}">Reset password</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">No drivers yet. Click “Add driver” after you’ve met and checked them.</td></tr>'}
       </tbody></table></div>`;
@@ -103,7 +103,7 @@
     });
     bindReset(main);
     K.$('#addDriver').onclick = addDriver;
-    main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status));
+    main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status, { plate: b.dataset.plate, vehicle: b.dataset.veh }));
   }
 
   function expiryTag(day) {
@@ -124,7 +124,7 @@
       <p class="muted" style="max-width:760px">Drivers can’t change their photo or number plate on their own. Check each request against their ID, permit and vehicle photo. Riders keep seeing the approved details until you approve.</p>
       <h2 style="margin-top:22px">Waiting for you (${changes.length})</h2>
       ${changes.length ? changes.map((c) => `<div class="check-card" data-c="${c.id}">
-          <div class="cc-head"><span><b>${K.esc(c.driver.name)}</b> <span class="small muted">${K.esc(c.driver.phone)} · ${K.when(c.at)}</span></span><span class="badge warn">${c.kind === 'photo' ? 'New profile photo' : 'Vehicle / plate change'}</span></div>
+          <div class="cc-head"><span><b>${K.esc(c.driver.name)}</b> <span class="small muted">${K.esc(c.driver.phone)} · ${K.when(c.at)}</span></span><span class="badge warn">${c.kind === 'photo' ? (c.driver.status === 'approved' ? 'New profile photo' : 'Sign-up photo') : 'Vehicle / plate change'}</span></div>
           ${c.kind === 'photo'
             ? `<div class="doc-thumbs four">${img(c.current.photo, 'Approved photo')}${img(c.requested.photo, 'New photo')}${img(c.compare.national_id, 'National ID')}${img(c.compare.license, 'Driving permit')}</div>
                <p class="small muted">Approve only if the new photo is clearly the same person as on the ID and permit.</p>`
@@ -202,19 +202,29 @@
     draw();
   }
 
-  async function showDocs(id, name, status) {
-    const m = K.modal(`<h2>${name}</h2><div class="doc-thumbs"><i class="sk" style="height:180px"></i><i class="sk" style="height:180px"></i></div>`);
+  // Approving a driver: their photo next to the National ID and permit, and the plate they typed
+  // next to the vehicle photo. Approving the driver approves the photo and plate too.
+  async function showDocs(id, name, status, veh = {}) {
+    const m = K.modal(`<h2>${K.esc(name)}</h2><div class="doc-thumbs"><i class="sk" style="height:180px"></i><i class="sk" style="height:180px"></i></div>`);
+    m.el.classList.add('wide-modal');
     try {
       const docs = await K.api(`/admin/drivers/${id}/documents`);
-      m.el.innerHTML = `<h2>${name}</h2><p class="small muted">Check that the name, photo and number plate match before approving.</p>
-        ${docs.length ? `<div class="doc-thumbs">${docs.map((d) => `<figure><a href="${d.url}" target="_blank" rel="noopener"><img src="${d.url}" alt="${K.esc(d.label)}"></a><figcaption>${K.esc(d.label)}<br><span class="muted" style="font-weight:500">${K.when(d.at)}</span></figcaption></figure>`).join('')}</div>`
-          : '<div class="card" style="margin:10px 0">This driver hasn’t uploaded any documents yet.</div>'}
+      const by = (k) => docs.find((d) => d.kind === k && d.pending) || docs.find((d) => d.kind === k);
+      const fig = (d, cap) => `<figure>${d ? `<a href="${d.url}" target="_blank" rel="noopener"><img src="${d.url}" alt="${K.esc(cap)}"></a>` : '<div class="noimg">Not uploaded</div>'}<figcaption>${K.esc(cap)}${d ? `<br><span class="muted" style="font-weight:500">${K.when(d.at)}</span>` : ''}</figcaption></figure>`;
+      const photo = by('photo');
+      m.el.innerHTML = `<h2>${K.esc(name)}</h2>
+        <h3 style="margin:10px 0 6px">Is this the same person?</h3>
+        <div class="doc-thumbs four">${fig(photo, photo && photo.pending ? 'Profile photo (to check)' : 'Profile photo')}${fig(by('national_id'), 'National ID')}${fig(by('license'), 'Driving permit')}${fig(by('insurance'), 'Insurance (optional)')}</div>
+        <h3 style="margin:14px 0 6px">Does the plate match?</h3>
+        <div class="veh-compare"><div><span class="small muted">Typed at sign-up</span><br><b class="plate-tag">${K.esc(veh.plate || '—')}</b><br><span class="small muted">${K.esc(veh.vehicle || '')}</span></div>
+          <div style="flex:1;max-width:260px">${fig(by('vehicle'), 'Vehicle photo')}</div></div>
+        <p class="small muted">${status !== 'approved' ? 'Approve only if the photo is clearly the person on the ID and permit, and the plate in the vehicle photo is the one typed. Approving the driver approves their photo and plate.' : 'This driver is approved. Photo and plate changes come to Photo & plate checks.'}</p>
         <div class="row" style="margin-top:14px">
-          ${status !== 'approved' ? `<button class="btn btn-danger-soft fill" data-st="rejected">Reject</button><button class="btn btn-primary fill" data-st="approved">Approve</button>` : '<button class="btn fill" data-close>Close</button>'}
+          ${status !== 'approved' ? `<button class="btn btn-danger-soft fill" data-st="rejected">Reject</button><button class="btn btn-primary fill" data-st="approved">Approve driver</button>` : '<button class="btn fill" data-close>Close</button>'}
         </div>`;
       m.el.querySelectorAll('[data-st]').forEach((b) => b.onclick = async () => {
         await K.api(`/admin/drivers/${id}/status`, { status: b.dataset.st });
-        m.close(); K.toast(`Driver ${b.dataset.st}`); await refreshCounts(); show();
+        m.close(); K.toast(b.dataset.st === 'approved' ? 'Driver approved, with their photo and plate.' : 'Driver rejected'); await refreshCounts(); show();
       });
     } catch (e) { m.el.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; }
   }

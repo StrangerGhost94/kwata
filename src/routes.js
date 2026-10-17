@@ -170,8 +170,9 @@ r.post('/driver/documents', auth.requireAuth('driver'), wrap(async (req, res) =>
   if (!m) return bad(res, 'Upload a photo (JPG or PNG).');
   if (m[2].length > 2.8e6) return bad(res, 'That photo is too large. Try again.');
   const dv = await db.one('SELECT status FROM drivers WHERE user_id = $1', [req.user.id]);
-  if (dv && dv.status === 'approved' && kind === 'photo') {
-    // Riders keep seeing the approved photo until the team checks the new one against the ID.
+  if (kind === 'photo') {
+    // Every profile photo, at sign-up too, is checked by the team against the ID before riders see it.
+    // A driver who already has an approved photo keeps it until the new one is approved.
     await db.query("UPDATE driver_changes SET status = 'replaced', decided_at = NOW() WHERE driver_id = $1 AND kind = 'photo' AND status = 'pending'", [req.user.id]);
     await db.query("INSERT INTO driver_changes(driver_id, kind, data) VALUES ($1,'photo',$2)", [req.user.id, JSON.stringify({ mime: m[1], data: m[2] })]);
     rt.io.to('admin').emit('admin:change', { id: req.user.id, name: req.user.name, kind: 'photo' });
@@ -186,6 +187,11 @@ r.post('/driver/documents', auth.requireAuth('driver'), wrap(async (req, res) =>
 }));
 r.get('/driver/documents', auth.requireAuth('driver'), wrap(async (req, res) => {
   const { rows } = await db.query('SELECT kind, created_at, expires_on FROM driver_docs WHERE user_id = $1', [req.user.id]);
+  // A photo waiting for the team's check counts as uploaded, so sign-up can continue.
+  if (!rows.some((x) => x.kind === 'photo')) {
+    const pend = await db.one("SELECT created_at FROM driver_changes WHERE driver_id = $1 AND kind = 'photo' AND status = 'pending' ORDER BY id DESC LIMIT 1", [req.user.id]);
+    if (pend) rows.push({ kind: 'photo', created_at: pend.created_at });
+  }
   const day = (v) => (v ? (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10) : null);
   res.json({ kinds: DOC_KINDS, optional: OPTIONAL_DOCS, expiring: dtools.EXPIRING_KINDS,
     uploaded: Object.fromEntries(rows.map((x) => [x.kind, x.created_at])),
@@ -204,7 +210,12 @@ r.get('/drivers/:id/photo', wrap(async (req, res) => {
 
 r.get('/driver/photo', auth.requireAuth('driver'), wrap(async (req, res) => {
   const d = await db.one("SELECT mime, data FROM driver_docs WHERE user_id = $1 AND kind = 'photo'", [req.user.id]);
-  res.json({ url: d ? `data:${d.mime};base64,${d.data}` : null });
+  if (d) return res.json({ url: `data:${d.mime};base64,${d.data}`, approved: true });
+  // Before the first photo is approved, drivers see the one they sent.
+  const p = await db.one("SELECT data FROM driver_changes WHERE driver_id = $1 AND kind = 'photo' AND status = 'pending' ORDER BY id DESC LIMIT 1", [req.user.id]);
+  if (!p) return res.json({ url: null });
+  const x = JSON.parse(p.data);
+  res.json({ url: `data:${x.mime};base64,${x.data}`, approved: false });
 }));
 
 // Photo and vehicle changes waiting for the team, or decided in the last two weeks.
@@ -950,7 +961,9 @@ r.get('/admin/drivers', admin, wrap(async (req, res) => {
   const { rows } = await db.query(`
     SELECT u.id, u.name, u.phone, u.blocked, u.rating_sum, u.rating_count, u.created_at, d.*,
       (SELECT COUNT(*)::int FROM trips t WHERE t.driver_id = u.id AND t.status = 'completed') AS trips,
-      (SELECT COUNT(*)::int FROM driver_docs dd WHERE dd.user_id = u.id) AS docs,
+      (SELECT COUNT(*)::int FROM driver_docs dd WHERE dd.user_id = u.id AND dd.kind <> 'insurance')
+        + (SELECT CASE WHEN EXISTS (SELECT 1 FROM driver_changes c WHERE c.driver_id = u.id AND c.kind = 'photo' AND c.status = 'pending')
+            AND NOT EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = u.id AND dd.kind = 'photo') THEN 1 ELSE 0 END) AS docs,
       (SELECT MIN(dd.expires_on) FROM driver_docs dd WHERE dd.user_id = u.id AND dd.expires_on IS NOT NULL) AS next_expiry,
       (SELECT COUNT(*)::int FROM driver_events e WHERE e.driver_id = u.id AND e.kind = 'offer_accepted' AND e.created_at > NOW() - INTERVAL '30 days') AS ev_acc,
       (SELECT COUNT(*)::int FROM driver_events e WHERE e.driver_id = u.id AND e.kind IN ('offer_declined','offer_missed') AND e.created_at > NOW() - INTERVAL '30 days') AS ev_rej,
@@ -1045,8 +1058,17 @@ r.post('/admin/drivers', admin, wrap(async (req, res) => {
 }));
 
 r.get('/admin/drivers/:id/documents', admin, wrap(async (req, res) => {
-  const { rows } = await db.query('SELECT kind, mime, data, created_at FROM driver_docs WHERE user_id = $1', [Number(req.params.id)]);
-  res.json(rows.map((x) => ({ kind: x.kind, label: DOC_KINDS[x.kind], url: `data:${x.mime};base64,${x.data}`, at: x.created_at })));
+  const id = Number(req.params.id);
+  const { rows } = await db.query('SELECT kind, mime, data, created_at FROM driver_docs WHERE user_id = $1', [id]);
+  const out = rows.map((x) => ({ kind: x.kind, label: ALL_DOCS[x.kind], url: `data:${x.mime};base64,${x.data}`, at: x.created_at }));
+  const p = await db.one("SELECT data, created_at FROM driver_changes WHERE driver_id = $1 AND kind = 'photo' AND status = 'pending' ORDER BY id DESC LIMIT 1", [id]);
+  if (p) {
+    const x = JSON.parse(p.data);
+    const item = { kind: 'photo', label: 'Profile photo · not checked yet', url: `data:${x.mime};base64,${x.data}`, at: p.created_at, pending: true };
+    const i = out.findIndex((d) => d.kind === 'photo');
+    if (i >= 0) out.splice(i + 1, 0, item); else out.push(item);
+  }
+  res.json(out);
 }));
 
 // Reset anyone's password (there's no SMS reset yet, so support does it).
@@ -1063,6 +1085,17 @@ r.post('/admin/drivers/:id/status', admin, wrap(async (req, res) => {
   if (!['approved', 'suspended', 'pending', 'rejected'].includes(status)) return bad(res, 'Invalid status.');
   const d = await db.one('UPDATE drivers SET status = $1 WHERE user_id = $2 RETURNING user_id', [status, Number(req.params.id)]);
   if (!d) return bad(res, 'Driver not found.', 404);
+  if (status === 'approved') {
+    // Approving a new driver means the team checked their photo against the ID: approve it too.
+    const p = await db.one("SELECT id, data FROM driver_changes WHERE driver_id = $1 AND kind = 'photo' AND status = 'pending' ORDER BY id DESC LIMIT 1", [d.user_id]);
+    const has = await db.one("SELECT 1 AS x FROM driver_docs WHERE user_id = $1 AND kind = 'photo'", [d.user_id]);
+    if (p && !has) {
+      const x = JSON.parse(p.data);
+      await db.query(`INSERT INTO driver_docs(user_id, kind, mime, data) VALUES ($1,'photo',$2,$3)
+        ON CONFLICT (user_id, kind) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, created_at = NOW()`, [d.user_id, x.mime, x.data]);
+      await db.query("UPDATE driver_changes SET status = 'approved', decided_at = NOW() WHERE id = $1", [p.id]);
+    }
+  }
   if (status !== 'approved') rt.forceOffline(d.user_id);
   rt.notify(d.user_id, 'driver:status', { status });
   res.json({ ok: true });

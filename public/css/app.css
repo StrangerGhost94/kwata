@@ -1524,7 +1524,26 @@ html.launch-dark .sp-load { background: rgba(255,255,255,.14); }
 .doc-thumbs.four { grid-template-columns: repeat(4, 1fr); }
 .doc-thumbs .noimg { height: 150px; display: grid; place-items: center; color: var(--ink-3); font-size: .9rem; }
 .veh-compare { display: flex; align-items: center; gap: 18px; margin: 0 0 12px; }
+.veh-compare figure { margin: 0; background: var(--surface); border-radius: 12px; overflow: hidden; }
+.veh-compare figure img { width: 100%; height: 180px; object-fit: cover; display: block; }
+.veh-compare figcaption { padding: 8px 10px; font-size: .8rem; font-weight: 600; }
 .veh-compare .arrow { font-size: 1.6rem; color: var(--ink-3); }
 tr.faded td { opacity: .55; }
 @media (max-width: 760px) { .doc-thumbs.four { grid-template-columns: 1fr 1fr; } }
 .modal .lrow .grow { display: flex; flex-direction: column; text-align: left; }
+/* After the shot: the face is shown round, exactly as riders will see it */
+.cam.taken .cam-guide { display: none; }
+.cam-round { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; background: #111; }
+.cam-round[hidden] { display: none; }
+.cam-round img { position: static; width: min(64vw, 260px); height: min(64vw, 260px); border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 4px #fff; }
+.cam-round span { font-size: 15px; color: #E5E5EA; }
+.modal.wide-modal { max-width: 860px; }
+/* Photo & vehicle page */
+.id-card { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; background: var(--ios-cell, #fff); border-radius: 22px; padding: 20px 16px; margin: 0 0 14px; }
+.id-card > b { font-size: 17px; }
+.id-photo { width: 112px; height: 112px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: var(--brand-soft); font-weight: 800; font-size: 2rem; }
+.id-photo img { width: 100%; height: 100%; object-fit: cover; }
+.id-veh { width: 120px; height: 80px; }
+.plate-chip.big { font-size: 1.05rem; padding: 4px 12px; }
+.id-card .review-note { width: 100%; text-align: left; margin: 2px 0; }
+.id-card .btn { margin-top: 4px; }

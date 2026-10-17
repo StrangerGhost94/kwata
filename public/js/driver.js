@@ -838,16 +838,15 @@
     el.innerHTML = `
       <div class="page-title">Profile</div>
       <div class="profile-head">
-        <button class="photo photo-btn" id="ph" aria-label="Change your profile photo">${photoUrl() ? `<img src="${photoUrl()}" alt="">` : K.initials(S.user.name)}<span class="cam-badge" aria-hidden="true">${K.ic('camera')}</span></button>
+        <span class="photo">${photoUrl() ? `<img src="${photoUrl()}" alt="Your profile photo">` : K.initials(S.user.name)}</span>
         <span class="grow"><b style="font-size:1.2rem;display:block">${K.esc(S.user.name)}</b><span class="small muted">${K.esc(prettyPhone(S.user.phone))}</span><br>
           <span class="verified">${K.ic('check', 'sm')} Verified driver</span></span></div>
-      ${changeNote('photo')}
       <div class="card row" style="margin-bottom:8px"><span style="width:84px;height:52px;flex:none">${K.artFor(null, d.vehicleType)}</span>
         <span class="grow"><b>${K.esc([d.vehicleColor, d.vehicleMake].filter(Boolean).join(' ') || (d.vehicleType === 'car' ? 'Car' : 'Boda boda'))}</b><br><span class="plate-chip">${K.esc(d.plate)}</span></span>
         <span class="rating"><span class="star-ic">★</span><b>${S.user.rating || 'New'}</b></span></div>
-      ${changeNote('vehicle')}
-      <button class="menu-item" data-a="vehicle"><span class="ic">${K.ic('edit')}</span><span class="grow">Change vehicle or number plate<br><span class="small muted">Checked by the Flytte team before riders see it</span></span>${K.ic('chev', 'sm')}</button>
+
       ${statsHtml()}
+      <button class="menu-item" data-a="identity"><span class="ic">${K.ic('user')}</span><span class="grow">Photo & vehicle<br><span class="small muted">${identitySub()}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="trips"><span class="ic">${K.ic('receipt')}</span><span class="grow">Trip history</span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="docs"><span class="ic">${K.ic('idcard')}</span><span class="grow">Documents<br><span class="small muted">${S.ov && S.ov.docs && S.ov.docs.length ? `<span style="color:var(--stop)">${S.ov.docs.length} need${S.ov.docs.length === 1 ? 's' : ''} attention</span>` : 'ID, driving permit, insurance, vehicle, photo'}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="alerts"><span class="ic">${K.ic('bell')}</span><span class="grow">Ride alerts<br><span class="small muted">${S.ov && S.ov.push ? 'On · requests ring when your phone is locked' : pushSupported() ? 'Off · turn on to get requests when your phone is locked' : isIOS && !K.standalone() ? 'Add the app to your Home Screen to use them' : 'Not available in this browser'}</span></span>${S.ov && S.ov.push ? '<span class="badge ok">On</span>' : K.ic('chev', 'sm')}</button>
@@ -855,15 +854,57 @@
       ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Driver support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
       <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
       <p class="tiny faint" style="text-align:center;margin-top:18px">Flytte Driver 1.0</p>`;
-    K.$('#ph', el).onclick = () => newPhoto(() => drawProfile(el));
+
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => ({
       trips: openTrips,
       docs: openDocs,
-      vehicle: () => changeVehicle(() => drawProfile(el)),
+      identity: () => openIdentity(() => drawProfile(el)),
       alerts: async () => { if (S.ov && S.ov.push) await disablePush(); else await enablePush(false); await loadOverview(); drawProfile(el); },
       manual: () => { if (S.manual) { S.manual = false; startGps(); } else { S.manual = true; navigator.geolocation && navigator.geolocation.clearWatch(watchId); K.toast('Tap the map to move your position.'); } openTab('home'); },
       out: () => { if (S.online) setOnline(false); K.session.clear(); location.reload(); },
     })[b.dataset.a]());
+  }
+
+  function identitySub() {
+    const c = S.changes || {};
+    const p = [c.photo, c.vehicle].filter(Boolean);
+    if (p.some((x) => x.status === 'rejected')) return '<span style="color:var(--stop)">A change wasn’t approved</span>';
+    if (p.some((x) => x.status === 'pending')) return '<span style="color:#8A5200">A change is being checked</span>';
+    return 'Profile photo, vehicle and number plate';
+  }
+
+  // Photo & vehicle: what riders see, and the only place to ask for changes (checked by the team).
+  function openIdentity(onBack) {
+    const page = document.createElement('div');
+    page.className = 'page push-in grouped nav-large'; page.style.zIndex = 870;
+    page.innerHTML = `<div class="page-inner"><div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Back">${K.ic('back')}</button><h2 aria-hidden="true">Photo & vehicle</h2></div><h1 class="page-title">Photo & vehicle</h1><div data-body></div></div>`;
+    root.querySelector('#app').appendChild(page);
+    K.$('[data-x]', page).onclick = () => K.pop(page, onBack);
+    const body = K.$('[data-body]', page);
+    const draw = async () => {
+      await loadChanges();
+      if (!body.isConnected) return;
+      const d = S.driver;
+      body.innerHTML = `
+        <p class="small muted" style="margin:0 4px 14px">This is what riders see when you pick them up. Changes are checked by the Flytte team first, so riders always see details that match you and your vehicle.</p>
+        <div class="id-card">
+          <span class="id-photo">${photoUrl() ? `<img src="${photoUrl()}" alt="Your profile photo">` : K.initials(S.user.name)}</span>
+          <b>Profile photo</b>
+          ${changeNote('photo')}
+          <button class="btn btn-outline btn-sm" data-i="photo">${K.ic('camera', 'sm')} Change photo</button>
+        </div>
+        <div class="id-card">
+          <span class="id-veh">${K.artFor(null, d.vehicleType)}</span>
+          <b>${K.esc([d.vehicleColor, d.vehicleMake].filter(Boolean).join(' ') || (d.vehicleType === 'car' ? 'Car' : 'Boda boda'))}</b>
+          <span class="plate-chip big">${K.esc(d.plate)}</span>
+          ${changeNote('vehicle')}
+          <button class="btn btn-outline btn-sm" data-i="vehicle">${K.ic('edit', 'sm')} Change vehicle or number plate</button>
+        </div>`;
+      K.$('[data-i="photo"]', body).onclick = () => newPhoto(draw);
+      K.$('[data-i="vehicle"]', body).onclick = () => changeVehicle(draw);
+    };
+    body.innerHTML = K.skeleton('list', 2);
+    draw();
   }
 
   // A new profile photo is checked by the team; riders keep seeing the approved one until then.
@@ -945,10 +986,8 @@
           return `<div class="doc-row ${al ? (al.expired ? 'bad' : 'warn') : ''}">
             <div class="dr-top"><span class="grow"><b>${K.esc(label)}${info.optional[k] ? ' <span class="tiny muted">optional</span>' : ''}</b>
               <span class="small muted">${up ? `Uploaded ${K.when(up)}` : 'Not uploaded'}${al ? ` · <b style="color:${al.expired ? 'var(--stop)' : '#8A5200'}">${al.expired ? 'Expired' : `Expires in ${al.days} day${al.days === 1 ? '' : 's'}`}</b>` : ''}</span></span>
-              ${k === 'photo' ? `<button class="btn btn-sm btn-outline" data-photo>${up ? 'New photo' : 'Take photo'}</button>`
-                : k === 'vehicle' && up ? '<button class="btn btn-sm btn-outline" data-veh>Change vehicle</button>'
+              ${k === 'photo' || (k === 'vehicle' && up) ? '<button class="btn btn-sm btn-outline" data-idp>Manage</button>'
                 : `<label class="btn btn-sm btn-outline">${up ? 'Replace' : 'Upload'}<input type="file" accept="image/*" data-k="${k}" hidden capture="environment"></label>`}</div>
-            ${k === 'photo' ? changeNote('photo') : k === 'vehicle' ? changeNote('vehicle') : ''}
             ${expiring ? `<div class="dr-exp"><label for="e-${k}">Expiry date</label><div class="row"><input type="date" id="e-${k}" value="${exp || ''}" class="fill"><button class="btn btn-sm" data-save="${k}" ${up ? '' : 'disabled'}>Save</button></div></div>` : ''}
           </div>`;
         }).join('')}
@@ -963,8 +1002,7 @@
           K.toast('Uploaded'); await loadOverview(); draw();
         } catch (ex) { K.$('#derr', body).textContent = ex.message; lbl.firstChild.textContent = 'Try again'; }
       });
-      const pb = K.$('[data-photo]', body); if (pb) pb.onclick = () => newPhoto(draw);
-      const vb = K.$('[data-veh]', body); if (vb) vb.onclick = () => changeVehicle(draw);
+      body.querySelectorAll('[data-idp]').forEach((b) => b.onclick = () => openIdentity(draw));
       body.querySelectorAll('[data-save]').forEach((b) => b.onclick = async () => {
         const k = b.dataset.save, v = K.$(`#e-${k}`, body).value;
         try { await K.api('/driver/documents/expiry', { kind: k, expiresOn: v }); K.toast('Expiry date saved'); await loadOverview(); draw(); }

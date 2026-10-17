@@ -525,7 +525,9 @@
     const ov = document.createElement('div');
     ov.className = 'cam'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', title || 'Camera');
     ov.innerHTML = `<div class="cam-top"><button class="cam-x" data-x aria-label="Close">${K.ic('x')}</button><b>${K.esc(title)}</b><span></span></div>
-      <div class="cam-view"><video playsinline autoplay muted ${face ? 'class="mirror"' : ''}></video><img alt="Your photo" hidden><div class="cam-guide ${face ? 'face' : 'plate'}" aria-hidden="true"></div>
+      <div class="cam-view"><video playsinline autoplay muted ${face ? 'class="mirror"' : ''}></video><img alt="Your photo" hidden>
+        ${face ? '<div class="cam-round" hidden><img alt="How riders will see you"><span>This is how riders will see you</span></div>' : ''}
+        <div class="cam-guide ${face ? 'face' : 'plate'}" aria-hidden="true"></div>
         <p class="cam-msg" role="status">Starting the camera…</p></div>
       <p class="cam-hint">${K.esc(hint)}</p>
       <div class="cam-bar"><button class="cam-shot" data-shot aria-label="Take photo" disabled></button>
@@ -551,16 +553,33 @@
           : e && e.name === 'NotFoundError' ? 'No camera was found on this device.' : 'The camera couldn’t start. Close other apps using it and try again.';
       }
     };
+    const round = ov.querySelector('.cam-round');
     shot.onclick = () => {
       const w = video.videoWidth, h = video.videoHeight; if (!w || !h) return;
-      const k = Math.min(1, 1000 / Math.max(w, h));
-      const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
-      c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
-      photo = c.toDataURL('image/jpeg', 0.85);
-      img.src = photo; img.hidden = false; video.hidden = true; img.classList.toggle('mirror', face);
+      if (face) {
+        // The face is lined up in the oval; the saved photo is a square around that oval, so it
+        // sits centred in the round profile picture riders see.
+        const view = video.getBoundingClientRect(), g = ov.querySelector('.cam-guide').getBoundingClientRect();
+        const sc = Math.max(view.width / w, view.height / h);            // object-fit: cover
+        const ox = (view.width - w * sc) / 2, oy = (view.height - h * sc) / 2;
+        const cx = (g.left + g.width / 2 - view.left - ox) / sc, cy = (g.top + g.height / 2 - view.top - oy) / sc;
+        let side = Math.min((g.height * 1.12) / sc, w, h);
+        const sx = Math.max(0, Math.min(w - side, cx - side / 2)), sy = Math.max(0, Math.min(h - side, cy - side / 2));
+        const c = document.createElement('canvas'); c.width = c.height = 640;
+        c.getContext('2d').drawImage(video, sx, sy, side, side, 0, 0, 640, 640);
+        photo = c.toDataURL('image/jpeg', 0.88);
+        round.querySelector('img').src = photo; round.hidden = false; video.hidden = true;
+      } else {
+        const k = Math.min(1, 1000 / Math.max(w, h));
+        const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+        c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+        photo = c.toDataURL('image/jpeg', 0.85);
+        img.src = photo; img.hidden = false; video.hidden = true;
+      }
+      ov.classList.add('taken');
       stop(); shot.hidden = true; after.hidden = false;
     };
-    ov.querySelector('[data-retake]').onclick = () => { photo = null; img.hidden = true; video.hidden = false; shot.hidden = false; after.hidden = true; shot.disabled = true; start(); };
+    ov.querySelector('[data-retake]').onclick = () => { photo = null; img.hidden = true; if (round) round.hidden = true; ov.classList.remove('taken'); video.hidden = false; shot.hidden = false; after.hidden = true; shot.disabled = true; start(); };
     ov.querySelector('[data-use]').onclick = () => close(photo);
     ov.querySelector('[data-x]').onclick = () => close(null);
     start();

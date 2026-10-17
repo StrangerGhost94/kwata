@@ -43,6 +43,20 @@ const photoBytes = async (id) => { const r = await fetch(BASE + `/api/drivers/${
   let mine = await api('/driver/changes', null, driver.token);
   assert(mine.photo.status === 'rejected' && mine.photo.note === 'Face not clear' && (await photoBytes(id)) === approvedA, 'driver sees why; riders still see the approved photo');
 
+  // 1b. Sign-up photo is checked too, and approving the driver approves it
+  const ap = await api('/auth/register', { name: 'New Signup', phone: '0751' + rnd().slice(2), password: 'secret1', role: 'driver', vehicleType: 'boda', plate: 'UFS 555S', licenseNo: 'DL55', momoNumber: '0751' + rnd().slice(2) });
+  r = await api('/driver/documents', { kind: 'photo', image: jpegA, live: true }, ap.token);
+  assert(r.pending, 'a sign-up photo goes to the team’s check');
+  const own = await api('/driver/documents', null, ap.token);
+  assert(own.uploaded.photo, 'sign-up can continue while the photo is checked');
+  const ch = (await api('/admin/changes', null, admin.token)).find((x) => x.driver.id === ap.user.id);
+  assert(ch && ch.kind === 'photo' && ch.driver.status === 'pending', 'admin sees the sign-up photo in Photo & plate checks');
+  const adocs = await api(`/admin/drivers/${ap.user.id}/documents`, null, admin.token);
+  assert(adocs.some((d) => d.kind === 'photo' && d.pending), 'the approval window shows the photo waiting for a check');
+  await api(`/admin/drivers/${ap.user.id}/status`, { status: 'approved' }, admin.token);
+  assert(typeof (await photoBytes(ap.user.id)) === 'string', 'approving the driver approves their photo');
+  assert(!(await api('/admin/changes', null, admin.token)).some((x) => x.driver.id === ap.user.id), 'and it leaves the checks list');
+
   // 2. Vehicle / number plate changes
   const vdoc = await call('/driver/documents', { kind: 'vehicle', image: jpegA }, driver.token);
   assert(vdoc.status === 400, 'an approved driver can’t swap the vehicle photo directly');
