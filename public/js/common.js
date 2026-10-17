@@ -392,6 +392,13 @@
   // happens, don't add home-bar spacing on top, or the bottom bar floats up.
   const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   if (standalone) document.documentElement.classList.add('standalone');
+  // Test build (/beta, /driver-beta): the installed app runs under the clock. iOS always draws the
+  // clock white in that mode, so a soft shade sits behind it on light screens to keep it readable.
+  const underClock = standalone && document.documentElement.classList.contains('under-clock');
+  if (underClock) {
+    const addScrim = () => { if (!document.querySelector('.sb-scrim')) { const d = document.createElement('div'); d.className = 'sb-scrim'; d.setAttribute('aria-hidden', 'true'); document.body.appendChild(d); } };
+    document.body ? addScrim() : document.addEventListener('DOMContentLoaded', addScrim);
+  }
   // Normal case: the app reaches the bottom edge, so keep the standard home-bar spacing.
   // iOS 26 bug case: the app's view is shorter than the full screen (the "large
   // viewport", 100lvh). Only then is the home-bar strip outside the app, and only
@@ -444,6 +451,8 @@
         if (!tabs.classList.contains('hidden') && c !== STRIP.dark) c = q('.page.grouped:not(.hidden)') ? STRIP.grouped : q('.page:not(.hidden)') ? STRIP.page : STRIP.map;
       }
       document.documentElement.style.setProperty('--edge', c);
+      // Under the clock: no shade where the top of the screen is already dark.
+      document.documentElement.classList.toggle('top-dark', !!(q('.splash:not(.out)') || q('#req') || q('.onboard') || q('.auth2')));
       // iOS colours the status-bar strip from the page background when the app opens and keeps it,
       // so the page background is never the dark splash colour (the splash covers the screen anyway).
       const bg = c === STRIP.dark && !document.documentElement.classList.contains('launch-dark') ? STRIP.page : c;

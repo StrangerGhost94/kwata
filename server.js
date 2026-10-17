@@ -39,6 +39,35 @@ const page = (f) => (req, res) => {
 };
 app.get(['/', '/rider'], page('rider.html'));
 app.get('/driver', page('driver.html'));
+// Test build: the installed app draws under the clock (like Uber and Apple Maps) instead of below
+// a white strip. iOS reads the status-bar style only when the app is added to the Home Screen, so
+// this lives on its own address with its own icon name; the live app is untouched until it's chosen.
+const underClock = (f, manifest, title) => (req, res) => {
+  const key = 'uc:' + f;
+  let html = pageCache[key];
+  if (!html) {
+    html = fs.readFileSync(path.join(__dirname, 'public', f), 'utf8')
+      .replace(/((?:src|href)="\/(?:js\/[\w-]+\.js|css\/app\.css))"/g, `$1?v=${BUILD}"`)
+      .replace('<html lang="en">', '<html lang="en" class="under-clock">')
+      .replace(/(name="apple-mobile-web-app-status-bar-style" content=)"default"/, '$1"black-translucent"')
+      .replace(/(name="apple-mobile-web-app-title" content=)"[^"]*"/, `$1"${title}"`)
+      .replace(/href="\/manifest(-driver)?\.json"/, `href="${manifest}"`);
+    if (process.env.NODE_ENV === 'production' || process.env.DATABASE_URL) pageCache[key] = html;
+  }
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('html').send(html);
+};
+const testManifest = (f, start, name) => (req, res) => {
+  const m = JSON.parse(fs.readFileSync(path.join(__dirname, 'public', f), 'utf8'));
+  Object.assign(m, { id: start, start_url: start, name, short_name: name });
+  delete m.shortcuts;
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('application/manifest+json').send(JSON.stringify(m));
+};
+app.get('/beta', underClock('rider.html', '/manifest-beta.json', 'Flytte Test'));
+app.get('/driver-beta', underClock('driver.html', '/manifest-driver-beta.json', 'Driver Test'));
+app.get('/manifest-beta.json', testManifest('manifest.json', '/beta', 'Flytte Test'));
+app.get('/manifest-driver-beta.json', testManifest('manifest-driver.json', '/driver-beta', 'Driver Test'));
 app.get('/t/:token', page('track.html'));
 app.get(['/admin', '/admin.html'], page('admin.html'));
 app.get(['/about', '/about.html'], page('about.html'));

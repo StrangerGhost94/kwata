@@ -1547,3 +1547,14 @@ tr.faded td { opacity: .55; }
 .plate-chip.big { font-size: 1.05rem; padding: 4px 12px; }
 .id-card .review-note { width: 100%; text-align: left; margin: 2px 0; }
 .id-card .btn { margin-top: 4px; }
+
+/* ---------- Test build: the installed app under the clock (/beta, /driver-beta) ----------
+   iOS 26 makes the app's view one status bar shorter than the screen in this mode, so the bottom
+   menu stops short. The page is made exactly as tall as the screen, which makes iOS give the app the
+   full height (min() keeps it from scrolling on iOS versions without the bug). */
+html.under-clock.standalone, html.under-clock.standalone body { height: auto; min-height: min(100lvh, calc(100% + env(safe-area-inset-top))); }
+.sb-scrim { position: fixed; left: 0; right: 0; top: 0; z-index: 2500; pointer-events: none;
+  height: calc(env(safe-area-inset-top) + 22px); transition: opacity .3s;
+  background: linear-gradient(180deg, rgba(0,0,0,.34) 0%, rgba(0,0,0,.2) 50%, rgba(0,0,0,.06) 80%, rgba(0,0,0,0) 100%); }
+html.top-dark .sb-scrim { opacity: 0; }
+@media (prefers-contrast: more) { .sb-scrim { background: linear-gradient(180deg, rgba(0,0,0,.6) 0%, rgba(0,0,0,.38) 60%, rgba(0,0,0,0) 100%); } }
