@@ -605,7 +605,6 @@
     ? `<a class="${cls}" href="tel:${K.esc(c.supportPhone.replace(/\s/g, ''))}">${label} · ${K.esc(c.supportPhone)}</a>` : '').catch(() => '');
   const toLocal = (raw) => { const d = String(raw || '').replace(/\D/g, ''); return d.startsWith('256') ? d : d.startsWith('0') ? d : '0' + d; };
 
-  const GOOGLE_G = '<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
   const pwField = (id, auto, ph = '') => `<div class="pw-field"><input id="${id}" name="password" type="password" autocomplete="${auto}" minlength="6" placeholder="${ph}" required><button type="button" class="eye" aria-label="Show password">${K.ic('eye')}</button></div>`;
 
   // "Keep 88% of every fare", using the commission actually set in Admin.
@@ -629,7 +628,6 @@
         const i = eye.previousElementSibling, show = i.type === 'password';
         i.type = show ? 'text' : 'password'; eye.innerHTML = K.ic(show ? 'eyeOff' : 'eye'); eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
       });
-      root.querySelectorAll('[data-google]').forEach((g) => g.onclick = () => K.toast('Google sign-in isn’t available yet. Use your phone number.', 4000));
       fillKeep(root);
       // Only jump into the first box on computers. On phones it opened the keyboard and
       // pushed the typing box over the opening animation.
@@ -637,9 +635,11 @@
         const f = root.querySelector('form'); if (f) setTimeout(() => { const i = f.querySelector('input'); i && i.focus({ preventScroll: true }); }, 500);
       }
     };
-    // Google sign-in is not built yet: shown greyed out and clearly labelled, never as a working login.
-    const google = (label) => role === 'admin' ? '' : `<button type="button" class="btn btn-google btn-block btn-lg is-soon" data-google aria-disabled="true" aria-label="${label}: not available yet">${GOOGLE_G}<span>${label}</span><span class="soon-badge">Coming soon</span></button>
-      <div class="or"><span>Use your phone number</span></div>`;
+    // The number they typed, shown at the top of the next step with a way back to change it.
+    const pretty = (raw) => { let d = String(raw || '').replace(/\D/g, ''); if (d.startsWith('256')) d = d.slice(3); if (d.startsWith('0')) d = d.slice(1); return d.replace(/^(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3'); };
+    const phoneChip = () => `<div class="phone-chip"><span class="flag" aria-hidden="true">🇺🇬</span><span class="num">+256 ${K.esc(pretty(draft.phone))}</span><button type="button" class="link-btn" data-chg>Change</button></div>`;
+    const bindChip = () => { const c = root.querySelector('[data-chg]'); if (c) c.onclick = () => { dir = 'back'; phoneStep(); }; };
+    const wrongApp = { driver: 'This number belongs to a driver account. Open the Flytte Driver app to sign in.', rider: 'This number has a rider account. Use a different number to drive with Flytte.', admin: 'This is a staff account.' };
     const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.innerHTML = on ? '<span class="spin"></span>Please wait…' : btn.dataset.label; };
     const finish = async (out) => {
       K.session.set(out);
@@ -669,8 +669,8 @@
         ['Safer from', 'the first metre.', 'Every trip starts with your PIN, and family can follow along live.'],
       ], 'Get Started');
       const seen = () => { try { localStorage.setItem('flytte_onboarded', '1'); } catch {} };
-      root.querySelector('#go').onclick = () => { seen(); signUp(); };
-      root.querySelector('#li').onclick = () => { seen(); logIn(); };
+      root.querySelector('#go').onclick = () => { seen(); phoneStep(onboarding); };
+      root.querySelector('#li').onclick = () => { seen(); phoneStep(onboarding); };
     }
 
     // Driver welcome (screen 14)
@@ -678,7 +678,7 @@
       hero(true, [['Your boda,', 'your income.', 'Pick up rides and deliveries near you, <span data-keep="keep">keep most of every fare</span>, and cash out to Mobile Money.']], 'Get Started');
       fillKeep(root);
       root.querySelector('#go').onclick = becomeDriver;
-      root.querySelector('#li').onclick = logIn;
+      root.querySelector('#li').onclick = () => phoneStep(driverWelcome);
     }
 
     function becomeDriver() {
@@ -688,16 +688,15 @@
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" id="go">Continue</button>
         <p class="fine">Already driving with Flytte? <button data-li>Log In</button></p></div>`, driverWelcome);
-      root.querySelector('#go').onclick = driverForm;
-      root.querySelector('[data-li]').onclick = logIn;
+      root.querySelector('#go').onclick = () => phoneStep(becomeDriver);
+      root.querySelector('[data-li]').onclick = () => phoneStep(becomeDriver);
     }
 
     function signUp() {
       shell(`<form id="f" novalidate class="auth-body">
         <h1>Create your account</h1><p class="lead">It takes less than a minute.</p>
-        ${google('Sign up with Google')}
+        ${phoneChip()}
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" placeholder="e.g. Grace Nalubega" value="${K.esc(draft.name || '')}" required>
-        <label for="ph">Phone number</label>${phoneField('ph', draft.phone)}
         <label for="pw">Password</label>${pwField('pw', 'new-password', 'At least 6 characters')}
         ${(() => { let ref = ''; try { ref = localStorage.getItem('flytte_ref') || ''; } catch {} return ref
           ? `<label for="ic">Invite code</label><input id="ic" name="inviteCode" value="${K.esc(ref)}" style="text-transform:uppercase;font-weight:700;letter-spacing:.05em">`
@@ -705,31 +704,28 @@
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Create account">Create account</button>
-        <p class="fine">Already have an account? <button type="button" data-li>Log In</button></p>
-      </form>`, onboarding);
+      </form>`, phoneStep);
       const f = root.querySelector('#f');
-      root.querySelector('[data-li]').onclick = logIn;
+      bindChip();
       const it = root.querySelector('#icToggle'); if (it) it.onclick = () => { it.remove(); root.querySelector('#icWrap').classList.remove('hidden'); root.querySelector('#ic').focus(); };
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
-        draft = { name: f.nm.value.trim(), phone: f.ph.value.trim() };
+        draft.name = f.nm.value.trim();
         if (draft.name.length < 2) { err.textContent = 'Enter your full name.'; f.nm.focus(); return; }
-        if (!K.validPhone(draft.phone)) { err.textContent = 'Enter a valid Ugandan mobile number, e.g. 0772 123456.'; f.ph.focus(); return; }
         if (f.pw.value.length < 6) { err.textContent = 'Your password needs at least 6 characters.'; f.pw.focus(); return; }
         const inviteCode = f.ic && f.ic.value.trim() ? f.ic.value.trim().toUpperCase() : undefined;
         busy(f, true);
         try { const out = await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw.value, role: 'rider', inviteCode }); try { localStorage.removeItem('flytte_ref'); } catch {} await finish(out); }
-        catch (ex) { err.innerHTML = /already has an account/.test(ex.message) ? `This number already has an account. <a href="#" data-li2>Log in instead</a>` : K.esc(ex.message); busy(f, false); const l = err.querySelector('[data-li2]'); if (l) l.onclick = (ev) => { ev.preventDefault(); logIn(); }; }
+        catch (ex) { if (/already has an account/.test(ex.message)) { passwordStep(); return; } err.textContent = ex.message; busy(f, false); }
       };
     }
 
     function driverForm() {
       shell(`<form id="f" novalidate class="auth-body">
         <h1>Your details</h1><p class="lead">We’ll check these before your first trip.</p>
-        ${google('Sign up with Google')}
-        <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" required>
-        <label for="ph">Phone number</label>${phoneField('ph')}
+        ${phoneChip()}
+        <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" value="${K.esc(draft.name || '')}" required>
         <label for="pw">Create a password</label>${pwField('pw', 'new-password', 'At least 6 characters')}
         <label for="vt">What do you drive?</label><select id="vt" name="vehicleType"><option value="boda">Boda boda (motorcycle)</option><option value="car">Car</option></select>
         <div class="row"><div class="fill"><label for="pl">Number plate</label><input id="pl" name="plate" placeholder="UFA 123X" required></div>
@@ -739,13 +735,15 @@
         <label for="mm">Mobile Money for payouts</label><input id="mm" name="momoNumber" type="tel" placeholder="Same as your phone if empty">
         <p class="error" role="alert"></p>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue" style="margin-top:8px">Continue</button>
-      </form>`, becomeDriver);
+      </form>`, phoneStep);
       const f = root.querySelector('#f');
+      bindChip();
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
         const data = Object.fromEntries(new FormData(f).entries());
-        const need = [[(data.name || '').trim().length >= 2, 'nm', 'Enter your full name.'], [K.validPhone(data.phone), 'ph', 'Enter a valid Ugandan mobile number, e.g. 0772 123456.'],
+        data.phone = draft.phone; draft.name = (data.name || '').trim();
+        const need = [[(data.name || '').trim().length >= 2, 'nm', 'Enter your full name.'],
           [(data.password || '').length >= 6, 'pw', 'Your password needs at least 6 characters.'], [(data.plate || '').trim().length >= 4, 'pl', 'Enter the number plate.'], [(data.licenseNo || '').trim(), 'lc', 'Enter your driving permit number.'],
           [!data.momoNumber || K.validPhone(data.momoNumber), 'mm', 'Enter a valid Mobile Money number, or leave it empty.']].find(([ok]) => !ok);
         if (need) { err.textContent = need[2]; f[need[1]].focus(); return; }
@@ -756,28 +754,85 @@
       };
     }
 
+    // Step 1 for riders and drivers: just the mobile number. Flytte then asks for the
+    // password if the number has an account, or starts a new one if it doesn't.
+    let stepBack = null;
+    function phoneStep(back) {
+      if (back) stepBack = back;
+      const driver = role === 'driver';
+      shell(`<form id="f" novalidate class="auth-body phone-first">
+        <h1>${driver ? 'Drive with Flytte' : 'Welcome to Flytte'}</h1>
+        <p class="lead">Enter your mobile number to continue.</p>
+        <label for="ph" class="sr-only">Mobile number</label>${phoneField('ph', draft.phone)}
+        <p class="error" role="alert"></p>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
+        <p class="fine">If you already have an account we’ll ask for your password. If not, we’ll set one up${driver ? ' and check your documents before your first trip' : ''}.</p>
+      </form>`, stepBack);
+      const f = root.querySelector('#f');
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const err = f.querySelector('.error'); err.textContent = '';
+        const ph = f.ph.value.trim();
+        if (!K.validPhone(ph)) { err.textContent = 'Enter a valid Ugandan mobile number, e.g. 0772 123456.'; f.ph.focus(); return; }
+        if (ph !== draft.phone) draft = { phone: ph };
+        busy(f, true);
+        try {
+          const out = await K.api('/auth/check', { phone: toLocal(ph) });
+          if (out.exists && out.role !== role) { err.textContent = wrongApp[out.role] || 'This number can’t be used here.'; busy(f, false); return; }
+          if (out.exists) passwordStep(); else if (driver) driverForm(); else signUp();
+        } catch (ex) { err.textContent = ex.message; busy(f, false); }
+      };
+    }
+
+    function passwordStep() {
+      shell(`<form id="f" novalidate class="auth-body">
+        <h1>Welcome back</h1><p class="lead">Enter your password to log in.</p>
+        ${phoneChip()}
+        <input type="tel" name="username" autocomplete="username" value="${K.esc(toLocal(draft.phone))}" hidden>
+        <label for="pw">Password</label>${pwField('pw', 'current-password')}
+        <div class="row" style="justify-content:flex-end;margin-top:8px"><button type="button" class="link-btn" data-forgot>Forgot password?</button></div>
+        <p class="error" role="alert"></p>
+        <div class="spacer"></div>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Log In">Log In</button>
+      </form>`, phoneStep);
+      bindChip();
+      const f = root.querySelector('#f');
+      root.querySelector('[data-forgot]').onclick = forgot;
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const err = f.querySelector('.error'); err.textContent = '';
+        if (!f.pw.value) { err.textContent = 'Enter your password.'; f.pw.focus(); return; }
+        busy(f, true);
+        try {
+          const out = await K.api('/auth/login', { phone: toLocal(draft.phone), password: f.pw.value });
+          if (out.user.role !== role) throw new Error(wrongApp[out.user.role] || 'This account can’t be used here.');
+          await finish(out);
+        } catch (ex) { err.textContent = /Wrong phone number or password/.test(ex.message) ? 'That password isn’t right. Try again, or tap “Forgot password?”.' : ex.message; busy(f, false); }
+      };
+    }
+
+    async function forgot() {
+      const call = await supportLink('Call support');
+      K.modal(`<h2>Forgot your password?</h2>
+        <p class="muted">${call ? 'Call Flytte support from the number you signed up with. We’ll confirm it’s you and set a new password.' : 'Password resets are done by the Flytte team for now. A support line will be listed here soon.'}</p>
+        ${call}
+        <button class="btn btn-block" style="margin-top:8px" data-close>Close</button>`);
+    }
+
+    // Staff sign in (admin): phone and password on one screen.
     function logIn() {
       shell(`<form id="f" novalidate class="auth-body">
         <h1>${role === 'driver' ? 'Welcome back, driver' : role === 'admin' ? 'Flytte Operations' : 'Welcome back'}</h1>
         <p class="lead">${role === 'admin' ? 'Staff sign in' : 'Log in to continue'}</p>
-        ${google('Continue with Google')}
         <label for="ph">Phone number</label>${phoneField('ph', draft.phone)}
         <label for="pw">Password</label>${pwField('pw', 'current-password')}
         <div class="row" style="justify-content:flex-end;margin-top:8px"><button type="button" class="link-btn" data-forgot>Forgot password?</button></div>
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Log In">Log In</button>
-        ${role === 'admin' ? '' : `<p class="fine">${role === 'driver' ? 'New driver?' : 'New to Flytte?'} <button type="button" data-su>${role === 'driver' ? 'Become a driver' : 'Create an account'}</button></p>`}
-      </form>`, role === 'rider' ? onboarding : role === 'driver' ? driverWelcome : null);
+      </form>`, null);
       const f = root.querySelector('#f');
-      const su = root.querySelector('[data-su]'); if (su) su.onclick = role === 'driver' ? becomeDriver : signUp;
-      root.querySelector('[data-forgot]').onclick = async () => {
-        const call = await supportLink('Call support');
-        K.modal(`<h2>Forgot your password?</h2>
-          <p class="muted">${call ? 'Call Flytte support from the number you signed up with. We’ll confirm it’s you and set a new password.' : 'Password resets are done by the Flytte team for now. A support line will be listed here soon.'}</p>
-          ${call}
-          <button class="btn btn-block" style="margin-top:8px" data-close>Close</button>`);
-      };
+      root.querySelector('[data-forgot]').onclick = forgot;
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
@@ -796,6 +851,7 @@
     let onboarded = false; try { onboarded = !!localStorage.getItem('flytte_onboarded'); } catch {}
     if (role === 'driver') driverWelcome();
     else if (role === 'rider' && !onboarded) onboarding();
+    else if (role === 'rider') phoneStep(onboarding);
     else logIn();
   };
 

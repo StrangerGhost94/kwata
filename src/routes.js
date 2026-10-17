@@ -269,6 +269,15 @@ r.post('/auth/check', limit(30, 10 * 60e3), wrap(async (req, res) => {
   res.json({ phone: p, exists: !!u, role: u ? u.role : null });
 }));
 
+// Phone-first sign in: tells the app whether to ask for a password or start a new account.
+// Only says whether the number is registered and as what; never a name or anything else.
+r.post('/auth/check', limit(20, 10 * 60e3), wrap(async (req, res) => {
+  const p = auth.normalizePhone((req.body || {}).phone);
+  if (!p) return bad(res, 'Enter a valid Ugandan mobile number, e.g. 0772 123456.');
+  const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
+  res.json({ exists: !!u, role: u ? u.role : null });
+}));
+
 r.post('/auth/login', limit(15, 10 * 60e3), wrap(async (req, res) => {
   const { phone, password } = req.body || {};
   const p = auth.normalizePhone(phone);

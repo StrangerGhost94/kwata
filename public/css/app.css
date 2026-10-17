@@ -1558,3 +1558,15 @@ html.under-clock.standalone, html.under-clock.standalone body { height: auto; mi
   background: linear-gradient(180deg, rgba(0,0,0,.34) 0%, rgba(0,0,0,.2) 50%, rgba(0,0,0,.06) 80%, rgba(0,0,0,0) 100%); }
 html.top-dark .sb-scrim { opacity: 0; }
 @media (prefers-contrast: more) { .sb-scrim { background: linear-gradient(180deg, rgba(0,0,0,.6) 0%, rgba(0,0,0,.38) 60%, rgba(0,0,0,0) 100%); } }
+
+/* ---------- Phone-first sign in ---------- */
+.phone-first .phone-field { margin-top: 18px; }
+.phone-first .phone-field input, .phone-first .phone-field .cc { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.phone-first .phone-field input::placeholder { font-weight: 500; }
+.phone-first > .btn-lg { margin-top: 16px; }
+.phone-first .fine { text-align: center; margin-top: 16px; line-height: 1.45; }
+.phone-chip { display: flex; align-items: center; gap: 10px; margin: 14px 0 2px; padding: 12px 14px; border-radius: 14px;
+  background: var(--fill, #F2F2F7); font-weight: 600; }
+.phone-chip .flag { font-size: 20px; line-height: 1; }
+.phone-chip .num { flex: 1; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.phone-chip .link-btn { font-weight: 600; }

@@ -85,14 +85,21 @@ const api = async (path, body, token) => {
   ok(await p.evaluate(() => !document.getElementById('netBanner') || document.getElementById('netBanner').classList.contains('out')), 'banner goes away when back online');
   await c.close();
 
-  // ---- 5. Sign-in: Google is clearly unavailable
+  // ---- 5. Sign-in: phone number first, no Google button
   const c2 = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const p2 = await c2.newPage(); p2.on('pageerror', (e) => errors.push(e.message));
   await p2.addInitScript(() => { localStorage.setItem('flytte_onboarded', '1'); });
-  await p2.goto(BASE + '/'); await p2.waitForSelector('[data-google]', { timeout: 15000 });
-  ok(await p2.getAttribute('[data-google]', 'aria-disabled') === 'true' && /coming soon/i.test(await p2.textContent('[data-google]')), 'Google sign-in is labelled “Coming soon” and disabled');
-  await p2.fill('#ph', '12345'); await p2.fill('#pw', 'x'); await p2.click('button[type=submit]');
-  ok(/valid Ugandan mobile number/.test(await p2.textContent('.error')), 'login form checks the phone number before sending');
+  await p2.goto(BASE + '/'); await p2.waitForSelector('.phone-first #ph', { timeout: 15000 });
+  ok(!(await p2.$('[data-google]')) && !(await p2.$('.phone-first #pw')), 'sign-in starts with just the phone number (no Google, no password yet)');
+  await p2.fill('#ph', '12345'); await p2.click('button[type=submit]');
+  ok(/valid Ugandan mobile number/.test(await p2.textContent('.error')), 'phone step checks the number before sending');
+  await p2.fill('#ph', user.user.phone.replace(/^\+?256/, '0')); await p2.click('button[type=submit]');
+  await p2.waitForSelector('#pw', { timeout: 10000 });
+  ok(/Welcome back/.test(await p2.textContent('h1')) && !!(await p2.$('.phone-chip')), 'a registered number goes to the password step');
+  await p2.click('[data-chg]'); await p2.waitForSelector('.phone-first #ph');
+  await p2.fill('#ph', '0759' + String(Date.now()).slice(-6)); await p2.click('button[type=submit]');
+  await p2.waitForSelector('#nm', { timeout: 10000 });
+  ok(/Create your account/.test(await p2.textContent('h1')) && !(await p2.$('#f #ph')), 'a new number goes straight to creating an account');
   await c2.close();
 
   // ---- 6. Second open is served from the phone; offline reopen still shows the app
