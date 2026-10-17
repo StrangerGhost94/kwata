@@ -24,7 +24,7 @@ async function loadTrip(id) {
       dv.plate, dv.vehicle_make, dv.vehicle_color, dv.vehicle_type,
       (SELECT COUNT(*)::int FROM trips x WHERE x.driver_id = t.driver_id AND x.status = 'completed') AS d_trips,
       (SELECT COUNT(*)::int FROM trips x WHERE x.rider_id = t.rider_id AND x.status = 'completed') AS r_trips,
-      EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'photo') AS d_photo
+      (SELECT dd.created_at FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'photo') AS d_photo
     FROM trips t
     JOIN users r ON r.id = t.rider_id
     LEFT JOIN users d ON d.id = t.driver_id
@@ -54,7 +54,7 @@ function view(t, role) {
     passenger: t.passenger ? JSON.parse(t.passenger) : null,
     driver: t.driver_id ? {
       id: t.driver_id, name: t.driver_name, rating: rating(t.d_rs, t.d_rc), trips: t.d_trips,
-      photo: t.d_photo ? `/api/drivers/${t.driver_id}/photo` : null,
+      photo: t.d_photo ? `/api/drivers/${t.driver_id}/photo?v=${new Date(t.d_photo).getTime()}` : null, // a newly approved photo shows straight away
       plate: t.plate, vehicle: [t.vehicle_color, t.vehicle_make].filter(Boolean).join(' '), vehicleType: t.vehicle_type,
       location: live && live.lat ? { lat: live.lat, lng: live.lng, heading: live.heading } : null,
     } : null,
@@ -412,6 +412,7 @@ function driverState(driverId) {
   return d ? { online: d.online, home: d.home || null, push: !!d.push } : { online: false, home: null, push: false };
 }
 function markPush(driverId, on) { const d = drivers.get(driverId); if (d) d.push = !!on; }
+function updateDriverVehicle(driverId, plate) { const d = drivers.get(driverId); if (d) d.plate = plate; }
 
 function forceOffline(driverId) {
   const d = drivers.get(driverId);
@@ -421,7 +422,7 @@ function forceOffline(driverId) {
 
 module.exports = {
   init, broadcast, messages, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
-  liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, setHome, driverState, markPush, ACTIVE,
+  liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, setHome, driverState, markPush, updateDriverVehicle, ACTIVE,
   driversSnapshot: () => [...drivers.values()],
   get io() { return io; },
 };

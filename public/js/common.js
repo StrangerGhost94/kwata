@@ -516,6 +516,56 @@
     img.src = URL.createObjectURL(file);
   });
 
+  // In-app camera: photos are taken live, not picked from the gallery, so a driver's
+  // photo and their vehicle's plate are what's really in front of the phone right now.
+  // guide: 'face' (oval, front camera) or 'plate' (frame, back camera). Resolves to a JPEG
+  // data URL, or null if the person closes it.
+  K.camera = ({ guide = 'face', title = '', hint = '' } = {}) => new Promise((resolve) => {
+    const face = guide === 'face';
+    const ov = document.createElement('div');
+    ov.className = 'cam'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', title || 'Camera');
+    ov.innerHTML = `<div class="cam-top"><button class="cam-x" data-x aria-label="Close">${K.ic('x')}</button><b>${K.esc(title)}</b><span></span></div>
+      <div class="cam-view"><video playsinline autoplay muted ${face ? 'class="mirror"' : ''}></video><img alt="Your photo" hidden><div class="cam-guide ${face ? 'face' : 'plate'}" aria-hidden="true"></div>
+        <p class="cam-msg" role="status">Starting the camera…</p></div>
+      <p class="cam-hint">${K.esc(hint)}</p>
+      <div class="cam-bar"><button class="cam-shot" data-shot aria-label="Take photo" disabled></button>
+        <div class="cam-after" hidden><button class="btn btn-lg cam-retake" data-retake>Retake</button><button class="btn btn-primary btn-lg" data-use>Use photo</button></div></div>`;
+    document.body.appendChild(ov);
+    const video = ov.querySelector('video'), img = ov.querySelector('img'), msg = ov.querySelector('.cam-msg');
+    const shot = ov.querySelector('[data-shot]'), after = ov.querySelector('.cam-after');
+    let stream = null, photo = null;
+    const stop = () => { if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; };
+    const close = (val) => { stop(); ov.remove(); document.removeEventListener('keydown', esc); resolve(val); };
+    const esc = (e) => { if (e.key === 'Escape') close(null); };
+    document.addEventListener('keydown', esc);
+    const start = async () => {
+      msg.hidden = false; msg.textContent = 'Starting the camera…';
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg.textContent = 'This browser can’t open the camera. Open Flytte Driver from your Home Screen, or in Safari or Chrome.'; return; }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: face ? 'user' : { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false });
+        video.srcObject = stream; await video.play().catch(() => {});
+        msg.hidden = true; shot.disabled = false; shot.focus();
+      } catch (e) {
+        msg.textContent = e && e.name === 'NotAllowedError'
+          ? 'Camera access is off. Allow the camera for Flytte in your phone’s settings, then try again.'
+          : e && e.name === 'NotFoundError' ? 'No camera was found on this device.' : 'The camera couldn’t start. Close other apps using it and try again.';
+      }
+    };
+    shot.onclick = () => {
+      const w = video.videoWidth, h = video.videoHeight; if (!w || !h) return;
+      const k = Math.min(1, 1000 / Math.max(w, h));
+      const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+      c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+      photo = c.toDataURL('image/jpeg', 0.85);
+      img.src = photo; img.hidden = false; video.hidden = true; img.classList.toggle('mirror', face);
+      stop(); shot.hidden = true; after.hidden = false;
+    };
+    ov.querySelector('[data-retake]').onclick = () => { photo = null; img.hidden = true; video.hidden = false; shot.hidden = false; after.hidden = true; shot.disabled = true; start(); };
+    ov.querySelector('[data-use]').onclick = () => close(photo);
+    ov.querySelector('[data-x]').onclick = () => close(null);
+    start();
+  });
+
   const phoneField = (id, val = '') => `<div class="phone-field"><span class="cc" aria-hidden="true">🇺🇬 +256</span><input id="${id}" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="772 123 456" value="${K.esc(val)}" aria-describedby="${id}-hint" required></div><span class="sr-only" id="${id}-hint">Ugandan mobile number. You can start with 0 or 7.</span>`;
 
   // Public app settings (support line, commission…), fetched once and shared.
@@ -755,8 +805,8 @@
         <h1>Verify your identity</h1><p class="lead">Upload the required documents to get verified.</p>
         ${kinds.map((k) => `<label class="doc ${info.uploaded[k] ? 'done' : ''}" for="f-${k}" style="margin:0 0 10px">
           <span class="ic">${K.ic(ICON[k] || 'camera')}</span><span class="grow"><span style="display:block">${K.esc(info.kinds[k])}</span><span class="tiny muted" style="font-weight:500">${HINT[k] || ''}</span></span>
-          <span class="st">${info.uploaded[k] ? 'Uploaded ✓' : 'Upload'}</span>
-          <input type="file" id="f-${k}" data-k="${k}" accept="image/*" ${k === 'photo' ? 'capture="user"' : 'capture="environment"'} hidden></label>`).join('')}
+          <span class="st">${info.uploaded[k] ? 'Uploaded ✓' : k === 'photo' ? 'Take photo' : 'Upload'}</span>
+          ${k === 'photo' ? `<button type="button" id="f-${k}" data-cam="${k}" hidden></button>` : `<input type="file" id="f-${k}" data-k="${k}" accept="image/*" capture="environment" hidden>`}</label>`).join('')}
         <p class="error" id="err"></p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" id="go" ${allDone ? '' : 'disabled'}>Continue</button>
@@ -769,6 +819,17 @@
         if (file.size > 25e6) { root.querySelector('#err').textContent = 'That file is too large. Choose a photo.'; return; }
         try { await K.api('/driver/documents', { kind: inp.dataset.k, image: await K.compressImage(file) }, 'POST', { timeout: 90000 }); draw(); }
         catch (ex) { root.querySelector('#err').textContent = ex.message; st.textContent = 'Try again'; }
+      });
+      root.querySelectorAll('[data-cam]').forEach((btn) => {
+        const row = btn.closest('.doc');
+        row.addEventListener('click', async (ev) => {
+          ev.preventDefault();
+          const img = await K.camera({ guide: 'face', title: 'Your profile photo', hint: 'Riders use this to recognise you. Face the light, look at the camera, no sunglasses, helmet or cap.' });
+          if (!img) return;
+          const st = row.querySelector('.st'); st.textContent = 'Uploading…';
+          try { await K.api('/driver/documents', { kind: 'photo', image: img, live: true }, 'POST', { timeout: 90000 }); draw(); }
+          catch (ex) { root.querySelector('#err').textContent = ex.message; st.textContent = 'Try again'; }
+        });
       });
       root.querySelector('#go').onclick = onDone;
     };

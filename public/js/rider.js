@@ -51,6 +51,7 @@
         </nav>
       </div>`;
     sheet = K.$('#sheet');
+    sheet.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-report]') && S.trip && S.trip.driver) reportMismatch(); });
     K.draggableSheet(sheet);
     map = K.map('map');
     map.on('moveend', onPinMove);
@@ -827,6 +828,7 @@
         <div class="driver-card">${photo(d)}
           <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))} · <span class="plate-chip">${K.esc(d.plate)}</span></span></span>
           ${callBtn('round go')}<button class="round brand" id="chatBtn" aria-label="Message">${K.ic('msg')}</button></div>
+        <button class="link-report" data-report>Driver or plate doesn’t match?</button>
         <div class="bar" style="margin:14px 0 4px"><i id="etaBar" style="width:${pct}%"></i></div>
         <div class="stops">
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
@@ -845,6 +847,7 @@
         <div class="driver-card" style="margin-top:12px">${photo(d)}
           <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))}</span></span>
           <span style="text-align:right"><span class="plate-chip">${K.esc(d.plate)}</span><span style="display:block;width:70px;height:44px;margin-top:4px">${K.artFor(t.service, d.vehicleType)}</span></span></div>
+        <button class="link-report" data-report>Driver or plate doesn’t match?</button>
         <div class="eta-line"><span id="etaTxt">${arrived ? `Meet ${K.esc(K.first(d.name))} now` : mins ? `Arriving in ${mins} min` : 'On the way'}</span><span class="small muted" style="font-weight:600">${t.service === 'parcel' ? 'Parcel pickup' : 'Pickup'}</span></div>
         <div class="bar"><i id="etaBar" style="width:${pct}%"></i></div>
         ${arrived && S.config.drivers ? `<p class="wait-note">${K.ic('clock', 'sm')}<span>Your ${who(t)} waits up to ${S.config.drivers.freeWaitMin} min for free.${S.config.drivers.noShowFee ? ` After that they can leave, and a ${K.ugx(S.config.drivers.noShowFee)} no-show fee is taken from your wallet if it has enough.` : ' After that they can leave.'}</span></p>` : ''}
@@ -882,6 +885,40 @@
   }
 
   // Screen 10: trip completed
+  // The driver or vehicle isn't what the app shows: tell the safety team straight away.
+  function reportMismatch() {
+    const t = S.trip, d = t.driver || {};
+    let kind = null;
+    const m = K.modal(`<h2>Something doesn’t match?</h2>
+      <p class="muted">Your report goes straight to the Flytte safety team. ${t.status === 'completed' ? '' : 'Don’t get on if the driver or vehicle isn’t the one shown in the app.'}</p>
+      <button class="lrow" data-k="photo"><span class="ic">${K.ic('user')}</span><span class="grow"><span class="t">The driver isn’t the person in the photo</span></span><span class="tick" aria-hidden="true">${K.ic('check', 'sm')}</span></button>
+      <button class="lrow" data-k="plate"><span class="ic">${K.ic('card')}</span><span class="grow"><span class="t">The number plate is different</span><span class="s">The app shows ${K.esc(d.plate || '')}</span></span><span class="tick" aria-hidden="true">${K.ic('check', 'sm')}</span></button>
+      <label for="rnote">Anything else we should know? <span class="muted">(optional)</span></label>
+      <textarea id="rnote" maxlength="300" rows="2" placeholder="e.g. the plate was UFB 999X"></textarea>
+      <p class="error" id="rerr"></p>
+      <button class="btn btn-danger btn-block btn-lg" id="rsend" disabled>Send report</button>
+      <button class="btn btn-block" style="margin-top:8px" data-close>Cancel</button>`);
+    m.el.querySelectorAll('[data-k]').forEach((b) => b.onclick = () => {
+      kind = b.dataset.k;
+      m.el.querySelectorAll('[data-k]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
+      K.$('#rsend', m.el).disabled = false;
+    });
+    K.$('#rsend', m.el).onclick = async (ev) => {
+      const b = ev.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span>Sending…';
+      try {
+        await K.api(`/trips/${t.id}/report`, { kind, note: K.$('#rnote', m.el).value });
+        const before = ['accepted', 'arrived'].includes(t.status), during = t.status === 'in_progress';
+        m.el.innerHTML = `<div style="text-align:center;padding:6px 0 4px"><div class="check-big" style="margin:0 auto 10px">${K.ic('check')}</div>
+          <h2>Thanks for telling us</h2><p class="muted">The safety team will check this driver. ${before ? 'If it isn’t the right driver or vehicle, don’t get on. You can cancel this ride at no cost.' : during ? 'If you feel unsafe, use SOS or call the police on 999.' : ''}</p></div>
+          ${before ? '<button class="btn btn-danger btn-block btn-lg" id="rcancel">Cancel this ride</button>' : ''}
+          ${during ? `<button class="btn btn-danger btn-block btn-lg" id="rsos">${K.ic('sos', 'sm')} SOS</button>` : ''}
+          <button class="btn btn-block" style="margin-top:8px" data-close>Close</button>`;
+        const rc = K.$('#rcancel', m.el); if (rc) rc.onclick = () => { m.close(); cancelTrip(); };
+        const rs = K.$('#rsos', m.el); if (rs) rs.onclick = () => { m.close(); sos(); };
+      } catch (e) { b.disabled = false; b.textContent = 'Send report'; K.$('#rerr', m.el).textContent = e.message; }
+    };
+  }
+
   function vDone() {
     const t = S.trip, d = t.driver || {};
     clearRoute(); routedPhase = null;
@@ -910,6 +947,7 @@
           <div class="row" style="justify-content:center;gap:8px">${photo(d, 'photo')}<span style="text-align:left"><b>${K.esc(d.name || '')}</b><br><span class="small muted">${K.esc(d.plate || '')}</span></span></div>
           <div class="stars" role="radiogroup" aria-label="Rate your ${who(t)}">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" role="radio" aria-checked="${n === S.rating}" aria-label="${n} star${n > 1 ? 's' : ''}" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>` : ''}
         <button class="btn btn-link btn-block" id="details" style="min-height:36px">View details</button>
+        <button class="link-report" data-report style="margin:0 auto">Driver or vehicle didn’t match?</button>
       </div>
       <div class="sheet-foot">
         ${needsPay ? `<p class="error" id="err" role="alert" style="margin:0 0 6px;min-height:0">${S.config.paymentsAvailable ? '' : `${P.name} isn’t available yet. Pay your ${who(t)} ${K.ugx(t.payable)} in cash.`}</p>

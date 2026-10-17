@@ -40,6 +40,7 @@ const DEFAULTS = {
     headingHomePerDay: 2,   // how many times a day a driver can switch on "Heading home"
     queueNext: true,        // offer a nearby next trip when the current one is about to finish
     docReminderDays: 14,    // remind drivers this many days before a document expires
+    mismatchPauseReports: 3, // riders (different people, last 30 days) reporting the wrong face or plate before a driver is paused; 0 = never
   },
   // Driver bonuses set by the team, e.g. { id, title, trips: 10, reward: 5000, period: 'day', active: true }.
   // Flytte pays these; none are switched on until the team adds them.
@@ -130,6 +131,7 @@ async function updateSettings(patch) {
         headingHomePerDay: num(c.headingHomePerDay, 0, 10, 2),
         queueNext: c.queueNext !== false && c.queueNext !== 'false',
         docReminderDays: num(c.docReminderDays, 1, 90, 14),
+        mismatchPauseReports: num(c.mismatchPauseReports, 0, 20, 3),
       };
     } else if (key === 'bonuses') {
       if (!Array.isArray(value)) continue;

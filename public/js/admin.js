@@ -1,7 +1,7 @@
 // Flytte admin console
 (function () {
   const root = document.getElementById('root');
-  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['driverRules', 'Driver rules'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['safety', 'Safety'], ['payouts', 'Payouts']];
+  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['checks', 'Photo & plate checks'], ['driverRules', 'Driver rules'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['safety', 'Safety'], ['payouts', 'Payouts']];
   let tab = location.hash.slice(1) || 'overview';
   let stats = {}, liveMap, liveLayer, liveTimer, sock;
 
@@ -19,6 +19,8 @@
     sock.on('admin:sos', (a) => { K.toast(`🚨 SOS from ${a.user} on trip #${a.tripId}`, 10000); beep(); refreshCounts(); if (tab === 'safety' || tab === 'overview') show(); });
     sock.on('admin:new_driver', (d) => { K.toast(`New driver signed up: ${d.name}`); refreshCounts(); });
     sock.on('admin:withdrawal', () => refreshCounts());
+    sock.on('admin:change', (c) => { K.toast(`${c.name} sent a new ${c.kind === 'photo' ? 'profile photo' : 'vehicle / number plate'} to check`); refreshCounts(); if (tab === 'checks') show(); });
+    sock.on('admin:report', (r) => { K.toast(`⚠️ ${r.label}: ${r.driver} (trip #${r.tripId})${r.paused ? ' · driver paused automatically' : ''}`, 10000); beep(); refreshCounts(); if (tab === 'checks') show(); });
     sock.on('admin:trip', () => { if (tab === 'overview') loadLive(); });
     await refreshCounts();
     show();
@@ -28,6 +30,7 @@
     stats = await K.api('/admin/stats');
     const set = (id, n) => { const el = K.$('#c-' + id); el.textContent = n; el.classList.toggle('hidden', !n); };
     set('drivers', stats.pendingDrivers); set('safety', stats.openSos); set('payouts', stats.pendingWithdrawals);
+    set('checks', (stats.pendingChanges || 0) + (stats.openReports || 0));
   }
 
   function show() {
@@ -35,7 +38,7 @@
     root.querySelectorAll('[data-t]').forEach((b) => b.setAttribute('aria-current', b.dataset.t === tab ? 'page' : 'false'));
     const main = K.$('#main');
     main.innerHTML = K.skeleton('title-list', 5);
-    ({ overview, drivers, driverRules, riders, trips, pricing, promos, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
+    ({ overview, drivers, checks, driverRules, riders, trips, pricing, promos, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
   }
 
   const badge = (s) => `<span class="badge ${({ approved: 'ok', completed: 'ok', paid: 'ok', pending: 'warn', requested: 'warn', accepted: 'warn', arrived: 'warn', in_progress: 'warn', suspended: 'bad', rejected: 'bad', cancelled: 'bad', no_drivers: 'bad' })[s] || ''}">${K.esc(String(s).replace('_', ' '))}</span>`;
@@ -111,6 +114,47 @@
     return `<br><span class="tiny muted">Next expiry ${day}</span>`;
   }
 
+  // Photo & plate checks: changes drivers asked for, and riders' reports that something didn't match.
+  async function checks(main) {
+    const [changes, reports] = await Promise.all([K.api('/admin/changes'), K.api('/admin/reports')]);
+    const img = (src, cap) => `<figure>${src ? `<a href="${src}" target="_blank" rel="noopener"><img src="${src}" alt="${K.esc(cap)}"></a>` : '<div class="noimg">None</div>'}<figcaption>${K.esc(cap)}</figcaption></figure>`;
+    const veh = (v) => `<b class="plate-tag">${K.esc(v.plate || '—')}</b><br><span class="small muted">${K.esc([v.vehicleColor, v.vehicleMake].filter(Boolean).join(' ') || '—')}</span>`;
+    const open = reports.filter((r) => !r.resolved), done = reports.filter((r) => r.resolved);
+    main.innerHTML = `<h1>Photo & plate checks</h1>
+      <p class="muted" style="max-width:760px">Drivers can’t change their photo or number plate on their own. Check each request against their ID, permit and vehicle photo. Riders keep seeing the approved details until you approve.</p>
+      <h2 style="margin-top:22px">Waiting for you (${changes.length})</h2>
+      ${changes.length ? changes.map((c) => `<div class="check-card" data-c="${c.id}">
+          <div class="cc-head"><span><b>${K.esc(c.driver.name)}</b> <span class="small muted">${K.esc(c.driver.phone)} · ${K.when(c.at)}</span></span><span class="badge warn">${c.kind === 'photo' ? 'New profile photo' : 'Vehicle / plate change'}</span></div>
+          ${c.kind === 'photo'
+            ? `<div class="doc-thumbs four">${img(c.current.photo, 'Approved photo')}${img(c.requested.photo, 'New photo')}${img(c.compare.national_id, 'National ID')}${img(c.compare.license, 'Driving permit')}</div>
+               <p class="small muted">Approve only if the new photo is clearly the same person as on the ID and permit.</p>`
+            : `<div class="veh-compare"><div><span class="small muted">Now</span><br>${veh(c.current)}</div><div class="arrow">→</div><div><span class="small muted">Asked for</span><br>${veh(c.requested)}</div></div>
+               <div class="doc-thumbs">${img(c.current.photo, 'Current vehicle photo')}${img(c.requested.photo, 'New vehicle photo (live)')}</div>
+               <p class="small muted">Approve only if the plate in the new photo is readable and matches what they typed. Check the registration if anything looks off.</p>`}
+          <div class="row" style="gap:8px;flex-wrap:wrap"><input class="fill" data-note placeholder="Reason, if you reject (the driver sees this)" maxlength="200" style="min-width:220px">
+            <button class="btn btn-danger-soft" data-dec="reject">Reject</button><button class="btn btn-primary" data-dec="approve">Approve</button></div>
+        </div>`).join('') : '<div class="card muted">Nothing waiting.</div>'}
+      <h2 style="margin-top:28px">Reports from riders (${open.length} open)</h2>
+      <p class="muted" style="max-width:760px">When riders report the wrong face or number plate, the driver is paused automatically after the number set in Driver rules (different riders, last 30 days).</p>
+      <div class="table-wrap"><table><thead><tr><th>When</th><th>Report</th><th>Driver</th><th>Rider</th><th>Reports (30 days)</th><th></th></tr></thead><tbody>
+        ${[...open, ...done].map((r) => `<tr class="${r.resolved ? 'faded' : ''}"><td>${K.when(r.at)}<br><span class="small muted">Trip #${r.tripId}</span></td>
+          <td><b>${K.esc(r.label)}</b>${r.note ? `<br><span class="small">“${K.esc(r.note)}”</span>` : ''}</td>
+          <td>${K.esc(r.driver.name)}<br><span class="plate-tag">${K.esc(r.driver.plate)}</span> ${badge(r.driver.status)}</td>
+          <td>${K.esc(r.rider)}</td><td>${r.reports30}</td>
+          <td style="white-space:nowrap">${r.resolved ? `<span class="small muted">${r.dismissed ? 'Not a problem' : 'Confirmed'}</span>`
+            : `<button class="btn btn-sm" data-rep="${r.id}" data-act="confirm">Confirmed</button><button class="btn btn-ghost btn-sm" data-rep="${r.id}" data-act="dismiss">Not a problem</button>`}
+            ${r.driver.status === 'approved' ? `<button class="btn btn-danger-soft btn-sm" data-drv="${r.driver.id}" data-s="suspended">Pause driver</button>` : r.driver.status === 'suspended' ? `<button class="btn btn-sm" data-drv="${r.driver.id}" data-s="approved">Reactivate</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No reports.</td></tr>'}
+      </tbody></table></div>`;
+    main.querySelectorAll('[data-c]').forEach((card) => card.querySelectorAll('[data-dec]').forEach((b) => b.onclick = async () => {
+      const note = card.querySelector('[data-note]').value.trim();
+      if (b.dataset.dec === 'reject' && !note) { K.toast('Write the reason first, so the driver can fix it.'); card.querySelector('[data-note]').focus(); return; }
+      try { await K.api(`/admin/changes/${card.dataset.c}`, { decision: b.dataset.dec, note }); K.toast(b.dataset.dec === 'approve' ? 'Approved. Riders see it from now on.' : 'Rejected. The driver has been told why.'); await refreshCounts(); show(); }
+      catch (e) { K.toast(e.message); }
+    }));
+    main.querySelectorAll('[data-rep]').forEach((b) => b.onclick = async () => { await K.api(`/admin/reports/${b.dataset.rep}`, { action: b.dataset.act }); await refreshCounts(); show(); });
+    main.querySelectorAll('[data-drv]').forEach((b) => b.onclick = async () => { await K.api(`/admin/drivers/${b.dataset.drv}/status`, { status: b.dataset.s }); K.toast(b.dataset.s === 'approved' ? 'Driver reactivated' : 'Driver paused'); show(); });
+  }
+
   // Driver rules: waiting time, no-show fee, cash commission limit, heading home, next trips, bonuses.
   async function driverRules(main) {
     const s = await K.api('/admin/settings');
@@ -124,9 +168,10 @@
           <div><label for="dl">Pause cash trips when owed (UGX)</label><input id="dl" type="number" min="0" step="1000" value="${d.cashDebtLimit}"></div>
           <div><label for="hh">Heading home uses per day</label><input id="hh" type="number" min="0" max="10" value="${d.headingHomePerDay}"></div>
           <div><label for="rd">Document reminder (days before)</label><input id="rd" type="number" min="1" max="90" value="${d.docReminderDays}"></div>
+          <div><label for="mp">Pause driver after reports of wrong face or plate</label><input id="mp" type="number" min="0" max="20" value="${d.mismatchPauseReports}"></div>
           <div><label><input type="checkbox" id="qn" ${d.queueNext ? 'checked' : ''} style="width:auto"> Line up the next trip near drop-off</label></div>
         </div>
-        <p class="small muted" style="max-width:720px">The no-show fee is taken from the rider’s wallet only when it covers it. Set the cash limit to 0 to never pause cash trips. Set heading home to 0 to switch it off.</p>
+        <p class="small muted" style="max-width:720px">Reports count different riders in the last 30 days; 0 means never pause automatically. The no-show fee is taken from the rider’s wallet only when it covers it. Set the cash limit to 0 to never pause cash trips. Set heading home to 0 to switch it off.</p>
         <h2 style="margin-top:26px">Bonuses</h2>
         <p class="muted" style="max-width:720px">Flytte pays these into the driver’s balance as soon as the target is reached, once per day or week (Kampala time). Drivers see their progress on the home screen.</p>
         <div class="table-wrap" style="max-width:820px"><table><thead><tr><th>Name drivers see</th><th>Trips</th><th>Reward (UGX)</th><th>Every</th><th>On</th><th></th></tr></thead><tbody>
@@ -148,7 +193,7 @@
       K.$('#saveR').onclick = async () => {
         read();
         try {
-          const out = await K.api('/admin/settings', { drivers: { freeWaitMin: +K.$('#fw').value, noShowFee: +K.$('#nf').value, cashDebtLimit: +K.$('#dl').value, headingHomePerDay: +K.$('#hh').value, docReminderDays: +K.$('#rd').value, queueNext: K.$('#qn').checked }, bonuses }, 'PUT');
+          const out = await K.api('/admin/settings', { drivers: { freeWaitMin: +K.$('#fw').value, noShowFee: +K.$('#nf').value, cashDebtLimit: +K.$('#dl').value, headingHomePerDay: +K.$('#hh').value, docReminderDays: +K.$('#rd').value, mismatchPauseReports: +K.$('#mp').value, queueNext: K.$('#qn').checked }, bonuses }, 'PUT');
           Object.assign(d, out.drivers); bonuses.splice(0, bonuses.length, ...out.bonuses);
           K.toast('Driver rules saved.'); draw();
         } catch (e) { K.toast(e.message); }

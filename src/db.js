@@ -245,7 +245,31 @@ async function migrate() {
   ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_address TEXT;
   ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_uses_day TEXT;
   ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_uses INTEGER NOT NULL DEFAULT 0;
-  ALTER TABLE trips ADD COLUMN IF NOT EXISTS no_show_fee INTEGER NOT NULL DEFAULT 0`;
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS no_show_fee INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE IF NOT EXISTS driver_changes (
+    id SERIAL PRIMARY KEY,
+    driver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    data TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    decided_at TIMESTAMPTZ
+  );
+  CREATE INDEX IF NOT EXISTS driver_changes_idx ON driver_changes(status, driver_id);
+  CREATE TABLE IF NOT EXISTS driver_reports (
+    id SERIAL PRIMARY KEY,
+    trip_id INTEGER NOT NULL,
+    driver_id INTEGER NOT NULL,
+    rider_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    note TEXT,
+    resolved BOOLEAN NOT NULL DEFAULT FALSE,
+    dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (trip_id, rider_id, kind)
+  );
+  CREATE INDEX IF NOT EXISTS driver_reports_idx ON driver_reports(driver_id, created_at)`;
   for (const s of statements.split(';').map((x) => x.trim()).filter(Boolean)) {
     await query(s);
   }

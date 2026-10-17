@@ -169,6 +169,15 @@ r.post('/driver/documents', auth.requireAuth('driver'), wrap(async (req, res) =>
   const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(image || ''));
   if (!m) return bad(res, 'Upload a photo (JPG or PNG).');
   if (m[2].length > 2.8e6) return bad(res, 'That photo is too large. Try again.');
+  const dv = await db.one('SELECT status FROM drivers WHERE user_id = $1', [req.user.id]);
+  if (dv && dv.status === 'approved' && kind === 'photo') {
+    // Riders keep seeing the approved photo until the team checks the new one against the ID.
+    await db.query("UPDATE driver_changes SET status = 'replaced', decided_at = NOW() WHERE driver_id = $1 AND kind = 'photo' AND status = 'pending'", [req.user.id]);
+    await db.query("INSERT INTO driver_changes(driver_id, kind, data) VALUES ($1,'photo',$2)", [req.user.id, JSON.stringify({ mime: m[1], data: m[2] })]);
+    rt.io.to('admin').emit('admin:change', { id: req.user.id, name: req.user.name, kind: 'photo' });
+    return res.json({ ok: true, pending: true });
+  }
+  if (dv && dv.status === 'approved' && kind === 'vehicle') return bad(res, 'To change your vehicle photo, use “Change vehicle or number plate” on your profile. The Flytte team checks it first.');
   const exp = dtools.EXPIRING_KINDS.includes(kind) ? expiryDate((req.body || {}).expiresOn) : null;
   await db.query(`INSERT INTO driver_docs(user_id, kind, mime, data, expires_on) VALUES ($1,$2,$3,$4,$5)
     ON CONFLICT (user_id, kind) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, created_at = NOW(), expires_on = COALESCE(EXCLUDED.expires_on, driver_docs.expires_on)`, [req.user.id, kind, m[1], m[2], exp]);
@@ -196,6 +205,40 @@ r.get('/drivers/:id/photo', wrap(async (req, res) => {
 r.get('/driver/photo', auth.requireAuth('driver'), wrap(async (req, res) => {
   const d = await db.one("SELECT mime, data FROM driver_docs WHERE user_id = $1 AND kind = 'photo'", [req.user.id]);
   res.json({ url: d ? `data:${d.mime};base64,${d.data}` : null });
+}));
+
+// Photo and vehicle changes waiting for the team, or decided in the last two weeks.
+r.get('/driver/changes', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const { rows } = await db.query(`SELECT id, kind, data, status, note, created_at, decided_at FROM driver_changes
+    WHERE driver_id = $1 AND (status = 'pending' OR (status IN ('approved','rejected') AND decided_at > NOW() - INTERVAL '14 days'))
+    ORDER BY id DESC`, [req.user.id]);
+  const out = {};
+  for (const r0 of rows) {
+    if (out[r0.kind]) continue; // newest per kind
+    const d = JSON.parse(r0.data);
+    out[r0.kind] = { id: r0.id, status: r0.status, note: r0.note, at: r0.created_at, decidedAt: r0.decided_at,
+      ...(r0.kind === 'photo' ? { url: r0.status === 'pending' ? `data:${d.mime};base64,${d.data}` : undefined } : { plate: d.plate, vehicleMake: d.make, vehicleColor: d.color }) };
+  }
+  res.json(out);
+}));
+
+// Plate (and make/colour) changes go to the team with a live photo of the vehicle showing the plate.
+const normPlate = (v) => clean(v, 12).toUpperCase().replace(/\s+/g, ' ');
+r.post('/driver/vehicle-change', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const b = req.body || {};
+  const plate = normPlate(b.plate);
+  if (!/^[A-Z0-9 ]{4,12}$/.test(plate) || !/[A-Z]/.test(plate) || !/[0-9]/.test(plate)) return bad(res, 'Enter the number plate exactly as it is on the vehicle, e.g. UFB 123X.');
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(b.photo || ''));
+  if (!m) return bad(res, 'Take a photo of the vehicle with the number plate showing.');
+  if (m[2].length > 2.8e6) return bad(res, 'That photo is too large. Try again.');
+  const cur = await db.one('SELECT plate, vehicle_make, vehicle_color FROM drivers WHERE user_id = $1', [req.user.id]);
+  const make = clean(b.vehicleMake, 40) || cur.vehicle_make || '', color = clean(b.vehicleColor, 20) || cur.vehicle_color || '';
+  if (plate === cur.plate && make === (cur.vehicle_make || '') && color === (cur.vehicle_color || '')) return bad(res, 'Nothing has changed.');
+  await db.query("UPDATE driver_changes SET status = 'replaced', decided_at = NOW() WHERE driver_id = $1 AND kind = 'vehicle' AND status = 'pending'", [req.user.id]);
+  const row = await db.one("INSERT INTO driver_changes(driver_id, kind, data) VALUES ($1,'vehicle',$2) RETURNING id",
+    [req.user.id, JSON.stringify({ plate, make, color, mime: m[1], photo: m[2] })]);
+  rt.io.to('admin').emit('admin:change', { id: req.user.id, name: req.user.name, kind: 'vehicle' });
+  res.json({ ok: true, id: row.id });
 }));
 
 r.post('/me/password', auth.requireAuth(), wrap(async (req, res) => {
@@ -497,6 +540,31 @@ r.post('/trips/:id/sos', auth.requireAuth('rider', 'driver'), wrap(async (req, r
   const a = await db.one('INSERT INTO sos_alerts(trip_id, user_id, lat, lng) VALUES ($1,$2,$3,$4) RETURNING *', [t.id, req.user.id, lat, lng]);
   rt.io.to('admin').emit('admin:sos', { id: a.id, tripId: t.id, user: req.user.name, phone: req.user.phone, lat, lng });
   res.json({ ok: true, emergencyContact: req.user.emergency_contact, shareToken: t.share_token });
+}));
+
+// A rider says the driver or the vehicle doesn't match what the app shows.
+const REPORT = { photo: 'Driver doesn’t match the photo', plate: 'Number plate doesn’t match' };
+r.post('/trips/:id/report', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'rider');
+  if (!t) return;
+  const kind = (req.body || {}).kind;
+  if (!REPORT[kind]) return bad(res, 'Choose what doesn’t match.');
+  const recent = t.status === 'completed' && t.completed_at && Date.now() - new Date(t.completed_at).getTime() < 48 * 3600e3;
+  if (!t.driver_id || !(['accepted', 'arrived', 'in_progress'].includes(t.status) || recent)) return bad(res, 'You can report this during the trip or up to two days after it.');
+  const row = await db.one(`INSERT INTO driver_reports(trip_id, driver_id, rider_id, kind, note) VALUES ($1,$2,$3,$4,$5)
+    ON CONFLICT (trip_id, rider_id, kind) DO NOTHING RETURNING id`, [t.id, t.driver_id, req.user.id, kind, clean((req.body || {}).note, 300) || null]);
+  if (!row) return res.json({ ok: true, already: true });
+  const s = await getSettings();
+  const c = await db.one(`SELECT COUNT(DISTINCT rider_id)::int AS n FROM driver_reports
+    WHERE driver_id = $1 AND dismissed = FALSE AND created_at > NOW() - INTERVAL '30 days'`, [t.driver_id]);
+  let paused = false;
+  if (s.drivers.mismatchPauseReports > 0 && c.n >= s.drivers.mismatchPauseReports) {
+    const d = await db.one("UPDATE drivers SET status = 'suspended' WHERE user_id = $1 AND status = 'approved' RETURNING user_id", [t.driver_id]);
+    if (d) { paused = true; rt.forceOffline(t.driver_id); rt.notify(t.driver_id, 'driver:status', { status: 'suspended' }); }
+  }
+  const who = await db.one('SELECT name FROM users WHERE id = $1', [t.driver_id]);
+  rt.io.to('admin').emit('admin:report', { id: row.id, tripId: t.id, driver: who && who.name, kind, label: REPORT[kind], count: c.n, paused });
+  res.json({ ok: true, paused });
 }));
 
 r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
@@ -865,6 +933,8 @@ r.get('/admin/stats', admin, wrap(async (req, res) => {
     allTime: await q("SELECT COUNT(*)::int trips, COALESCE(SUM(fare),0)::int gmv, COALESCE(SUM(commission),0)::int revenue FROM trips WHERE status = 'completed'"),
     openSos: (await q('SELECT COUNT(*)::int n FROM sos_alerts WHERE resolved = FALSE')).n,
     pendingWithdrawals: (await q("SELECT COUNT(*)::int n FROM withdrawals WHERE status = 'pending'")).n,
+    pendingChanges: (await q("SELECT COUNT(*)::int n FROM driver_changes WHERE status = 'pending'")).n,
+    openReports: (await q('SELECT COUNT(*)::int n FROM driver_reports WHERE resolved = FALSE')).n,
     byService: (await db.query("SELECT service, COUNT(*)::int trips, COALESCE(SUM(fare),0)::int gmv FROM trips WHERE status = 'completed' GROUP BY service ORDER BY trips DESC")).rows,
   });
 }));
@@ -897,6 +967,71 @@ r.get('/admin/drivers', admin, wrap(async (req, res) => {
     cancellationRate: x.ev_acc ? Math.round((x.ev_can / x.ev_acc) * 100) : null,
   })));
 }));
+// Photo and vehicle changes waiting for approval, shown next to what the team already approved.
+r.get('/admin/changes', admin, wrap(async (req, res) => {
+  const { rows } = await db.query(`SELECT c.id, c.driver_id, c.kind, c.data, c.created_at, u.name, u.phone, d.plate, d.vehicle_make, d.vehicle_color, d.vehicle_type, d.status AS driver_status
+    FROM driver_changes c JOIN users u ON u.id = c.driver_id JOIN drivers d ON d.user_id = c.driver_id
+    WHERE c.status = 'pending' ORDER BY c.id`);
+  const out = [];
+  for (const r0 of rows) {
+    const data = JSON.parse(r0.data);
+    const { rows: docs } = await db.query("SELECT kind, mime, data FROM driver_docs WHERE user_id = $1 AND kind IN ('photo','national_id','license','vehicle')", [r0.driver_id]);
+    const doc = Object.fromEntries(docs.map((x) => [x.kind, `data:${x.mime};base64,${x.data}`]));
+    out.push({
+      id: r0.id, kind: r0.kind, at: r0.created_at,
+      driver: { id: r0.driver_id, name: r0.name, phone: r0.phone, status: r0.driver_status, vehicleType: r0.vehicle_type },
+      current: r0.kind === 'photo' ? { photo: doc.photo || null } : { plate: r0.plate, vehicleMake: r0.vehicle_make, vehicleColor: r0.vehicle_color, photo: doc.vehicle || null },
+      requested: r0.kind === 'photo' ? { photo: `data:${data.mime};base64,${data.data}` } : { plate: data.plate, vehicleMake: data.make, vehicleColor: data.color, photo: `data:${data.mime};base64,${data.photo}` },
+      compare: r0.kind === 'photo' ? { national_id: doc.national_id || null, license: doc.license || null } : {},
+    });
+  }
+  res.json(out);
+}));
+r.post('/admin/changes/:id', admin, wrap(async (req, res) => {
+  const approve = (req.body || {}).decision === 'approve';
+  const note = clean((req.body || {}).note, 200) || null;
+  if (!approve && !note) return bad(res, 'Tell the driver why, so they can fix it.');
+  let c;
+  await db.tx(async (tx) => {
+    c = await tx.one("UPDATE driver_changes SET status = $1, note = $2, decided_at = NOW() WHERE id = $3 AND status = 'pending' RETURNING *", [approve ? 'approved' : 'rejected', note, Number(req.params.id)]);
+    if (!c || !approve) return;
+    const d = JSON.parse(c.data);
+    if (c.kind === 'photo') {
+      await tx.query(`INSERT INTO driver_docs(user_id, kind, mime, data) VALUES ($1,'photo',$2,$3)
+        ON CONFLICT (user_id, kind) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, created_at = NOW()`, [c.driver_id, d.mime, d.data]);
+    } else {
+      await tx.query('UPDATE drivers SET plate = $1, vehicle_make = $2, vehicle_color = $3 WHERE user_id = $4', [d.plate, d.make || null, d.color || null, c.driver_id]);
+      await tx.query(`INSERT INTO driver_docs(user_id, kind, mime, data) VALUES ($1,'vehicle',$2,$3)
+        ON CONFLICT (user_id, kind) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, created_at = NOW()`, [c.driver_id, d.mime, d.photo]);
+    }
+  });
+  if (!c) return bad(res, 'This request was already handled.', 409);
+  if (approve && c.kind === 'vehicle') rt.updateDriverVehicle(c.driver_id, JSON.parse(c.data).plate);
+  const what = c.kind === 'photo' ? 'new profile photo' : 'vehicle change';
+  const text = approve ? `Your ${what} was approved.` : `Your ${what} wasn’t approved: ${note}`;
+  rt.notify(c.driver_id, 'driver:change', { kind: c.kind, status: approve ? 'approved' : 'rejected', note });
+  rt.notify(c.driver_id, 'toast', { text });
+  dtools.push(c.driver_id, { type: 'change', tag: `change-${c.kind}`, title: approve ? 'Approved' : 'Not approved', body: text }, { ttl: 86400, urgency: 'normal' }).catch(() => {});
+  res.json({ ok: true });
+}));
+
+// Riders' reports that a driver or plate didn't match.
+r.get('/admin/reports', admin, wrap(async (req, res) => {
+  const { rows } = await db.query(`SELECT r.id, r.trip_id, r.kind, r.note, r.resolved, r.dismissed, r.created_at, r.driver_id,
+      d.name AS driver_name, d.phone AS driver_phone, rd.name AS rider_name, dv.plate, dv.status AS driver_status,
+      (SELECT COUNT(DISTINCT x.rider_id)::int FROM driver_reports x WHERE x.driver_id = r.driver_id AND x.dismissed = FALSE AND x.created_at > NOW() - INTERVAL '30 days') AS reports30
+    FROM driver_reports r JOIN users d ON d.id = r.driver_id JOIN users rd ON rd.id = r.rider_id JOIN drivers dv ON dv.user_id = r.driver_id
+    ORDER BY r.resolved, r.id DESC LIMIT 200`);
+  res.json(rows.map((x) => ({ id: x.id, tripId: x.trip_id, kind: x.kind, label: REPORT[x.kind], note: x.note, resolved: x.resolved, dismissed: x.dismissed, at: x.created_at,
+    driver: { id: x.driver_id, name: x.driver_name, phone: x.driver_phone, plate: x.plate, status: x.driver_status }, rider: x.rider_name, reports30: x.reports30 })));
+}));
+r.post('/admin/reports/:id', admin, wrap(async (req, res) => {
+  const dismiss = (req.body || {}).action === 'dismiss';
+  const row = await db.one('UPDATE driver_reports SET resolved = TRUE, dismissed = $1 WHERE id = $2 RETURNING id', [dismiss, Number(req.params.id)]);
+  if (!row) return bad(res, 'Report not found.', 404);
+  res.json({ ok: true });
+}));
+
 r.get('/admin/drivers/:id/insights', admin, wrap(async (req, res) => {
   const id = Number(req.params.id);
   res.json({ stats: await dtools.stats(id), docs: await dtools.docAlerts(id), bonuses: await dtools.bonusProgress(id) });
