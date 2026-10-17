@@ -9,6 +9,7 @@ const payments = require('./payments');
 const growth = require('./growth');
 const dtools = require('./drivers');
 const sms = require('./sms');
+const wa = require('./whatsapp');
 const { getSettings, updateSettings, quote } = require('./pricing');
 const surge = require('./surge');
 const { haversineKm: haversine } = require('./pricing');
@@ -66,7 +67,8 @@ r.get('/config', wrap(async (req, res) => {
     paymentsLive: payments.enabled(),            // real Flutterwave payments
     paymentsAvailable: payments.available(),     // Mobile Money / card / top-ups can be used (live or local demo)
     paymentsDemo: payments.demo(),
-    smsLogin: sms.enabled(),                      // sign in with an SMS code instead of a password
+    smsLogin: sms.enabled() || wa.enabled(),      // sign in with a one-time code instead of a password
+    codeChannels: [...(wa.enabled() ? ['whatsapp'] : []), ...(sms.enabled() ? ['sms'] : [])], // where the code can be sent
     commissionPct: s.commissionPct,
     supportPhone: supportPhone(s),
     minWithdrawal: s.minWithdrawal,
@@ -136,7 +138,7 @@ r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
   }
   const body = { ...(req.body || {}) };
   // With SMS sign-in on, a new account needs the code check first, and has no password.
-  if (sms.configured() || body.phoneToken) {
+  if (sms.configured() || wa.configured() || body.phoneToken) {
     const p = auth.normalizePhone(body.phone);
     if (!p || !auth.verifyPhone(body.phoneToken, p)) return bad(res, 'Confirm your number with the SMS code first.', 401);
     body.password = crypto.randomBytes(24).toString('base64');
@@ -290,7 +292,8 @@ r.post('/auth/check', limit(20, 10 * 60e3), wrap(async (req, res) => {
 // ---------- Sign in with an SMS code ----------
 const OTP_TTL = 5 * 60e3, OTP_RESEND = 30e3, OTP_PER_HOUR = 5, OTP_TRIES = 5;
 r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
-  if (!sms.enabled()) return bad(res, 'SMS sign-in isn’t set up yet.', 503);
+  const channel = (req.body || {}).channel === 'whatsapp' ? 'whatsapp' : 'sms';
+  if (channel === 'whatsapp' ? !wa.enabled() : !sms.enabled()) return bad(res, channel === 'whatsapp' ? 'WhatsApp codes aren’t available yet. Choose SMS.' : 'SMS codes aren’t available yet.', 503);
   const p = auth.normalizePhone((req.body || {}).phone);
   if (!p) return bad(res, 'Enter a valid mobile number, e.g. 0772 123456.');
   const now = Date.now();
@@ -303,10 +306,15 @@ r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
     ON CONFLICT (phone) DO UPDATE SET code_hash = $2, expires_at = $3, attempts = 0, sent_at = $4, hour_start = $5, sends_hour = $6`,
     [p, auth.hashCode(p, code), now + OTP_TTL, now, sameHour ? Number(row.hour_start) : now, sameHour ? row.sends_hour + 1 : 1]);
   // Plain text only: networks often hold SMS that contain a web address.
-  try { await sms.send(p, `${code} is your Flytte code. It expires in 5 minutes. Never share it with anyone.`); }
-  catch { await db.query('DELETE FROM otp_codes WHERE phone = $1', [p]); return bad(res, 'We couldn’t send the SMS. Check the number and try again.', 502); }
+  try {
+    if (channel === 'whatsapp') await wa.sendCode(p, code);
+    else await sms.send(p, `${code} is your Flytte code. It expires in 5 minutes. Never share it with anyone.`);
+  } catch {
+    await db.query('DELETE FROM otp_codes WHERE phone = $1', [p]);
+    return bad(res, channel === 'whatsapp' ? 'We couldn’t send it on WhatsApp. Check the number has WhatsApp, or choose SMS.' : 'We couldn’t send the SMS. Check the number and try again.', 502);
+  }
   const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
-  res.json({ ok: true, exists: !!u, role: u ? u.role : null, resendIn: OTP_RESEND / 1000, ...(sms.demo() ? { demoCode: code } : {}) });
+  res.json({ ok: true, exists: !!u, role: u ? u.role : null, channel, resendIn: OTP_RESEND / 1000, ...((channel === 'whatsapp' ? wa.demo() : sms.demo()) ? { demoCode: code } : {}) });
 }));
 r.post('/auth/otp/verify', limit(20, 10 * 60e3), wrap(async (req, res) => {
   const p = auth.normalizePhone((req.body || {}).phone);

@@ -12,6 +12,14 @@ const assert = (c, m) => { console.log(c ? '✓' : '✗', m); if (!c) failed++; 
 (async () => {
   const cfg = (await call('/config')).body;
   assert(cfg.smsLogin === true, 'config says SMS sign-in is on (local demo mode)');
+  assert(JSON.stringify(cfg.codeChannels) === '["whatsapp","sms"]', 'config offers WhatsApp and SMS for the code');
+
+  // WhatsApp code: same code rules, sent on WhatsApp
+  const wp = '078' + rnd().slice(0, 7);
+  const ws = await call('/auth/otp/send', { phone: wp, channel: 'whatsapp' });
+  assert(ws.status === 200 && ws.body.channel === 'whatsapp' && /^\d{6}$/.test(ws.body.demoCode), 'code sent on WhatsApp');
+  const wv = await call('/auth/otp/verify', { phone: wp, code: ws.body.demoCode });
+  assert(wv.status === 200 && wv.body.verified && wv.body.phoneToken, 'WhatsApp code confirms the number');
 
   // New number: code, then sign up without a password
   const phone = '077' + rnd().slice(0, 7);

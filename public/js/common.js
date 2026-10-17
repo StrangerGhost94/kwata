@@ -684,48 +684,6 @@
       onDone(out);
     };
 
-    // Rider onboarding slides
-    // Welcome screens: the Flytte rider photo, the wordmark, and swipeable text.
-    const hero = (driver, slides, ctaLabel) => {
-      root.innerHTML = `<div class="onboard hero">
-        <div class="hero-photo"><img src="/img/welcome.jpg" alt="" decoding="async"></div>
-        <div class="hero-logo">${K.wordmark(driver)}</div>
-        <div class="slides" id="sl">${slides.map(([a, b2, p]) => `<div class="slide"><h1>${a}<br><span>${b2}</span></h1><p>${p}</p></div>`).join('')}</div>
-        ${slides.length > 1 ? `<div class="dots">${slides.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
-        <div class="cta"><button class="btn btn-primary btn-block btn-lg" id="go">${ctaLabel}</button><button class="btn btn-link" id="li">Log In</button></div></div>`;
-      const sl = root.querySelector('#sl'), dots = root.querySelectorAll('.dots i');
-      sl.addEventListener('scroll', () => { const i = Math.round(sl.scrollLeft / sl.clientWidth); dots.forEach((d, j) => d.classList.toggle('on', i === j)); }, { passive: true });
-    };
-    function onboarding() {
-      hero(false, [
-        ['Rides & deliveries,', 'made simple.', 'Boda, car or parcel across Kampala. Flytte gets you there fast, safe and reliable.'],
-        ['Send anything,', 'tracked all the way.', 'Documents, food, phones. Follow your parcel live from pickup to the door.'],
-        ['Safer from', 'the first metre.', 'Every trip starts with your PIN, and family can follow along live.'],
-      ], 'Get Started');
-      const seen = () => { try { localStorage.setItem('flytte_onboarded', '1'); } catch {} };
-      root.querySelector('#go').onclick = () => { seen(); phoneStep(onboarding); };
-      root.querySelector('#li').onclick = () => { seen(); phoneStep(onboarding); };
-    }
-
-    // Driver welcome (screen 14)
-    function driverWelcome() {
-      hero(true, [['Your boda,', 'your income.', 'Pick up rides and deliveries near you, <span data-keep="keep">keep most of every fare</span>, and cash out to Mobile Money.']], 'Get Started');
-      fillKeep(root);
-      root.querySelector('#go').onclick = becomeDriver;
-      root.querySelector('#li').onclick = () => phoneStep(driverWelcome);
-    }
-
-    function becomeDriver() {
-      shell(`<div class="auth-body">
-        <h1>Become a driver</h1><p class="lead">Join drivers earning with Flytte.</p>
-        <ul class="checklist"><li><span data-keep="Keep">Keep most of every fare</span></li><li>Work the hours you choose</li><li>Request cash-outs to MTN or Airtel Mobile Money</li><li>We check your documents before your first trip</li></ul>
-        <div class="spacer"></div>
-        <button class="btn btn-primary btn-block btn-lg" id="go">Continue</button>
-        <p class="fine">Already driving with Flytte? <button data-li>Log In</button></p></div>`, driverWelcome);
-      root.querySelector('#go').onclick = () => phoneStep(becomeDriver);
-      root.querySelector('[data-li]').onclick = () => phoneStep(becomeDriver);
-    }
-
     function signUp() {
       shell(`<form id="f" novalidate class="auth-body">
         <h1>Create your account</h1><p class="lead">It takes less than a minute.</p>
@@ -790,20 +748,18 @@
       };
     }
 
-    // Step 1 for riders and drivers: just the mobile number. Flytte then asks for the
-    // password if the number has an account, or starts a new one if it doesn't.
-    let stepBack = null;
-    function phoneStep(back) {
-      if (back) stepBack = back;
+    // The first screen for riders and drivers: just the mobile number, then a one-time code
+    // (on WhatsApp or by SMS). Existing numbers sign straight in; new numbers set up an account.
+    function phoneStep() {
       const driver = role === 'driver';
       shell(`<form id="f" novalidate class="auth-body phone-first">
         <h1>${driver ? 'Drive with Flytte' : 'Welcome to Flytte'}</h1>
-        <p class="lead">Enter your mobile number to continue.</p>
+        <p class="lead">Enter your mobile number to sign in.</p>
         <label for="ph" class="sr-only">Mobile number</label>${phoneField('ph', draft.phone)}
         <p class="error" role="alert"></p>
-        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
-        <p class="fine" data-fine>We’ll text you a 6-digit code to confirm it’s your number.</p>
-      </form>`, stepBack);
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Sign In">Sign In</button>
+        <p class="fine" data-fine>New to Flytte? Use the same button. We’ll send you a code to confirm your number${driver ? ', then check your documents before your first trip' : ''}.</p>
+      </form>`, null);
       const f = root.querySelector('#f');
       K.cfg().then((c) => { const t = root.querySelector('[data-fine]'); if (t && !c.smsLogin) t.textContent = `If you already have an account we’ll ask for your password. If not, we’ll set one up${driver ? ' and check your documents before your first trip' : ''}.`; }).catch(() => {});
       f.onsubmit = async (e) => {
@@ -817,24 +773,43 @@
           const out = await K.api('/auth/check', { phone: e164 });
           if (out.exists && out.role !== role) { err.textContent = wrongApp[out.role] || 'This number can’t be used here.'; busy(f, false); return; }
           const cfg = await K.cfg().catch(() => ({}));
-          if (cfg.smsLogin) { await sendCode(); codeStep(); return; }
+          if (cfg.smsLogin) {
+            const chans = cfg.codeChannels && cfg.codeChannels.length ? cfg.codeChannels : ['sms'];
+            const ch = chans.length > 1 ? await pickChannel() : chans[0];
+            if (!ch) { busy(f, false); return; }
+            await sendCode(ch); codeStep(); return;
+          }
           if (out.exists) passwordStep(); else if (driver) driverForm(); else signUp();
         } catch (ex) { err.textContent = ex.message; busy(f, false); }
       };
     }
 
+    // Where should the code go? WhatsApp or SMS, asked each time (like Faras / Bolt).
+    const WA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z"/></svg>';
+    const SMSI = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/><path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M8 11h.01M12 11h.01M16 11h.01"/></svg>';
+    const pickChannel = () => new Promise((resolve) => {
+      let done = false;
+      const m = K.modal(`<div class="ch-sheet"><h2>Where should we send your code?</h2>
+        <p class="muted">We’ll send a 6-digit code to <b>${K.esc(K.prettyPhone(draft.e164))}</b></p>
+        <button class="ch-opt ch-wa" data-ch="whatsapp"><span class="ch-ic">${WA}</span><span class="grow"><b>WhatsApp</b><small>Fastest, works on Wi-Fi</small></span>${K.ic('chev')}</button>
+        <button class="ch-opt ch-sms" data-ch="sms"><span class="ch-ic">${SMSI}</span><span class="grow"><b>SMS</b><small>A text message to this number</small></span>${K.ic('chev')}</button></div>`,
+        { onClose: () => { if (!done) resolve(null); } });
+      m.el.querySelectorAll('[data-ch]').forEach((b) => b.onclick = () => { done = true; K.haptic(); m.close(); resolve(b.dataset.ch); });
+    });
+
     // SMS code: sent to the number, valid for 5 minutes.
-    let resendAt = 0;
-    async function sendCode() {
-      const out = await K.api('/auth/otp/send', { phone: draft.e164 });
+    let resendAt = 0, channel = 'sms';
+    async function sendCode(ch = channel) {
+      const out = await K.api('/auth/otp/send', { phone: draft.e164, channel: ch });
+      channel = out.channel || ch;
       resendAt = Date.now() + (out.resendIn || 30) * 1000;
-      if (out.demoCode) K.toast(`Test mode (no SMS set up): your code is ${out.demoCode}`, 8000);
+      if (out.demoCode) K.toast(`Test mode (no ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} set up): your code is ${out.demoCode}`, 8000);
       return out;
     }
     function codeStep() {
       shell(`<form id="f" novalidate class="auth-body code-step">
         <h1>Enter the code</h1>
-        <p class="lead">We sent a 6-digit code by SMS to</p>
+        <p class="lead">We sent a 6-digit code ${channel === 'whatsapp' ? 'on WhatsApp' : 'by SMS'} to</p>
         ${phoneChip()}
         <label for="otp" class="sr-only">6-digit code</label>
         <div class="otp-wrap"><input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" spellcheck="false">
@@ -842,6 +817,7 @@
         <p class="error" role="alert"></p>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
         <p class="fine"><button type="button" class="link-btn" data-resend disabled></button></p>
+        <p class="fine hidden" data-switch-wrap><button type="button" class="link-btn" data-switch>${channel === 'whatsapp' ? 'Get the code by SMS instead' : 'Get the code on WhatsApp instead'}</button></p>
       </form>`, phoneStep);
       bindChip();
       const f = root.querySelector('#f'), inp = f.otp, boxes = f.querySelectorAll('.otp-boxes i'), rs = f.querySelector('[data-resend]'), err = f.querySelector('.error');
@@ -853,6 +829,13 @@
       const timer = () => { const left = Math.ceil((resendAt - Date.now()) / 1000); rs.disabled = left > 0; rs.textContent = left > 0 ? `Send a new code in ${left}s` : 'Send a new code'; if (left <= 0) clearInterval(tick); };
       tick = setInterval(timer, 1000); timer();
       rs.onclick = async () => { rs.disabled = true; try { await sendCode(); K.toast('New code sent'); inp.value = ''; paint(); } catch (ex) { err.textContent = ex.message; } clearInterval(tick); tick = setInterval(timer, 1000); timer(); };
+      // Didn't arrive? Switch to the other channel (shown once the wait is over, if both are on).
+      const other = channel === 'whatsapp' ? 'sms' : 'whatsapp', sw = f.querySelector('[data-switch]'), swWrap = f.querySelector('[data-switch-wrap]');
+      K.cfg().then((c) => { if ((c.codeChannels || []).includes(other)) swWrap.classList.remove('hidden'); }).catch(() => {});
+      sw.onclick = async () => {
+        if (Date.now() < resendAt) { err.textContent = `Wait ${Math.ceil((resendAt - Date.now()) / 1000)} seconds, then try again.`; return; }
+        sw.disabled = true; try { await sendCode(other); clearInterval(tick); dir = 'fwd'; codeStep(); K.toast(other === 'whatsapp' ? 'Code sent on WhatsApp' : 'Code sent by SMS'); } catch (ex) { err.textContent = ex.message; sw.disabled = false; }
+      };
       // Android Chrome can read the code straight from the SMS.
       if ('OTPCredential' in window) { const ac = new AbortController(); f.addEventListener('submit', () => ac.abort(), { once: true }); navigator.credentials.get({ otp: { transport: ['sms'] }, signal: ac.signal }).then((c) => { if (c && c.code) { inp.value = c.code; paint(); f.requestSubmit(); } }).catch(() => {}); }
       f.onsubmit = async (e) => {
@@ -936,10 +919,8 @@
       };
     }
 
-    let onboarded = false; try { onboarded = !!localStorage.getItem('flytte_onboarded'); } catch {}
-    if (role === 'driver') driverWelcome();
-    else if (role === 'rider' && !onboarded) onboarding();
-    else if (role === 'rider') phoneStep(onboarding);
+    // Riders and drivers open straight on the sign-in screen (no welcome slides first).
+    if (role === 'driver' || role === 'rider') phoneStep();
     else logIn();
   };
 

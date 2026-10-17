@@ -1586,3 +1586,16 @@ html.top-dark .sb-scrim { opacity: 0; }
 .phone-field .cc-show { pointer-events: none; display: inline-flex; align-items: center; gap: 6px; }
 .phone-field .cc-show::after { content: ''; width: 7px; height: 7px; margin-left: 2px; border-right: 1.8px solid currentColor; border-bottom: 1.8px solid currentColor; transform: translateY(-2px) rotate(45deg); opacity: .5; }
 .phone-field .cc-pick { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; border: 0; padding: 0; -webkit-appearance: none; appearance: none; }
+
+/* Sign-in code: WhatsApp or SMS */
+.ch-sheet h2 { margin: 0 0 4px; font-size: 1.3rem; letter-spacing: -.02em; }
+.ch-sheet .muted { margin: 0 0 16px; }
+.ch-opt { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 14px 16px; margin-top: 10px; border-radius: 16px; border: 1px solid #ECECF0; background: #fff; color: var(--ink); font: inherit; cursor: pointer; transition: transform .15s, background .15s; }
+.ch-opt:active { transform: scale(.98); background: #F7F7F9; }
+.ch-opt .grow { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.ch-opt b { font-size: 1.02rem; } .ch-opt small { color: var(--ink-2); font-size: .84rem; }
+.ch-opt > .i { width: 18px; height: 18px; color: var(--ink-2); }
+.ch-ic { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; }
+.ch-ic svg { width: 24px; height: 24px; }
+.ch-wa .ch-ic { background: #25D366; color: #fff; }
+.ch-sms .ch-ic { background: #F2F2F5; color: var(--ink); }
