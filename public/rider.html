@@ -23,11 +23,20 @@
 <body data-app="rider">
 <div id="splash" class="splash" role="status" aria-label="Loading Flytte">
   <div class="sp-center">
-    <div class="sp-icon"><svg viewBox="0 0 140 100" aria-hidden="true"><defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs><g fill="url(#kg)"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg></div>
+    <div class="sp-icon"><svg viewBox="0 0 140 100" aria-hidden="true"><defs><linearGradient id="kgs" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs><g fill="url(#kgs)"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg></div>
     <div class="sp-name">Flytte</div>
     <div class="sp-tag">Fast · Safe · Local</div>
   </div>
   <div class="sp-load" aria-hidden="true"><i></i></div>
+  <!-- Signed out: the launch screen is the sign-in photo itself, so it can settle into the sign-in page -->
+  <div class="sp-photo" aria-hidden="true"><img src="/img/welcome.jpg" alt="" fetchpriority="high"><div class="auth-shade"></div></div>
+  <div class="sp-mark" aria-hidden="true"><div class="wm" aria-label="Flytte">
+    <div class="wm-row"><svg class="wm-k " viewBox="0 0 140 100" aria-hidden="true">
+    <defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs>
+    <g class="wm-lines" fill="url(#kg)"><path class="l1" d="M14 18H46L43 28H11Z"/><path class="l2" d="M6 38H42L39 48H3Z"/><path class="l3" d="M14 58H38L35 68H11Z"/></g>
+    <g class="wm-body" fill="url(#kg)"><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg><span class="wm-t">lytte</span></div>
+    
+    <div class="wm-tag">FAST<i>•</i>SAFE<i>•</i>LOCAL</div></div></div>
 </div>
 <div id="root"></div>
 <script src="/vendor/leaflet/leaflet.js"></script>

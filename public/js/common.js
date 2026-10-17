@@ -502,14 +502,40 @@
   const T0 = performance.now();
   K.ready = function () {
     const sp = document.getElementById('splash');
-    if (!sp || sp.classList.contains('out')) return;
+    if (!sp || sp.classList.contains('out') || sp.dataset.going) return;
+    sp.dataset.going = '1';
     // The full logo animation once a day; after that the app opens almost straight away.
     let quick = false;
     try { const last = Number(localStorage.getItem('flytte_opened')) || 0; quick = Date.now() - last < 12 * 3600e3; localStorage.setItem('flytte_opened', String(Date.now())); } catch {}
+    const photoMode = document.documentElement.classList.contains('launch-dark') && sp.querySelector('.sp-photo');
+    if (photoMode) { if (quick) sp.classList.add('quick'); return settleIntoSignIn(sp, quick); }
     if (quick) sp.classList.add('quick');
     const wait = Math.max(0, (quick ? 350 : 1300) - (performance.now() - T0));
     setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 400); }, wait);
   };
+
+  // Signed out: the launch photo becomes the sign-in page. The page is drawn underneath in the same
+  // pose as the splash (full-screen photo, wordmark in the middle), the splash steps aside, and the
+  // page settles into place: photo shrinks to its header, wordmark glides up, the card slides in.
+  function settleIntoSignIn(sp, quick) {
+    const img = sp.querySelector('.sp-photo img');
+    const photoReady = img && !img.complete ? Promise.race([img.decode().catch(() => {}), new Promise((r) => setTimeout(r, 1500))]) : Promise.resolve();
+    const hold = new Promise((r) => setTimeout(r, Math.max(0, (quick ? 450 : 1000) - (performance.now() - T0))));
+    const pageReady = new Promise((r) => { const t0 = performance.now(); (function look() { const a = document.querySelector('.auth2'); if (a || performance.now() - t0 > 4000) r(a); else requestAnimationFrame(look); })(); });
+    Promise.all([pageReady, photoReady, hold]).then(([auth]) => {
+      if (!auth) { sp.classList.add('out'); setTimeout(() => sp.remove(), 300); return; }
+      auth.querySelectorAll('.auth-body > *').forEach((el, i) => el.style.setProperty('--i', Math.min(i, 8)));
+      auth.classList.add('intro');
+      void auth.offsetHeight;                       // lay out the intro pose before the splash leaves
+      sp.classList.add('out');                       // splash and page now look the same: a quick fade hides any seam
+      setTimeout(() => {
+        sp.remove();
+        auth.classList.add('settle');
+        requestAnimationFrame(() => auth.classList.remove('intro'));
+        setTimeout(() => { auth.classList.remove('settle'); auth.querySelectorAll('.auth-body > *').forEach((el) => el.style.removeProperty('--i')); }, 1400);
+      }, 170);
+    });
+  }
 
   // ---------- installable app ----------
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
@@ -652,7 +678,9 @@
     K.ready();
     // Auth layout: photo header with the logo, white card that slides up with the form.
     const shell = (inner, back) => {
-      root.innerHTML = `<div class="auth2 ${dir === 'back' ? 'nav-back' : 'nav-fwd'}">
+      // The very first screen arrives from the launch photo, so it doesn't also slide in.
+      const first = !!document.querySelector('#splash:not(.out)');
+      root.innerHTML = `<div class="auth2 ${first ? '' : dir === 'back' ? 'nav-back' : 'nav-fwd'}">
         <div class="auth-hero"><img src="/img/welcome.jpg" alt="" decoding="async"><div class="auth-shade"></div>
           ${back ? `<button class="glass-back" data-back aria-label="Back">${K.ic('back')}</button>` : ''}
           <div class="auth-logo">${K.wordmark(role === 'driver')}</div></div>
