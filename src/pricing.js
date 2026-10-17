@@ -4,16 +4,16 @@ const db = require('./db');
 // Fares are calibrated against what riders actually pay in Kampala today.
 // Bolt's published Kampala route prices (Oct 2026) fit this formula almost exactly:
 //   Motorbike ≈ 700 + 620/km + 29/min   Car ≈ 4,250 + 1,800/km + 84/min   XL ≈ 2,700 + 2,270/km + 107/min
-// Kwata sits about 8–10% below Bolt for riders, while our lower commission
+// Flytte sits about 8–10% below Bolt for riders, while our lower commission
 // (12% vs Bolt's 15–20%) means drivers still take home about the same per trip.
 //   fare = max(minFare, base + perKm × road km + perMin × trip minutes) × surge
 const PRICING_VERSION = 2;
 const DEFAULT_SERVICES = {
-  boda:    { name: 'Kwata Boda',    icon: '🏍️', vehicle: 'boda', seats: 1, base: 700,  perKm: 570,  perMin: 26, minFare: 2000,  surge: 1, enabled: true, blurb: 'Beat the traffic on a motorbike.' },
-  car:     { name: 'Kwata Car',     icon: '🚗', vehicle: 'car',  seats: 4, base: 3800, perKm: 1650, perMin: 75, minFare: 6000,  surge: 1, enabled: true, blurb: 'Affordable everyday rides.' },
-  comfort: { name: 'Kwata Comfort', icon: '🚙', vehicle: 'car',  seats: 4, base: 4500, perKm: 2050, perMin: 95, minFare: 9000,  surge: 1, enabled: true, blurb: 'A step up from Car, for up to 4.' },
-  parcel:  { name: 'Kwata Parcel',  icon: '📦', vehicle: 'boda', seats: 0, base: 1000, perKm: 600,  perMin: 20, minFare: 2500,  surge: 1, enabled: true, blurb: 'Send packages across town.' },
-  airport: { name: 'Kwata Airport', icon: '✈️', vehicle: 'car',  seats: 4, base: 8000, perKm: 1750, perMin: 50, minFare: 25000, surge: 1, enabled: true, blurb: 'Entebbe & long-distance trips.' },
+  boda:    { name: 'Flytte Boda',    icon: '🏍️', vehicle: 'boda', seats: 1, base: 700,  perKm: 570,  perMin: 26, minFare: 2000,  surge: 1, enabled: true, blurb: 'Beat the traffic on a motorbike.' },
+  car:     { name: 'Flytte Car',     icon: '🚗', vehicle: 'car',  seats: 4, base: 3800, perKm: 1650, perMin: 75, minFare: 6000,  surge: 1, enabled: true, blurb: 'Affordable everyday rides.' },
+  comfort: { name: 'Flytte Comfort', icon: '🚙', vehicle: 'car',  seats: 4, base: 4500, perKm: 2050, perMin: 95, minFare: 9000,  surge: 1, enabled: true, blurb: 'A step up from Car, for up to 4.' },
+  parcel:  { name: 'Flytte Parcel',  icon: '📦', vehicle: 'boda', seats: 0, base: 1000, perKm: 600,  perMin: 20, minFare: 2500,  surge: 1, enabled: true, blurb: 'Send packages across town.' },
+  airport: { name: 'Flytte Airport', icon: '✈️', vehicle: 'car',  seats: 4, base: 8000, perKm: 1750, perMin: 50, minFare: 25000, surge: 1, enabled: true, blurb: 'Entebbe & long-distance trips.' },
 };
 
 const DEFAULTS = {
@@ -26,7 +26,7 @@ const DEFAULTS = {
   supportPhone: '',      // set the real line in Admin → Pricing (or SUPPORT_PHONE). Hidden in the apps until set.
   // Dynamic pricing (see src/surge.js). Caps keep fares affordable in Kampala.
   dynamic: { enabled: true, sensitivity: 0.35, maxBoda: 1.8, maxCar: 2.0, weather: true },
-  // Growth: what makes people try Kwata, invite friends and come back. Kwata pays for these.
+  // Growth: what makes people try Flytte, invite friends and come back. Flytte pays for these.
   growth: {
     firstRide: { enabled: true, percent: 50, max: 3000 },       // first trip: 50% off, up to UGX 3,000
     referral: { enabled: true, referrer: 3000, friend: 2000 },  // wallet credit once the friend finishes a first trip
@@ -52,6 +52,8 @@ async function getSettings() {
     s.services[k] = { ...v, ...(s.services[k] || {}) };
     // Earlier placeholder descriptions made promises nobody had confirmed; show the neutral one instead.
     if (OLD_BLURBS.includes(s.services[k].blurb)) s.services[k].blurb = v.blurb;
+    // The app was renamed to Flytte: service names saved under the old name follow the new one.
+    if (typeof s.services[k].name === 'string') s.services[k].name = s.services[k].name.replace(/^Kwata\b/, 'Flytte');
   }
   // One-time move to the new real-world rates. Keeps each service's on/off switch and surge.
   const stored = rows.find((r) => r.key === 'pricingVersion');

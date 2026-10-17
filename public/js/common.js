@@ -2,7 +2,19 @@
 (function () {
   const K = {};
   const APP = document.body.dataset.app || 'rider';
-  const KEY = 'kwata_' + APP;
+  const KEY = 'flytte_' + APP;
+  // The app was called Kwata before Flytte: carry saved sign-ins and settings over once,
+  // so nobody is signed out by the rename.
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf('kwata_') === 0) {
+        const n = 'flytte_' + k.slice(6);
+        if (localStorage.getItem(n) === null) localStorage.setItem(n, localStorage.getItem(k));
+        localStorage.removeItem(k);
+      }
+    }
+  } catch {}
   K.KAMPALA = { lat: 0.3136, lng: 32.5811 };
 
   K.PLACES = [
@@ -71,7 +83,7 @@
   K.starSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
 
   // ---------- vehicle art ----------
-  // Kwata's own vehicle illustrations: one side-on style, graphite/silver with a single gold accent.
+  // Flytte's own vehicle illustrations: one side-on style, graphite/silver with a single gold accent.
   // Standard rides are light, Comfort is a black executive sedan, delivery is a parcel, airport a plane.
   const VEH = { boda: 'Boda boda', car: 'Car', comfort: 'Comfort SUV', parcel: 'Parcel', airport: 'Airport transfer' };
   K.ART = Object.fromEntries(Object.entries(VEH).map(([k, alt]) => [k, `<img class="art-img" src="/img/vehicles/${k}.svg" alt="" data-alt="${alt}" decoding="async">`]));
@@ -81,14 +93,14 @@
   // ---------- brand: pin logo & night skyline ----------
   K.logo = (pin = '#FFC400', k = '#141414', size = 64) => `<svg class="pin" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
     <path d="M32 3C19.3 3 9 13.1 9 25.6 9 42 32 61 32 61s23-19 23-35.4C55 13.1 44.7 3 32 3z" fill="${pin}"/>
-    <g transform="translate(13.5 12.5) scale(.265)" fill="${k}"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg>`;
-  // The speed-K: three speed lines and a forward-leaning K (as on the Kwata delivery box).
+    <g transform="translate(13.5 12.5) scale(.265)" fill="${k}"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg>`;
+  // The speed-K: three speed lines and a forward-leaning K (as on the Flytte delivery box).
   K.markSvg = (cls = '') => `<svg class="wm-k ${cls}" viewBox="0 0 140 100" aria-hidden="true">
     <defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs>
     <g class="wm-lines" fill="url(#kg)"><path class="l1" d="M14 18H46L43 28H11Z"/><path class="l2" d="M6 38H42L39 48H3Z"/><path class="l3" d="M14 58H38L35 68H11Z"/></g>
-    <g class="wm-body" fill="url(#kg)"><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg>`;
-  K.wordmark = (driver) => `<div class="wm" aria-label="Kwata${driver ? ' Driver' : ''}">
-    <div class="wm-row">${K.markSvg()}<span class="wm-t">wata</span></div>
+    <g class="wm-body" fill="url(#kg)"><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg>`;
+  K.wordmark = (driver) => `<div class="wm" aria-label="Flytte${driver ? ' Driver' : ''}">
+    <div class="wm-row">${K.markSvg()}<span class="wm-t">lytte</span></div>
     ${driver ? '<div class="wm-sub">DRIVER</div>' : ''}
     <div class="wm-tag">${(driver ? ['EARN', 'DRIVE', 'GROW'] : ['FAST', 'SAFE', 'LOCAL']).join('<i>•</i>')}</div></div>`;
 
@@ -182,8 +194,8 @@
     try {
       res = await fetch('/api' + path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, signal: ctl ? ctl.signal : undefined });
     } catch (e) {
-      throw new Error(e && e.name === 'AbortError' ? 'Kwata is taking too long to respond. Check your connection and try again.'
-        : navigator.onLine === false ? 'You’re offline. Check your data or Wi-Fi and try again.' : 'Couldn’t reach Kwata. Check your connection and try again.');
+      throw new Error(e && e.name === 'AbortError' ? 'Flytte is taking too long to respond. Check your connection and try again.'
+        : navigator.onLine === false ? 'You’re offline. Check your data or Wi-Fi and try again.' : 'Couldn’t reach Flytte. Check your connection and try again.');
     } finally { if (timer) clearTimeout(timer); }
     if (res.status >= 500 && res.status !== 503) {
       const d = await res.json().catch(() => ({}));
@@ -228,9 +240,9 @@
     if (!el) { el = document.createElement('div'); el.id = 'netBanner'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
     el.classList.remove('out'); el.textContent = text;
   };
-  addEventListener('offline', () => K.netBanner(true, 'You’re offline. Kwata will reconnect when your data or Wi-Fi is back.'));
+  addEventListener('offline', () => K.netBanner(true, 'You’re offline. Flytte will reconnect when your data or Wi-Fi is back.'));
   addEventListener('online', () => { K.netBanner(false); K.toast('Back online'); });
-  if (navigator.onLine === false) setTimeout(() => K.netBanner(true, 'You’re offline. Kwata will reconnect when your data or Wi-Fi is back.'), 0);
+  if (navigator.onLine === false) setTimeout(() => K.netBanner(true, 'You’re offline. Flytte will reconnect when your data or Wi-Fi is back.'), 0);
 
   // iOS-style navigation: pages slide in from the right and back out to the right.
   K.reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -456,7 +468,7 @@
     if (!sp || sp.classList.contains('out')) return;
     // The full logo animation once a day; after that the app opens almost straight away.
     let quick = false;
-    try { const last = Number(localStorage.getItem('kwata_opened')) || 0; quick = Date.now() - last < 12 * 3600e3; localStorage.setItem('kwata_opened', String(Date.now())); } catch {}
+    try { const last = Number(localStorage.getItem('flytte_opened')) || 0; quick = Date.now() - last < 12 * 3600e3; localStorage.setItem('flytte_opened', String(Date.now())); } catch {}
     if (quick) sp.classList.add('quick');
     const wait = Math.max(0, (quick ? 350 : 1300) - (performance.now() - T0));
     setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 400); }, wait);
@@ -467,10 +479,10 @@
     window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
   }
   let installEvt = null;
-  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; document.dispatchEvent(new Event('kwata:installable')); });
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; document.dispatchEvent(new Event('flytte:installable')); });
   K.standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  K.installCard = function (host, appName = 'Kwata', icon = '/icons/icon-192.png') {
-    const key = 'kwata_install_dismissed_' + APP;
+  K.installCard = function (host, appName = 'Flytte', icon = '/icons/icon-192.png') {
+    const key = 'flytte_install_dismissed_' + APP;
     const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     let dismissed = false; try { dismissed = !!localStorage.getItem(key); } catch {}
     if (K.standalone() || dismissed || !host) return;
@@ -483,7 +495,7 @@
       host.querySelector('[data-x]').onclick = () => { try { localStorage.setItem(key, '1'); } catch {} host.innerHTML = ''; };
     };
     draw();
-    document.addEventListener('kwata:installable', draw, { once: true });
+    document.addEventListener('flytte:installable', draw, { once: true });
   };
 
   // ---------- onboarding, sign up & log in (mockup screens 1–4, 14–16) ----------
@@ -559,7 +571,7 @@
     };
 
     // Rider onboarding slides
-    // Welcome screens: the Kwata rider photo, the wordmark, and swipeable text.
+    // Welcome screens: the Flytte rider photo, the wordmark, and swipeable text.
     const hero = (driver, slides, ctaLabel) => {
       root.innerHTML = `<div class="onboard hero">
         <div class="hero-photo"><img src="/img/onboarding.jpg" alt="" decoding="async"></div>
@@ -572,11 +584,11 @@
     };
     function onboarding() {
       hero(false, [
-        ['Rides & deliveries,', 'made simple.', 'Boda, car or parcel across Kampala. Kwata gets you there fast, safe and reliable.'],
+        ['Rides & deliveries,', 'made simple.', 'Boda, car or parcel across Kampala. Flytte gets you there fast, safe and reliable.'],
         ['Send anything,', 'tracked all the way.', 'Documents, food, phones. Follow your parcel live from pickup to the door.'],
         ['Safer from', 'the first metre.', 'Every trip starts with your PIN, and family can follow along live.'],
       ], 'Get Started');
-      const seen = () => { try { localStorage.setItem('kwata_onboarded', '1'); } catch {} };
+      const seen = () => { try { localStorage.setItem('flytte_onboarded', '1'); } catch {} };
       root.querySelector('#go').onclick = () => { seen(); signUp(); };
       root.querySelector('#li').onclick = () => { seen(); logIn(); };
     }
@@ -591,11 +603,11 @@
 
     function becomeDriver() {
       shell(`<div class="auth-body">
-        <h1>Become a driver</h1><p class="lead">Join drivers earning with Kwata.</p>
+        <h1>Become a driver</h1><p class="lead">Join drivers earning with Flytte.</p>
         <ul class="checklist"><li><span data-keep="Keep">Keep most of every fare</span></li><li>Work the hours you choose</li><li>Request cash-outs to MTN or Airtel Mobile Money</li><li>We check your documents before your first trip</li></ul>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" id="go">Continue</button>
-        <p class="fine">Already driving with Kwata? <button data-li>Log In</button></p></div>`, driverWelcome);
+        <p class="fine">Already driving with Flytte? <button data-li>Log In</button></p></div>`, driverWelcome);
       root.querySelector('#go').onclick = driverForm;
       root.querySelector('[data-li]').onclick = logIn;
     }
@@ -607,7 +619,7 @@
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" placeholder="e.g. Grace Nalubega" value="${K.esc(draft.name || '')}" required>
         <label for="ph">Phone number</label>${phoneField('ph', draft.phone)}
         <label for="pw">Password</label>${pwField('pw', 'new-password', 'At least 6 characters')}
-        ${(() => { let ref = ''; try { ref = localStorage.getItem('kwata_ref') || ''; } catch {} return ref
+        ${(() => { let ref = ''; try { ref = localStorage.getItem('flytte_ref') || ''; } catch {} return ref
           ? `<label for="ic">Invite code</label><input id="ic" name="inviteCode" value="${K.esc(ref)}" style="text-transform:uppercase;font-weight:700;letter-spacing:.05em">`
           : `<button type="button" class="link-btn" id="icToggle" style="align-self:flex-start;margin-top:12px">Have an invite code?</button><div id="icWrap" class="hidden"><label for="ic">Invite code</label><input id="ic" name="inviteCode" placeholder="e.g. GRACE123" style="text-transform:uppercase;font-weight:700;letter-spacing:.05em"></div>`; })()}
         <p class="error" role="alert"></p>
@@ -627,7 +639,7 @@
         if (f.pw.value.length < 6) { err.textContent = 'Your password needs at least 6 characters.'; f.pw.focus(); return; }
         const inviteCode = f.ic && f.ic.value.trim() ? f.ic.value.trim().toUpperCase() : undefined;
         busy(f, true);
-        try { const out = await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw.value, role: 'rider', inviteCode }); try { localStorage.removeItem('kwata_ref'); } catch {} await finish(out); }
+        try { const out = await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw.value, role: 'rider', inviteCode }); try { localStorage.removeItem('flytte_ref'); } catch {} await finish(out); }
         catch (ex) { err.innerHTML = /already has an account/.test(ex.message) ? `This number already has an account. <a href="#" data-li2>Log in instead</a>` : K.esc(ex.message); busy(f, false); const l = err.querySelector('[data-li2]'); if (l) l.onclick = (ev) => { ev.preventDefault(); logIn(); }; }
       };
     }
@@ -666,7 +678,7 @@
 
     function logIn() {
       shell(`<form id="f" novalidate class="auth-body">
-        <h1>${role === 'driver' ? 'Welcome back, driver' : role === 'admin' ? 'Kwata Operations' : 'Welcome back'}</h1>
+        <h1>${role === 'driver' ? 'Welcome back, driver' : role === 'admin' ? 'Flytte Operations' : 'Welcome back'}</h1>
         <p class="lead">${role === 'admin' ? 'Staff sign in' : 'Log in to continue'}</p>
         ${google('Continue with Google')}
         <label for="ph">Phone number</label>${phoneField('ph', draft.phone)}
@@ -675,14 +687,14 @@
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Log In">Log In</button>
-        ${role === 'admin' ? '' : `<p class="fine">${role === 'driver' ? 'New driver?' : 'New to Kwata?'} <button type="button" data-su>${role === 'driver' ? 'Become a driver' : 'Create an account'}</button></p>`}
+        ${role === 'admin' ? '' : `<p class="fine">${role === 'driver' ? 'New driver?' : 'New to Flytte?'} <button type="button" data-su>${role === 'driver' ? 'Become a driver' : 'Create an account'}</button></p>`}
       </form>`, role === 'rider' ? onboarding : role === 'driver' ? driverWelcome : null);
       const f = root.querySelector('#f');
       const su = root.querySelector('[data-su]'); if (su) su.onclick = role === 'driver' ? becomeDriver : signUp;
       root.querySelector('[data-forgot]').onclick = async () => {
         const call = await supportLink('Call support');
         K.modal(`<h2>Forgot your password?</h2>
-          <p class="muted">${call ? 'Call Kwata support from the number you signed up with. We’ll confirm it’s you and set a new password.' : 'Password resets are done by the Kwata team for now. A support line will be listed here soon.'}</p>
+          <p class="muted">${call ? 'Call Flytte support from the number you signed up with. We’ll confirm it’s you and set a new password.' : 'Password resets are done by the Flytte team for now. A support line will be listed here soon.'}</p>
           ${call}
           <button class="btn btn-block" style="margin-top:8px" data-close>Close</button>`);
       };
@@ -695,13 +707,13 @@
         busy(f, true);
         try {
           const out = await K.api('/auth/login', { phone: toLocal(draft.phone), password: f.pw.value });
-          if (out.user.role !== role) throw new Error({ driver: 'This is a driver account. Use the Kwata Driver app.', rider: 'This number is a rider account. Use a different number for driving.', admin: 'This is a staff account.' }[out.user.role] || 'This account can’t be used here.');
+          if (out.user.role !== role) throw new Error({ driver: 'This is a driver account. Use the Flytte Driver app.', rider: 'This number is a rider account. Use a different number for driving.', admin: 'This is a staff account.' }[out.user.role] || 'This account can’t be used here.');
           await finish(out);
         } catch (ex) { err.textContent = ex.message; busy(f, false); }
       };
     }
 
-    let onboarded = false; try { onboarded = !!localStorage.getItem('kwata_onboarded'); } catch {}
+    let onboarded = false; try { onboarded = !!localStorage.getItem('flytte_onboarded'); } catch {}
     if (role === 'driver') driverWelcome();
     else if (role === 'rider' && !onboarded) onboarding();
     else logIn();
@@ -711,7 +723,7 @@
   K.askLocation = (root) => new Promise(async (resolve) => {
     let state = 'prompt';
     try { state = (await navigator.permissions.query({ name: 'geolocation' })).state; } catch {}
-    let asked = false; try { asked = !!localStorage.getItem('kwata_loc_asked'); } catch {}
+    let asked = false; try { asked = !!localStorage.getItem('flytte_loc_asked'); } catch {}
     if (state !== 'prompt' || asked || !navigator.geolocation) return resolve();
     root.innerHTML = `<div class="onb nav-fwd" style="text-align:center">
       <div class="illu">${K.ic('pin').replace('class="i "', 'class="i" style="width:64px;height:64px;stroke-width:1.6"')}</div>
@@ -720,7 +732,7 @@
       <div class="spacer"></div>
       <button class="btn btn-primary btn-block btn-lg" id="al">Allow Location</button>
       <button class="btn btn-link btn-block" id="nn">Not Now</button></div>`;
-    const done = () => { try { localStorage.setItem('kwata_loc_asked', '1'); } catch {} resolve(); };
+    const done = () => { try { localStorage.setItem('flytte_loc_asked', '1'); } catch {} resolve(); };
     root.querySelector('#al').onclick = () => navigator.geolocation.getCurrentPosition(done, done, { timeout: 15000 });
     root.querySelector('#nn').onclick = done;
   });
@@ -850,13 +862,13 @@
     }
     const sock = io({ auth: { token }, transports: ['websocket', 'polling'] });
     let t;
-    sock.on('disconnect', () => { clearTimeout(t); t = setTimeout(() => { if (!sock.connected && navigator.onLine !== false) K.netBanner(true, 'Reconnecting to Kwata…'); }, 4000); });
+    sock.on('disconnect', () => { clearTimeout(t); t = setTimeout(() => { if (!sock.connected && navigator.onLine !== false) K.netBanner(true, 'Reconnecting to Flytte…'); }, 4000); });
     sock.on('connect', () => { clearTimeout(t); if (navigator.onLine !== false) K.netBanner(false); });
     return sock;
   };
 
   K.share = async function (url, text) {
-    if (navigator.share) { try { await navigator.share({ title: 'Kwata trip', text, url }); return; } catch {} }
+    if (navigator.share) { try { await navigator.share({ title: 'Flytte trip', text, url }); return; } catch {} }
     try { await navigator.clipboard.writeText(url); K.toast('Trip link copied'); }
     catch { prompt('Copy this link', url); }
   };
@@ -1026,7 +1038,7 @@
   };
 
   K.SERVICE_LABEL = { boda: 'Boda', car: 'Car', comfort: 'Comfort', parcel: 'Parcel', airport: 'Airport' };
-  K.PAY_LABEL = { cash: 'Cash', wallet: 'Kwata Wallet', momo: 'Mobile Money', card: 'Card' };
+  K.PAY_LABEL = { cash: 'Cash', wallet: 'Flytte Wallet', momo: 'Mobile Money', card: 'Card' };
   K.PAY_ICON = { cash: 'cash', wallet: 'wallet', momo: 'momo', card: 'card' };
 
   window.K = K;

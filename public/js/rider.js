@@ -1,17 +1,17 @@
-// Kwata customer app (mockup screens 5–13):
+// Flytte customer app (mockup screens 5–13):
 // Home → Search → Choose a ride → Finding your rider → Rider found → On trip → Trip completed
 (function () {
   const root = document.getElementById('root');
   const S = {
     view: 'home', pickup: null, drop: null, route: null, quote: null, gps: null,
-    service: localStorage.getItem('kwata_service') || 'boda',
+    service: localStorage.getItem('flytte_service') || 'boda',
     trip: null, user: null, config: null, recent: [], parcel: null, rating: 0, unread: 0, chatOpen: false, messages: [],
   };
   let map, sock, sheet, routeLayer, labels = [], driverMarker, meMarker, nearby = new Map(), revTimer, phaseKm = null, routedPhase = null;
 
   const params = new URLSearchParams(location.search);
   // Invite links: /?ref=CODE fills the invite code on sign-up.
-  if (params.get('ref')) { try { localStorage.setItem('kwata_ref', params.get('ref').toUpperCase().slice(0, 20)); } catch {} history.replaceState(null, '', location.pathname); }
+  if (params.get('ref')) { try { localStorage.setItem('flytte_ref', params.get('ref').toUpperCase().slice(0, 20)); } catch {} history.replaceState(null, '', location.pathname); }
   if (params.get('payment')) {
     history.replaceState(null, '', location.pathname);
     const pm = params.get('payment');
@@ -27,7 +27,7 @@
     airtel: { name: 'Airtel Money', logo: '<span class="paylogo airtel">a</span>', method: 'momo' },
     card: { name: 'Card', logo: `<span class="paylogo card">${K.ic('card', 'sm')}</span>`, method: 'card' },
     cash: { name: 'Cash', logo: `<span class="paylogo cash">${K.ic('cash', 'sm')}</span>`, method: 'cash' },
-    wallet: { name: 'Kwata Wallet', logo: `<span class="paylogo wallet">${K.ic('wallet', 'sm')}</span>`, method: 'wallet' },
+    wallet: { name: 'Flytte Wallet', logo: `<span class="paylogo wallet">${K.ic('wallet', 'sm')}</span>`, method: 'wallet' },
   };
   // Mobile Money and card only work once online payments are switched on.
   const payOK = (k) => !['mtn', 'airtel', 'card'].includes(k) || !!(S.config && S.config.paymentsAvailable);
@@ -77,7 +77,7 @@
       const [me, config, active, hist] = await fresh;
       keep(me, config, hist);
       boot(me, config, active, hist);
-    } catch (e) { K.ready(); sheet.innerHTML = `<div class="state-box" role="alert"><b>Couldn’t open Kwata</b><span>${K.esc(e.message)}</span><button class="btn btn-primary btn-sm" onclick="location.reload()">Try again</button></div>`; }
+    } catch (e) { K.ready(); sheet.innerHTML = `<div class="state-box" role="alert"><b>Couldn’t open Flytte</b><span>${K.esc(e.message)}</span><button class="btn btn-primary btn-sm" onclick="location.reload()">Try again</button></div>`; }
   }
 
   function boot(me, config, active, hist) {
@@ -94,7 +94,7 @@
       locate(false); render();
       const svc = params.get('service');
       if (svc && S.config.services.some((x) => x.id === svc)) { setService(svc); history.replaceState(null, '', location.pathname); openSearch(svc === 'airport' ? { preset: K.PLACES[0] } : {}); }
-      let q = null; try { q = sessionStorage.getItem('kwata_q'); sessionStorage.removeItem('kwata_q'); } catch {}
+      let q = null; try { q = sessionStorage.getItem('flytte_q'); sessionStorage.removeItem('flytte_q'); } catch {}
       if (q) openSearch({ query: q });
     }
     setInterval(loadNearby, 8000);
@@ -116,7 +116,7 @@
   // If we can't get the rider's location we never guess one: we say why and ask
   // them to set the pickup themselves before they can request a ride.
   const LOC_MSG = {
-    denied: 'Location access is off for Kwata. Set your pickup point, or allow location for this site in your browser or phone settings and try again.',
+    denied: 'Location access is off for Flytte. Set your pickup point, or allow location for this site in your browser or phone settings and try again.',
     unavailable: 'Your phone couldn’t find your position right now. Set your pickup point, or try again outside or near a window.',
     timeout: 'Finding your position took too long. Set your pickup point, or try again.',
     unsupported: 'This browser can’t share your location. Set your pickup point to continue.',
@@ -292,7 +292,7 @@
     const g = S.config.growth || {}, cards = [];
     if (S.growth && S.growth.firstRide) cards.push(`<div class="fy-card fy-offer"><span class="grow"><small>Welcome offer</small><b>${S.growth.firstRide.percent}% off your first ride</b><span>Up to ${K.ugx(S.growth.firstRide.max)} · applied automatically</span></span><span class="fy-art">${K.ic('gift')}</span></div>`);
     if (g.referral && g.referral.enabled && g.referral.referrer) cards.push(`<button class="fy-card fy-invite" data-fy="invite"><span class="grow"><small>Invite friends</small><b>Get ${K.ugx(g.referral.referrer)} per friend</b><span>They get ${K.ugx(g.referral.friend)} after their first trip</span></span><span class="fy-art emoji">🎁</span></button>`);
-    if (ids.includes('parcel')) cards.push(`<button class="fy-card fy-parcel" data-svc2="parcel"><span class="grow"><small>Kwata Parcel</small><b>Send a package</b><span>Picked up and delivered across Kampala</span></span><span class="fy-art">${K.ART.parcel}</span></button>`);
+    if (ids.includes('parcel')) cards.push(`<button class="fy-card fy-parcel" data-svc2="parcel"><span class="grow"><small>Flytte Parcel</small><b>Send a package</b><span>Picked up and delivered across Kampala</span></span><span class="fy-art">${K.ART.parcel}</span></button>`);
     if (ids.includes('airport')) cards.push(`<button class="fy-card fy-air" data-svc2="airport"><span class="grow"><small>Airport transfer</small><b>Flying out of Entebbe?</b><span>Book now, or schedule ahead at the regular price</span></span><span class="fy-art">${K.ART.airport}</span></button>`);
     if (!cards.length) return '';
     return `<div class="section-label">For you</div><div class="fy-rail">${cards.join('')}</div>`;
@@ -381,7 +381,7 @@
     const c = map.unproject(map.project([ll.lat, ll.lng], z).add([0, shift]), z);
     map.setView(c, z, { animate: !!animate, duration: 0.5 });
   }
-  function setService(id) { S.service = id; try { localStorage.setItem('kwata_service', id); } catch {} }
+  function setService(id) { S.service = id; try { localStorage.setItem('flytte_service', id); } catch {} }
 
   // ---------- full-screen search ----------
   let searchTimer;
@@ -604,7 +604,7 @@
 
   // Promo codes
   function openPromo() {
-    const m = K.modal(`<h2>Promo code</h2><p class="small muted">Got a code from Kwata or a friend? Add it here. One discount per trip: you always get the biggest one.</p>
+    const m = K.modal(`<h2>Promo code</h2><p class="small muted">Got a code from Flytte or a friend? Add it here. One discount per trip: you always get the biggest one.</p>
       <label for="pc">Code</label><input id="pc" autocapitalize="characters" placeholder="e.g. KAMPALA20" value="${K.esc(S.promoCode || '')}" style="text-transform:uppercase;letter-spacing:.06em;font-weight:700">
       <p class="error" id="err"></p>
       <button class="btn btn-primary btn-block btn-lg" id="apply">Apply</button>
@@ -721,7 +721,7 @@
     if (S.service === 'parcel') body.parcel = S.parcel;
     try { onTrip(await K.api('/trips', body, 'POST', { timeout: 45000 })); }
     catch (e) {
-      if (/too long|reach Kwata/.test(e.message)) { // slow network: the request may have landed
+      if (/too long|reach Flytte/.test(e.message)) { // slow network: the request may have landed
         const a = await K.api('/trips/active').catch(() => null);
         if (a && ['requested', 'accepted', 'arrived', 'in_progress'].includes(a.status)) { onTrip(a); return; }
       }
@@ -785,9 +785,9 @@
     const link = location.origin + '/t/' + t.shareToken;
     const d = t.driver || {};
     const sp = sheet.querySelector('[data-sendpass]');
-    if (sp) sp.onclick = () => sms(t.passenger.phone, `Hi ${K.first(t.passenger.name)}, I booked you a Kwata ${svcName(t.service).toLowerCase()}.${d.name ? ` ${K.first(d.name)} is coming in ${d.vehicle || ''} ${d.plate || ''}.` : ''} Your PIN is ${t.pin}: tell it to the ${who(t)} to start. Follow live: ${link}`);
+    if (sp) sp.onclick = () => sms(t.passenger.phone, `Hi ${K.first(t.passenger.name)}, I booked you a Flytte ${svcName(t.service).toLowerCase()}.${d.name ? ` ${K.first(d.name)} is coming in ${d.vehicle || ''} ${d.plate || ''}.` : ''} Your PIN is ${t.pin}: tell it to the ${who(t)} to start. Follow live: ${link}`);
     const sc = sheet.querySelector('[data-sendcode]');
-    if (sc) sc.onclick = () => sms(t.parcel.recipientPhone, `Hi ${K.first(t.parcel.recipientName)}, a Kwata parcel is on its way to you (${t.parcel.item}). Give the rider this delivery code when it arrives: ${t.dropCode}. Track it: ${link}`);
+    if (sc) sc.onclick = () => sms(t.parcel.recipientPhone, `Hi ${K.first(t.parcel.recipientName)}, a Flytte parcel is on its way to you (${t.parcel.item}). Give the rider this delivery code when it arrives: ${t.dropCode}. Track it: ${link}`);
   }
   function tipHtml(t) {
     if (!t.driver) return '';
@@ -801,7 +801,7 @@
       if (!amount) return;
       const canWallet = S.user.walletBalance >= amount;
       const m = K.modal(`<h2>Tip ${K.ugx(amount)}</h2><p class="small muted">How would you like to give it?</p>
-        ${canWallet ? `<button class="pay-item" data-m="wallet">${PAY.wallet.logo}<span class="grow"><b>From my Kwata Wallet</b><span>Sent to ${K.esc(K.first(t.driver.name))} instantly</span></span></button>` : ''}
+        ${canWallet ? `<button class="pay-item" data-m="wallet">${PAY.wallet.logo}<span class="grow"><b>From my Flytte Wallet</b><span>Sent to ${K.esc(K.first(t.driver.name))} instantly</span></span></button>` : ''}
         <button class="pay-item" data-m="cash">${PAY.cash.logo}<span class="grow"><b>In cash</b><span>Hand it to ${K.esc(K.first(t.driver.name))} now</span></span></button>
         <button class="btn btn-block" data-close style="margin-top:6px">Cancel</button>`);
       m.el.querySelectorAll('[data-m]').forEach((x) => x.onclick = async () => {
@@ -901,7 +901,7 @@
           <div class="amt">${K.ugx(t.payable)}</div>
           ${t.discount ? `<span class="deal" style="display:block;margin-top:2px">${K.ic('tag', 'sm')} You saved ${K.ugx(t.discount)}${t.promoLabel ? ' · ' + K.esc(t.promoLabel) : ''}</span>` : ''}
           <span class="row" style="justify-content:center;gap:8px;margin-top:6px">${P.logo}<span class="small bold">${P.name}</span></span>
-          ${t.pointsEarned ? `<span class="points-pill">★ +${t.pointsEarned} Kwata Rewards point${t.pointsEarned > 1 ? 's' : ''}</span>` : ''}
+          ${t.pointsEarned ? `<span class="points-pill">★ +${t.pointsEarned} Flytte Rewards point${t.pointsEarned > 1 ? 's' : ''}</span>` : ''}
         </div>
         ${tipHtml(t)}
         ${!t.riderRated ? `
@@ -941,7 +941,7 @@
       try { await K.api(`/trips/${t.id}/rate`, { stars: S.rating }); }
       catch (e) { rate.disabled = false; K.toast(`Rating not saved: ${e.message}`, 4500); return; }
       S.trip.riderRated = true; S.rating = 0;
-      if (needsPay) render(); else { K.toast('Thanks for riding with Kwata'); reset(); }
+      if (needsPay) render(); else { K.toast('Thanks for riding with Flytte'); reset(); }
     };
     const dn = K.$('#done'); if (dn) dn.onclick = reset;
     K.$('#details').onclick = () => tripDetails(t);
@@ -1063,7 +1063,7 @@
   }
 
   // ---------- safety ----------
-  const shareTrip = () => K.share(location.origin + '/t/' + S.trip.shareToken, `Follow my Kwata trip live: ${S.trip.driver.name}, ${S.trip.driver.plate}`);
+  const shareTrip = () => K.share(location.origin + '/t/' + S.trip.shareToken, `Follow my Flytte trip live: ${S.trip.driver.name}, ${S.trip.driver.plate}`);
   function openSafetySheet() {
     const t = S.trip;
     const m = K.modal(`<h2>Safety</h2>
@@ -1081,13 +1081,13 @@
       try {
         const out = await K.api(`/trips/${S.trip.id}/sos`, { lat, lng });
         const link = location.origin + '/t/' + out.shareToken;
-        const m = K.modal(`<h2>Alert sent to Kwata</h2>
-          <p>The Kwata team has been alerted with ${lat ? 'your location and ' : ''}your trip details. If you are in danger, call the police now.</p>
+        const m = K.modal(`<h2>Alert sent to Flytte</h2>
+          <p>The Flytte team has been alerted with ${lat ? 'your location and ' : ''}your trip details. If you are in danger, call the police now.</p>
           <a class="btn btn-danger btn-block btn-lg" href="tel:999">Call Police (999)</a>
-          ${out.emergencyContact ? `<a class="btn btn-block" style="margin-top:8px" href="sms:${out.emergencyContact}?body=${encodeURIComponent('I need help. Follow my Kwata trip: ' + link)}">Text my emergency contact</a>` : ''}
+          ${out.emergencyContact ? `<a class="btn btn-block" style="margin-top:8px" href="sms:${out.emergencyContact}?body=${encodeURIComponent('I need help. Follow my Flytte trip: ' + link)}">Text my emergency contact</a>` : ''}
           <button class="btn btn-block" style="margin-top:8px" id="sh">Share my live location</button>
           <button class="btn btn-ghost btn-block" data-close>Close</button>`);
-        K.$('#sh', m.el).onclick = () => K.share(link, 'I need help. Follow my Kwata trip live');
+        K.$('#sh', m.el).onclick = () => K.share(link, 'I need help. Follow my Flytte trip live');
       } catch (e) {
         // The alert didn't reach us: never pretend it did. Calling the police still works offline.
         const link = location.origin + '/t/' + S.trip.shareToken;
@@ -1098,7 +1098,7 @@
           <button class="btn btn-block" style="margin-top:8px" id="sh">Share my live trip</button>
           <button class="btn btn-ghost btn-block" data-close>Close</button>`);
         K.$('#again', m.el).onclick = () => { m.close(); send(lat, lng); };
-        K.$('#sh', m.el).onclick = () => K.share(link, 'I need help. Follow my Kwata trip live');
+        K.$('#sh', m.el).onclick = () => K.share(link, 'I need help. Follow my Flytte trip live');
       }
     };
     if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => send(p.coords.latitude, p.coords.longitude), () => send(), { timeout: 5000 });
@@ -1136,12 +1136,12 @@
       const rf = g.referral;
       sp.body.innerHTML = `<div class="invite-hero"><div class="gift-big">🎁</div>
           <h2>Give ${K.ugx(rf.friend)}, get ${K.ugx(rf.referrer)}</h2>
-          <p class="muted">Share your code. When a friend signs up with it and takes their first trip, you both get Kwata Wallet credit.</p></div>
+          <p class="muted">Share your code. When a friend signs up with it and takes their first trip, you both get Flytte Wallet credit.</p></div>
         <div class="code-box"><span class="tiny muted">Your invite code</span><b>${K.esc(g.code)}</b></div>
         <button class="btn btn-primary btn-block btn-lg" id="share">${K.ic('share', 'sm')} Share my invite</button>
         <div class="stats3" style="margin-top:18px"><div><b>${g.friends.joined}</b><span>Friends joined</span></div><div><b>${g.friends.rode}</b><span>Took a trip</span></div><div><b>${K.ugx(g.earned).replace('UGX ', '')}</b><span>Earned (UGX)</span></div></div>
         <p class="tiny faint">Credit arrives in your wallet automatically and pays for your next trips. One reward per new friend.</p>`;
-      K.$('#share', sp.page).onclick = () => K.share(g.link, `Ride with me on Kwata! Use my code ${g.code} when you sign up and get ${K.ugx(rf.friend)} after your first trip.`);
+      K.$('#share', sp.page).onclick = () => K.share(g.link, `Ride with me on Flytte! Use my code ${g.code} when you sign up and get ${K.ugx(rf.friend)} after your first trip.`);
     };
     sp.body.innerHTML = K.skeleton('list', 2);
     if (S.growth) draw(S.growth);
@@ -1149,7 +1149,7 @@
   }
 
   async function openRewards(onBack) {
-    const sp = subPage('Kwata Rewards', onBack);
+    const sp = subPage('Flytte Rewards', onBack);
     const draw = (g) => {
       const rw = g.rewards, t = g.tier;
       const pct = Math.min(100, Math.round((g.points / rw.redeemPoints) * 100));
@@ -1235,14 +1235,14 @@
         <span class="grow"><b style="font-size:1.2rem;display:block">${K.esc(u.name)}</b><span class="small muted">${K.esc(prettyPhone(u.phone))}</span><br>
           <span class="verified">★ ${u.rating || 'New'} rider rating</span></span></div>
       <button class="menu-item" data-a="invite"><span class="ic" style="background:var(--brand-soft)">🎁</span><span class="grow">Invite friends<br><span class="small muted">Get ${K.ugx((S.config.growth || { referral: {} }).referral.referrer || 0)} for each friend</span></span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="rewards"><span class="ic" style="background:var(--brand-soft)">★</span><span class="grow">Kwata Rewards<br><span class="small muted">${S.growth ? `${S.growth.points} points · ${S.growth.tier.name}` : 'Earn points on every trip'}</span></span>${K.ic('chev', 'sm')}</button>
+      <button class="menu-item" data-a="rewards"><span class="ic" style="background:var(--brand-soft)">★</span><span class="grow">Flytte Rewards<br><span class="small muted">${S.growth ? `${S.growth.points} points · ${S.growth.tier.name}` : 'Earn points on every trip'}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="pay"><span class="ic">${K.ic('card')}</span><span class="grow">Payment methods<br><span class="small muted">${P.name}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="places"><span class="ic">${K.ic('pin')}</span><span class="grow">Saved places</span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="wallet"><span class="ic">${K.ic('wallet')}</span><span class="grow">Kwata Wallet<br><span class="small muted">${K.ugx(u.walletBalance)}</span></span>${K.ic('chev', 'sm')}</button>
+      <button class="menu-item" data-a="wallet"><span class="ic">${K.ic('wallet')}</span><span class="grow">Flytte Wallet<br><span class="small muted">${K.ugx(u.walletBalance)}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="safety"><span class="ic">${K.ic('shield')}</span><span class="grow">Safety<br><span class="small muted">${u.emergencyContact ? 'Emergency contact ' + K.esc(prettyPhone(u.emergencyContact)) : 'Add an emergency contact'}</span></span>${K.ic('chev', 'sm')}</button>
       ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Help & Support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
       <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
-      <p class="tiny faint" style="text-align:center;margin-top:18px">Kwata 1.0</p>`;
+      <p class="tiny faint" style="text-align:center;margin-top:18px">Flytte 1.0</p>`;
     const redraw = () => drawAccount(el);
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => {
       const a = b.dataset.a;
@@ -1306,23 +1306,23 @@
   }
 
   async function openWallet(after) {
-    const m = K.modal(`<h2>Kwata Wallet</h2><p class="money">${K.ugx(S.user.walletBalance)}</p>${K.skeleton('list', 3)}`);
+    const m = K.modal(`<h2>Flytte Wallet</h2><p class="money">${K.ugx(S.user.walletBalance)}</p>${K.skeleton('list', 3)}`);
     let w; try { w = await K.api('/wallet'); } catch (e) {
       if (!m.el.isConnected) return;
-      m.el.innerHTML = `<h2>Kwata Wallet</h2><div class="state-box" role="alert"><b>Couldn’t load your wallet</b><span>${K.esc(e.message)}</span><button class="btn btn-sm" id="again">Try again</button></div>`;
+      m.el.innerHTML = `<h2>Flytte Wallet</h2><div class="state-box" role="alert"><b>Couldn’t load your wallet</b><span>${K.esc(e.message)}</span><button class="btn btn-sm" id="again">Try again</button></div>`;
       K.$('#again', m.el).onclick = () => { m.close(); setTimeout(() => openWallet(after), 280); };
       return;
     }
     if (!m.el.isConnected) return;
     const live = S.config.paymentsAvailable;
     m.el.innerHTML = `
-      <h2>Kwata Wallet</h2>
+      <h2>Flytte Wallet</h2>
       <p class="money">${K.ugx(w.balance)}</p>
       ${live ? `<p class="small muted">Top up once with Mobile Money and pay for trips in one tap.</p>
       <div class="chips">${[10000, 20000, 50000, 100000].map((a) => `<button class="chip" data-amt="${a}">${K.ugx(a)}</button>`).join('')}</div>
       <label for="amt">Amount (UGX)</label><input id="amt" type="number" inputmode="numeric" min="1000" max="2000000" step="500" value="20000">
       <div class="row" style="margin-top:12px"><button class="btn btn-primary fill" data-m="momo">MTN / Airtel</button><button class="btn fill" data-m="card">${K.ic('card', 'sm')} Card</button></div>
-      ${S.config.paymentsDemo ? '<p class="tiny faint" style="margin-top:8px">Test mode: top-ups are added instantly without charging you.</p>' : ''}` : '<p class="small muted">Wallet top-ups by Mobile Money and card are coming soon. Credit from Kwata Rewards and invites lands here, and you can use it to pay for trips.</p>'}
+      ${S.config.paymentsDemo ? '<p class="tiny faint" style="margin-top:8px">Test mode: top-ups are added instantly without charging you.</p>' : ''}` : '<p class="small muted">Wallet top-ups by Mobile Money and card are coming soon. Credit from Flytte Rewards and invites lands here, and you can use it to pay for trips.</p>'}
       <p class="error" id="err" role="alert"></p>
       ${w.transactions.length ? `<h3>History</h3>${w.transactions.map((x) => `<div class="tx"><span>${K.esc(x.note || x.type)}<br><span class="tiny faint">${K.when(x.created_at)}</span></span><span class="${x.amount > 0 ? 'pos' : 'neg'}">${x.amount > 0 ? '+' : ''}${K.ugx(x.amount)}</span></div>`).join('')}` : ''}`;
     m.el.querySelectorAll('[data-amt]').forEach((b) => b.onclick = () => { K.$('#amt', m.el).value = b.dataset.amt; });

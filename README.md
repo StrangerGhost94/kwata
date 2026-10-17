@@ -1,4 +1,4 @@
-# Kwata 🏍️🚗📦✈️
+# Flytte 🏍️🚗📦✈️
 
 Ride-hailing built for Kampala: **boda, car, comfort, parcel delivery and airport rides**, paid with **cash, MTN/Airtel Mobile Money, card or an in-app wallet**. Drivers keep **88%** of every fare.
 
@@ -6,8 +6,8 @@ One Node.js app serves everything:
 
 | Address | What it is |
 |---|---|
-| `/` | The Kwata app itself: logo splash → phone sign in / sign up → services. Installable to the home screen (PWA). |
-| `/driver` | Kwata Driver app (installs separately, gold icon) |
+| `/` | The Flytte app itself: logo splash → phone sign in / sign up → services. Installable to the home screen (PWA). |
+| `/driver` | Flytte Driver app (installs separately, gold icon) |
 | `/about` | Marketing page for sharing on social media |
 | `/admin` | Operations console (approve drivers, live map, pricing, SOS, payouts) |
 | `/t/<code>` | Live trip link a rider shares with family |
@@ -21,7 +21,7 @@ One Node.js app serves everything:
 **Admin** – live KPIs and map, approve/suspend drivers, block riders, all trips, edit every fare (base, per km, per minute, minimum, busy multiplier) and the commission live, SOS alerts with sound, payout queue.
 
 **Money rules**
-- Cash trip: driver collects cash, Kwata's commission is deducted from their balance.
+- Cash trip: driver collects cash, Flytte's commission is deducted from their balance.
 - Wallet trip: fare comes from the rider's wallet, driver is credited fare minus commission.
 - Mobile Money / card trip: rider pays at the end through Flutterwave; driver is credited once payment is confirmed with Flutterwave's servers (never trusting the browser).
 - Every balance change is written to a `transactions` ledger.
@@ -30,14 +30,14 @@ One Node.js app serves everything:
 
 ## Installing on a phone (PWA)
 
-Open the Railway link in Chrome on Android: Kwata shows an **Install** card on the home screen, or use the browser menu → *Install app*. On iPhone, open it in Safari → Share → *Add to Home Screen*. It then opens full-screen from its own icon, with a black splash, like any app from the store. Drivers install `/driver` the same way and get a separate gold icon.
+Open the Railway link in Chrome on Android: Flytte shows an **Install** card on the home screen, or use the browser menu → *Install app*. On iPhone, open it in Safari → Share → *Add to Home Screen*. It then opens full-screen from its own icon, with its own launch screen, like any app from the store. Drivers install `/driver` the same way and get a separate gold icon.
 
 When you release changes to the app, bump `VERSION` at the top of `public/sw.js` so phones pick up the new version right away.
 
 ## Run it on your Mac
 
 ```bash
-cd kwata
+cd kwata   # the project folder keeps its old name until you rename it
 npm install
 npm start
 ```
@@ -83,7 +83,7 @@ Driver payouts are currently sent by your team by Mobile Money and marked paid i
 - **Legal**: confirm current Ministry of Works & Transport rules for digital ride-hailing operators and register as a data controller with Uganda's Personal Data Protection Office. Write terms of service and a privacy policy (the app has no Terms/Privacy pages yet, so sign-up doesn't link to any).
 - **Support line**: set `SUPPORT_PHONE` (or Admin → Pricing). Until then, Help & Support and "Call support" buttons are hidden.
 - **Service descriptions**: the blurbs in Admin settings (e.g. "Helmet provided", "Newer cars, AC, top-rated drivers") are shown to riders on the website; make sure every one is true for your fleet.
-- **Name**: check that "Kwata" is free to trademark with URSB and grab the domain.
+- **Name**: check that "Flytte" is free to trademark with URSB and grab the domain.
 - **Secrets**: set a strong `JWT_SECRET` and change the default admin password.
 
 ## Next features worth building
@@ -121,12 +121,12 @@ Fares are upfront and calibrated to Kampala (about 8–10% below Bolt's publishe
 - **First-ride discount** – automatic, default 50% off up to UGX 3,000 (Admin → Promotions).
 - **Promo codes** – % or UGX off, max discount, min fare, total uses, uses per rider, expiry, ride type, first-rides-only; switch on/off any time. One discount per trip: the rider always gets the bigger one.
 - **Invite friends** – every rider has a code and link (`/?ref=CODE`). When the friend finishes their first trip, both get wallet credit (default UGX 3,000 inviter / 2,000 friend).
-- **Kwata Rewards** – 1 point per UGX 1,000 paid; 100 points = UGX 2,000 wallet credit; Bronze / Silver / Gold levels.
+- **Flytte Rewards** – 1 point per UGX 1,000 paid; 100 points = UGX 2,000 wallet credit; Bronze / Silver / Gold levels.
 - **Tips** – after the trip, from the wallet (straight to the driver, no commission) or in cash.
 - **Scheduled rides** – 20 minutes to 7 days ahead, never surge-priced, dispatch starts 10 minutes before (`SCHEDULE_LEAD_MIN`).
 - **Book for someone else** – the driver sees and calls the passenger; the booker can text them the PIN and live link.
 - **Parcel delivery code** – the recipient gives a 4-digit code to the rider; the delivery can't be completed without it.
 
-Money rule: `fare` is the full price; the rider pays `fare − discount`; Kwata covers the discount, so the driver always earns on the full fare (cash trips: the discount is added to the driver's balance).
+Money rule: `fare` is the full price; the rider pays `fare − discount`; Flytte covers the discount, so the driver always earns on the full fare (cash trips: the discount is added to the driver's balance).
 
 Tests: `node test/e2e.js` and `SCHEDULE_LEAD_MIN=30 node test/growth.js` (start the server with the same variable).

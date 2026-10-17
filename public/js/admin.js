@@ -1,16 +1,16 @@
-// Kwata admin console
+// Flytte admin console
 (function () {
   const root = document.getElementById('root');
   const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['safety', 'Safety'], ['payouts', 'Payouts']];
   let tab = location.hash.slice(1) || 'overview';
   let stats = {}, liveMap, liveLayer, liveTimer, sock;
 
-  if (!K.token()) K.authScreen(root, { role: 'admin', title: 'Kwata Admin', onDone: start });
+  if (!K.token()) K.authScreen(root, { role: 'admin', title: 'Flytte Admin', onDone: start });
   else start();
 
   async function start() {
     root.innerHTML = `<div class="shell"><nav class="side" aria-label="Admin sections">
-      <div class="logo" style="display:flex;align-items:center;gap:8px"><svg width="34" height="24" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg><span>Kwata</span></div>
+      <div class="logo" style="display:flex;align-items:center;gap:8px"><svg width="34" height="24" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg><span>Flytte</span></div>
       ${TABS.map(([id, n]) => `<button data-t="${id}">${n}<span class="count hidden" id="c-${id}"></span></button>`).join('')}
       <button id="out" style="margin-top:20px">Sign out</button></nav><main id="main"></main></div>`;
     root.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tab = b.dataset.t; location.hash = tab; show(); });
@@ -49,7 +49,7 @@
       <div class="kpis">
         <div class="kpi"><span class="small muted">Trips (24h)</span><b>${s.today.trips}</b></div>
         <div class="kpi"><span class="small muted">Rider spend (24h)</span><b>${K.ugx(s.today.gmv)}</b></div>
-        <div class="kpi"><span class="small muted">Kwata revenue (24h)</span><b>${K.ugx(s.today.revenue)}</b></div>
+        <div class="kpi"><span class="small muted">Flytte revenue (24h)</span><b>${K.ugx(s.today.revenue)}</b></div>
         <div class="kpi"><span class="small muted">Drivers online</span><b>${s.onlineDrivers}</b><span class="small muted">of ${s.drivers} approved</span></div>
         <div class="kpi"><span class="small muted">Live trips</span><b>${s.activeTrips}</b></div>
         <div class="kpi"><span class="small muted">Riders</span><b>${s.riders}</b></div>
@@ -61,7 +61,7 @@
       <div class="kpis">
         <div class="kpi"><span class="small muted">Completed trips</span><b>${s.allTime.trips}</b></div>
         <div class="kpi"><span class="small muted">Rider spend</span><b>${K.ugx(s.allTime.gmv)}</b></div>
-        <div class="kpi"><span class="small muted">Kwata revenue</span><b>${K.ugx(s.allTime.revenue)}</b></div>
+        <div class="kpi"><span class="small muted">Flytte revenue</span><b>${K.ugx(s.allTime.revenue)}</b></div>
         ${s.byService.map((x) => `<div class="kpi"><span class="small muted">${K.SERVICE_LABEL[x.service] || x.service}</span><b>${x.trips}</b><span class="small muted">${K.ugx(x.gmv)}</span></div>`).join('')}
       </div>`;
     liveMap = K.map('liveMap', K.KAMPALA, 12);
@@ -192,7 +192,7 @@
         <td><input type="text" maxlength="60" data-f="blurb" value="${K.esc(v.blurb || '')}" aria-label="${K.esc(v.name)} description" style="min-width:200px"></td></tr>`; }).join('')}
       </tbody></table></div>
       <div class="kpis" style="max-width:720px">
-        <div><label for="cp">Kwata commission (%)</label><input id="cp" type="number" min="0" max="50" value="${s.commissionPct}"></div>
+        <div><label for="cp">Flytte commission (%)</label><input id="cp" type="number" min="0" max="50" value="${s.commissionPct}"></div>
         <div><label for="rad">Search radius (km)</label><input id="rad" type="number" min="1" max="30" value="${s.dispatchRadiusKm}"></div>
         <div><label for="to">Seconds to accept</label><input id="to" type="number" min="8" max="60" value="${s.offerTimeoutSec}"></div>
         <div><label for="mw">Min cash out (UGX)</label><input id="mw" type="number" min="0" value="${s.minWithdrawal}"></div>
@@ -242,7 +242,7 @@
     const g = s.growth;
     const svcs = Object.entries(s.services);
     main.innerHTML = `<h1>Promotions</h1>
-      <p class="muted" style="max-width:720px">Kwata pays for every discount and reward. Drivers always earn on the full fare.</p>
+      <p class="muted" style="max-width:720px">Flytte pays for every discount and reward. Drivers always earn on the full fare.</p>
       <div class="kpis" style="max-width:900px">
         <div class="kpi"><span class="small muted">First-ride discounts given</span><b>${data.firstRide.n}</b><span class="small muted">${K.ugx(data.firstRide.spent)}</span></div>
         <div class="kpi"><span class="small muted">Invite & points rewards paid</span><b>${data.rewardsPaid.n}</b><span class="small muted">${K.ugx(data.rewardsPaid.spent)}</span></div>
@@ -254,7 +254,7 @@
           <div class="row g-fields"><span><small>% off</small><input id="fr-p" type="number" min="0" max="100" value="${g.firstRide.percent}"></span><span><small>Up to (UGX)</small><input id="fr-m" type="number" min="0" step="500" value="${g.firstRide.max}"></span></div></div>
         <div><label><input type="checkbox" id="rf-on" ${g.referral.enabled ? 'checked' : ''} style="width:auto"> Invite a friend</label>
           <div class="row g-fields"><span><small>Inviter gets (UGX)</small><input id="rf-a" type="number" min="0" step="500" value="${g.referral.referrer}"></span><span><small>Friend gets (UGX)</small><input id="rf-b" type="number" min="0" step="500" value="${g.referral.friend}"></span></div></div>
-        <div><label><input type="checkbox" id="rw-on" ${g.rewards.enabled ? 'checked' : ''} style="width:auto"> Kwata Rewards</label>
+        <div><label><input type="checkbox" id="rw-on" ${g.rewards.enabled ? 'checked' : ''} style="width:auto"> Flytte Rewards</label>
           <div class="row g-fields"><span><small>Points per UGX 1,000</small><input id="rw-e" type="number" min="0" value="${g.rewards.pointsPer1000}"></span><span><small>Points to redeem</small><input id="rw-p" type="number" min="1" value="${g.rewards.redeemPoints}"></span><span><small>Worth (UGX)</small><input id="rw-v" type="number" min="0" step="500" value="${g.rewards.redeemValue}"></span></div></div>
       </div>
       <button class="btn btn-primary" id="saveG">Save offers</button>

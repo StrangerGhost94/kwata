@@ -1,4 +1,4 @@
-// Kwata Driver app (mockup screens 14–20):
+// Flytte Driver app (mockup screens 14–20):
 // Welcome → Become a driver → Verify documents → Home (Go Online) → Ride request → Active trip → Earnings / Profile
 (function () {
   const root = document.getElementById('root');
@@ -30,7 +30,7 @@
       }).catch(() => {});
     } else {
       try { [me0, config, docs] = await fresh; K.cache.set('boot', [me0, config, docs]); }
-      catch (e) { K.ready(); root.innerHTML = `<div class="onb" style="text-align:center"><div class="state-box" role="alert" style="margin-top:30vh"><b>Couldn’t open Kwata Driver</b><span>${K.esc(e.message)}</span><button class="btn btn-primary btn-sm" onclick="location.reload()">Try again</button></div></div>`; return; }
+      catch (e) { K.ready(); root.innerHTML = `<div class="onb" style="text-align:center"><div class="state-box" role="alert" style="margin-top:30vh"><b>Couldn’t open Flytte Driver</b><span>${K.esc(e.message)}</span><button class="btn btn-primary btn-sm" onclick="location.reload()">Try again</button></div></div>`; return; }
     }
     S.user = me0.user; S.driver = me0.driver; S.config = config; S.docs = docs; S.hasPhoto = !!(docs.uploaded || {}).photo;
     if (S.hasPhoto) K.api('/driver/photo').then((r) => { S.photoData = r.url; if (S.tab === 'home') topbar(); }).catch(() => {});
@@ -66,7 +66,7 @@
     sock.on('trip:update', onTrip);
     sock.on('toast', (m) => K.toast(m.text));
     sock.on('chat:message', onChat);
-    sock.on('driver:forced_offline', () => { S.online = false; render(); K.toast('You were taken offline by Kwata support.'); });
+    sock.on('driver:forced_offline', () => { S.online = false; render(); K.toast('You were taken offline by Flytte support.'); });
     sock.on('driver:status', () => location.reload());
 
     startGps();
@@ -84,7 +84,7 @@
       const missing = info ? Object.keys(info.kinds).filter((k) => !info.uploaded[k]) : [];
       if (missing.length) { K.verifyDocs(root, { onDone: renderPending }); return; }
     }
-    const ask = S.config.supportPhone ? 'Call driver support' : 'Contact the Kwata team';
+    const ask = S.config.supportPhone ? 'Call driver support' : 'Contact the Flytte team';
     const msg = {
       pending: ['Application under review', 'Thanks! We’re checking your documents. We’ll show it here as soon as you’re approved, and we may call you to confirm a few details.'],
       suspended: ['Your account is paused', `${ask} to find out why and how to get back on the road.`],
@@ -130,7 +130,7 @@
   function locHtml() {
     if (S.loc) return S.manual ? '<p class="tiny faint" style="text-align:center;margin:0 0 8px">Using the position you set on the map. Tap the map to move it.</p>' : '';
     if (!S.gpsState || S.gpsState === 'finding') return '<p class="loc-finding" role="status"><span class="spin" aria-hidden="true"></span>Finding your location…</p>';
-    const why = { denied: 'Location access is off for Kwata Driver. Allow location in your browser or phone settings, or tap the map to set where you are.',
+    const why = { denied: 'Location access is off for Flytte Driver. Allow location in your browser or phone settings, or tap the map to set where you are.',
       unsupported: 'This browser can’t share your location. Tap the map to set where you are.',
       unavailable: 'Your phone couldn’t find your position. Try again outside, or tap the map to set where you are.' }[S.gpsState];
     return `<div class="loc-card" role="alert"><span class="ic" aria-hidden="true">${K.ic('locate')}</span>
@@ -225,7 +225,7 @@
     K.$('#earn').onclick = () => openTab('earnings');
     const on = K.$('#on'); if (on) on.onclick = () => setOnline(true);
     const off = K.$('#off'); if (off) off.onclick = () => setOnline(false);
-    K.installCard(K.$('#installHost'), 'Kwata Driver', '/icons/driver-192.png');
+    K.installCard(K.$('#installHost'), 'Flytte Driver', '/icons/driver-192.png');
   }
 
   // Screen 18: new ride request
@@ -268,7 +268,7 @@
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination · ${o.distanceKm.toFixed(1)} km, ${Math.round(o.durationMin)} min</small><b class="ellipsis">${K.esc(o.drop.address)}</b></span></div>
         </div>
         <div class="est"><small>You earn</small><b>${K.ugx(o.earning)}</b>
-          <span class="small muted" style="display:block">${o.paymentMethod === 'cash' && o.discount ? `Collect ${K.ugx(o.payable)} cash · Kwata pays the ${K.ugx(o.discount)} discount` : `Fare ${K.ugx(o.fare)} · ${o.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[o.paymentMethod]}`}</span>
+          <span class="small muted" style="display:block">${o.paymentMethod === 'cash' && o.discount ? `Collect ${K.ugx(o.payable)} cash · Flytte pays the ${K.ugx(o.discount)} discount` : `Fare ${K.ugx(o.fare)} · ${o.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[o.paymentMethod]}`}</span>
           ${o.bookedBy ? `<span class="small muted" style="display:block">Booked by ${K.esc(K.first(o.bookedBy))} for ${K.esc(o.rider.name)}</span>` : ''}</div>
       </div>
       <div class="spacer" style="flex:1"></div>
@@ -336,7 +336,7 @@
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
       </div>
       <div class="fare-row"><span class="muted">${t.paymentMethod === 'cash' ? 'Collect in cash' : 'Fare'}</span><b>${K.ugx(t.paymentMethod === 'cash' ? t.payable : t.fare)}</b></div>
-      ${t.discount ? `<p class="tiny muted" style="margin:6px 0 0">${t.paymentMethod === 'cash' ? `The ${customer(t)} has a ${K.ugx(t.discount)} discount. Kwata adds it to your balance, so you still earn on the full ${K.ugx(t.fare)}.` : `Promo applied for the ${customer(t)}. You still earn on the full ${K.ugx(t.fare)}.`}</p>` : ''}
+      ${t.discount ? `<p class="tiny muted" style="margin:6px 0 0">${t.paymentMethod === 'cash' ? `The ${customer(t)} has a ${K.ugx(t.discount)} discount. Flytte adds it to your balance, so you still earn on the full ${K.ugx(t.fare)}.` : `Promo applied for the ${customer(t)}. You still earn on the full ${K.ugx(t.fare)}.`}</p>` : ''}
       ${t.status === 'in_progress' && t.needsDropCode ? `<label for="dcode" style="text-align:center">Ask the recipient for the delivery code</label>
         <input id="dcode" class="pin-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="····" aria-label="Delivery code">` : ''}
       ${t.status === 'arrived' ? `
@@ -379,7 +379,7 @@
   }
 
   function safety() {
-    const m = K.modal(`<h2>Safety</h2><p class="muted">An emergency alert sends your location and this trip to the Kwata team. If you are in danger, call the police.</p>
+    const m = K.modal(`<h2>Safety</h2><p class="muted">An emergency alert sends your location and this trip to the Flytte team. If you are in danger, call the police.</p>
       <button class="btn btn-danger btn-block btn-lg" id="sos">${K.ic('sos')} Send emergency alert</button>
       <a class="btn btn-block" href="tel:999" style="margin-top:8px">Call Police (999)</a>
       ${S.config.supportPhone ? `<a class="btn btn-block" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}" style="margin-top:8px">Call driver support</a>` : ''}`);
@@ -387,7 +387,7 @@
       const b = ev.currentTarget; b.disabled = true; b.textContent = 'Sending alert…';
       try {
         await K.api(`/trips/${S.trip.id}/sos`, S.loc || {});
-        m.close(); K.toast('Alert sent to the Kwata team with your location.', 6000);
+        m.close(); K.toast('Alert sent to the Flytte team with your location.', 6000);
       } catch (e) {
         b.disabled = false; b.textContent = 'Try sending the alert again';
         const p = m.el.querySelector('.muted'); p.setAttribute('role', 'alert'); p.textContent = `The alert didn’t send: ${e.message} Call the police directly if you are in danger.`;
@@ -405,7 +405,7 @@
         <h2>${t.service === 'parcel' ? 'Delivery complete' : 'Trip complete'}</h2>
         <div class="fare-card">
           ${t.paymentMethod === 'cash'
-            ? `<span class="small muted">Collect cash</span><div class="amt">${K.ugx(t.payable)}</div><span class="small muted">You earned ${K.ugx(t.earning)}${t.discount ? ` (includes ${K.ugx(t.discount)} discount paid by Kwata)` : ''}</span>`
+            ? `<span class="small muted">Collect cash</span><div class="amt">${K.ugx(t.payable)}</div><span class="small muted">You earned ${K.ugx(t.earning)}${t.discount ? ` (includes ${K.ugx(t.discount)} discount paid by Flytte)` : ''}</span>`
             : `<span class="small muted">You earned</span><div class="amt">${K.ugx(t.earning)}</div><span class="small muted">${t.paymentStatus === 'paid' ? 'Added to your balance' : 'Added once the ' + customer(t) + ' pays by ' + K.PAY_LABEL[t.paymentMethod]}</span>`}
           ${t.tip ? `<span class="points-pill">💛 Tip ${K.ugx(t.tip)}${t.tipMethod === 'cash' ? ' in cash' : ''}</span>` : ''}
         </div>
@@ -519,7 +519,7 @@
       <div class="chart" aria-label="Earnings for the last 7 days">${e.days.map((d) => `<div class="b ${d.net ? '' : 'zero'} ${d.day === today ? 'today' : ''}" title="${dayName(d.day)}: ${K.ugx(d.net)}"><i style="height:${Math.max(2, (d.net / max) * 100)}%"></i><span>${dayName(d.day)}</span></div>`).join('')}</div>
       <div class="kv"><span>Completed trips</span><b>${e.week.trips}</b></div>
       <div class="kv"><span>Cash collected</span><b>${K.ugx(e.cashWeek)}</b></div>
-      <div class="kv"><span>Kwata commission</span><b>−${K.ugx(e.commissionWeek)}</b></div>
+      <div class="kv"><span>Flytte commission</span><b>−${K.ugx(e.commissionWeek)}</b></div>
       <div class="card" style="margin-top:16px"><span class="small muted">Balance you can cash out</span><div class="money">${K.ugx(e.balance)}</div>
         ${e.balance < 0 ? '<p class="small" style="margin:6px 0 0">Negative because commission on cash trips is taken here. It clears from your next Mobile Money or wallet trips.</p>' : ''}
         <label for="wamt">Cash out to ${K.esc(prettyPhone(e.momoNumber))}</label>
@@ -557,7 +557,7 @@
       <button class="menu-item" data-a="manual"><span class="ic">${K.ic('pin')}</span><span class="grow">${S.manual ? 'Use phone GPS' : 'Set position on map'}<br><span class="small muted">For testing without GPS</span></span></button>
       ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Driver support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
       <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
-      <p class="tiny faint" style="text-align:center;margin-top:18px">Kwata Driver 1.0</p>`;
+      <p class="tiny faint" style="text-align:center;margin-top:18px">Flytte Driver 1.0</p>`;
     K.$('#ph', el).onchange = async (ev) => {
       const f = ev.target.files[0]; if (!f) return;
       try { const img = await K.compressImage(f, 800); await K.api('/driver/documents', { kind: 'photo', image: img }, 'POST', { timeout: 90000 }); S.hasPhoto = true; S.photoData = img; K.toast('Photo updated'); drawProfile(el); topbar(); }

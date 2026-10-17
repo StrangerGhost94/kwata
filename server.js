@@ -76,8 +76,8 @@ async function seedAdmin() {
     // update its password if you change ADMIN_PASSWORD later.
     const hash = await bcrypt.hash(envPass, 10);
     const existing = await db.one('SELECT id FROM users WHERE phone = $1', [envPhone]);
-    if (existing) await db.query("UPDATE users SET role = 'admin', password_hash = $1, blocked = FALSE WHERE id = $2", [hash, existing.id]);
-    else await db.query("INSERT INTO users(name, phone, password_hash, role) VALUES ('Kwata Admin', $1, $2, 'admin')", [envPhone, hash]);
+    if (existing) await db.query("UPDATE users SET role = 'admin', password_hash = $1, blocked = FALSE, name = CASE WHEN name = 'Kwata Admin' THEN 'Flytte Admin' ELSE name END WHERE id = $2", [hash, existing.id]);
+    else await db.query("INSERT INTO users(name, phone, password_hash, role) VALUES ('Flytte Admin', $1, $2, 'admin')", [envPhone, hash]);
     console.log(`Admin account ready for ${envPhone}`);
   } else if (live) {
     console.warn('⚠️  ADMIN_PHONE and ADMIN_PASSWORD are not set, so no admin account was created.');
@@ -97,7 +97,7 @@ async function seedAdmin() {
   // Local development only: a known test admin so you can try the console.
   const existing = await db.one('SELECT id FROM users WHERE phone = $1', [DEFAULT_ADMIN_PHONE]);
   if (!existing) {
-    await db.query("INSERT INTO users(name, phone, password_hash, role) VALUES ('Kwata Admin', $1, $2, 'admin')",
+    await db.query("INSERT INTO users(name, phone, password_hash, role) VALUES ('Flytte Admin', $1, $2, 'admin')",
       [DEFAULT_ADMIN_PHONE, await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 10)]);
     console.log('Local test admin: 0700000000 / admin123');
   }
@@ -140,5 +140,5 @@ async function activateScheduled() {
   setInterval(() => activateScheduled().catch(console.error), 30e3);
   setTimeout(() => activateScheduled().catch(console.error), 5000);
   const port = process.env.PORT || 3000;
-  server.listen(port, () => console.log(`🚀 Kwata running on http://localhost:${port} (database: ${kind})`));
+  server.listen(port, () => console.log(`🚀 Flytte running on http://localhost:${port} (database: ${kind})`));
 })().catch((e) => { console.error(e); process.exit(1); });

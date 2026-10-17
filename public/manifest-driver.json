@@ -1,7 +1,7 @@
 {
- "name": "Kwata Driver",
- "short_name": "Kwata Driver",
- "description": "Drive with Kwata and keep 88% of every fare.",
+ "name": "Flytte Driver",
+ "short_name": "Flytte Driver",
+ "description": "Drive with Flytte and keep 88% of every fare.",
  "id": "/driver",
  "start_url": "/driver?source=pwa",
  "scope": "/driver",

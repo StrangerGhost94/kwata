@@ -26,7 +26,7 @@ const ok = (cond, msg) => { console.log(`${cond ? '✓' : '✗'} ${msg}`); if (!
   ok(noHash === 'false', 'with no hash configured, every webhook is refused');
 
   // 4. The same payment confirmed twice (redirect + webhook, at the same moment) credits once.
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kwata-pay-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flytte-pay-'));
   process.chdir(tmp);
   const db = require(path.join(ROOT, 'src/db'));
   await db.connect();

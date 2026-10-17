@@ -259,7 +259,7 @@ function init(server) {
       socket.on('driver:online', async (on, cb) => {
         const fresh = await db.one('SELECT status FROM drivers WHERE user_id = $1', [u.id]);
         if (on && (!fresh || fresh.status !== 'approved')) {
-          return cb && cb({ ok: false, error: 'Your account is waiting for approval by the Kwata team.' });
+          return cb && cb({ ok: false, error: 'Your account is waiting for approval by the Flytte team.' });
         }
         if (on && !d.lat) return cb && cb({ ok: false, error: 'We need your position before you can go online.' });
         d.online = !!on;

@@ -1,7 +1,7 @@
 {
-  "name": "kwata",
+  "name": "flytte",
   "version": "1.0.0",
-  "description": "Kwata \u2014 ride-hailing for Uganda: boda, car, parcel, airport",
+  "description": "Flytte \u2014 ride-hailing for Uganda: boda, car, parcel, airport",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

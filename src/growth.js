@@ -1,5 +1,5 @@
 // Growth features: discounts (first ride + promo codes), invite-a-friend rewards
-// and Kwata Rewards points. Kwata pays for every discount; drivers are always
+// and Flytte Rewards points. Flytte pays for every discount; drivers are always
 // paid on the full fare.
 const crypto = require('crypto');
 const db = require('./db');
@@ -11,7 +11,7 @@ const round100 = (n) => Math.round(n / 100) * 100;
 // ---------- invite codes ----------
 async function ensureReferralCode(user, q = db) {
   if (user.referral_code) return user.referral_code;
-  const base = String(user.name || 'KWATA').replace(/[^a-z]/gi, '').toUpperCase().slice(0, 5) || 'KWATA';
+  const base = String(user.name || 'FLYTTE').replace(/[^a-z]/gi, '').toUpperCase().slice(0, 5) || 'FLYTTE';
   for (let i = 0; i < 8; i++) {
     const code = base + crypto.randomInt(10, 1000);
     const taken = await q.one('SELECT id FROM users WHERE referral_code = $1', [code]);
@@ -68,7 +68,7 @@ async function discountFor(userId, service, fare, code) {
 async function afterCompleted(t, trip) {
   const s = await getSettings();
   const paid = trip.fare - (trip.discount || 0);
-  // Kwata Rewards points
+  // Flytte Rewards points
   if (s.growth.rewards.enabled && s.growth.rewards.pointsPer1000 > 0) {
     const pts = Math.floor(paid / 1000) * s.growth.rewards.pointsPer1000;
     if (pts > 0) {

@@ -56,7 +56,7 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   assert(r1.t.discount === eb.discount && r1.o.payable === eb.payable, 'driver offer shows the discounted cash amount to collect');
   const b1 = await bal();
   const commission1 = Math.round(r1.t.fare * 0.12);
-  assert(b1 - b0 === r1.t.discount - commission1, `cash trip: driver repaid the discount by Kwata (${r1.t.discount}) minus commission (${commission1})`);
+  assert(b1 - b0 === r1.t.discount - commission1, `cash trip: driver repaid the discount by Flytte (${r1.t.discount}) minus commission (${commission1})`);
 
   // 3. Invite rewards after Bob's first trip
   const wa = await api('/wallet', null, alice.token), wb = await api('/wallet', null, bob.token);
@@ -66,7 +66,7 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
 
   // 4. Points
   const gb = await api('/me/growth', null, bob.token);
-  assert(gb.points === Math.floor((r1.t.fare - r1.t.discount) / 1000), `Bob earned ${gb.points} Kwata Rewards points (1 per UGX 1,000 paid)`);
+  assert(gb.points === Math.floor((r1.t.fare - r1.t.discount) / 1000), `Bob earned ${gb.points} Flytte Rewards points (1 per UGX 1,000 paid)`);
   assert(!gb.firstRide, 'first-ride offer is gone after the first trip');
   const est2 = await api('/fare/estimate', { pickup, drop, distanceKm: 3.2, durationMin: 9 }, bob.token);
   assert(est2.options.find((o) => o.id === 'boda').discount === 0, 'no discount on the second trip without a code');

@@ -1,4 +1,4 @@
-// Dynamic pricing for Kwata, modelled on how Bolt and Uber price rides:
+// Dynamic pricing for Flytte, modelled on how Bolt and Uber price rides:
 //
 //   1. The city is split into areas (~2.2 km squares, close to Uber's ~5 km² cells).
 //   2. For each area and vehicle class (boda / car) we compare DEMAND (ride requests

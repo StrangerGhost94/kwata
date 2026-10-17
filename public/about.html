@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#000000">
-<title>Kwata — Rides, bodas and deliveries in Kampala</title>
+<title>Flytte — Rides, bodas and deliveries in Kampala</title>
 <meta name="description" content="Request a boda, car, parcel delivery or Entebbe airport ride in Kampala. See your price up front. Pay with cash, MTN or Airtel Mobile Money.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.json">
@@ -60,7 +60,7 @@
 </head>
 <body>
 <header class="nav"><div class="wrap">
-  <a class="wordmark" href="/" style="display:inline-flex;align-items:center;gap:8px"><svg width="36" height="26" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg>Kwata</a>
+  <a class="wordmark" href="/" style="display:inline-flex;align-items:center;gap:8px"><svg width="36" height="26" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg>Flytte</a>
   <a class="l" href="/rider">Ride</a><a class="l" href="/driver">Drive</a><a class="l" href="#safety">Safety</a>
   <span class="sp"></span>
   <a class="btn" href="/rider">Sign in</a>
@@ -111,7 +111,7 @@
   <div><div class="big" id="keepPct">88%</div></div>
   <div>
     <h2>Drive when you want. Keep more of every fare.</h2>
-    <p>Kwata takes a <span id="commission">12%</span> commission. Request cash-outs to MTN or Airtel Mobile Money. Boda or car, you choose your hours.</p>
+    <p>Flytte takes a <span id="commission">12%</span> commission. Request cash-outs to MTN or Airtel Mobile Money. Boda or car, you choose your hours.</p>
     <a class="btn btn-lg" href="/driver" style="background:#fff;color:#000;margin-top:10px">Get started</a>
   </div>
 </div></section>
@@ -121,13 +121,13 @@
   <div class="feat">
     <div><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div><h3>PIN to start</h3><p>Your trip only begins when you give the driver your 4-digit code, so you never get on the wrong boda.</p></div>
     <div><div class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/></svg></div><h3>Share your trip</h3><p>Send family a live link that follows your ride on the map until you arrive.</p></div>
-    <div><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div><h3>Help in one tap</h3><p>The SOS button alerts the Kwata team with your location and lets you call the police on 999.</p></div>
+    <div><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div><h3>Help in one tap</h3><p>The SOS button alerts the Flytte team with your location and lets you call the police on 999.</p></div>
   </div>
 </div></section>
 </main>
 
 <footer><div class="wrap">
-  <span class="wordmark" style="display:inline-flex;align-items:center;gap:8px"><svg width="36" height="26" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg>Kwata</span>
+  <span class="wordmark" style="display:inline-flex;align-items:center;gap:8px"><svg width="36" height="26" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg>Flytte</span>
   Made in Kampala · <a href="/rider" style="color:#fff">Ride</a> · <a href="/driver" style="color:#fff">Drive</a>
 </div></footer>
 <script src="/js/common.js"></script>
@@ -137,13 +137,13 @@
   document.getElementById('plan').onsubmit = (e) => {
     e.preventDefault();
     const q = document.getElementById('dest').value.trim();
-    try { if (q) sessionStorage.setItem('kwata_q', q); } catch {}
+    try { if (q) sessionStorage.setItem('flytte_q', q); } catch {}
     location.href = '/rider';
   };
   const drawSugg = () => { document.getElementById('sugg').innerHTML = items.map(([id, t, d]) => `<a href="/rider"><span><h3>${K.esc(t)}</h3><p>${K.esc(d)}</p><span class="go">Details</span></span>${K.ART[id] || ''}</a>`).join(''); };
   drawSugg();
   K.cfg().then((c) => {
-    items = c.services.map((x) => [x.id, x.name.replace(/^Kwata /, ''), x.blurb || '']); drawSugg();
+    items = c.services.map((x) => [x.id, x.name.replace(/^Flytte /, ''), x.blurb || '']); drawSugg();
     if (Number.isFinite(c.commissionPct)) { document.getElementById('keepPct').textContent = (100 - c.commissionPct) + '%'; document.getElementById('commission').textContent = c.commissionPct + '%'; }
   }).catch(() => {});
 </script>

@@ -28,7 +28,7 @@ async function createCheckout({ user, amount, purpose, tripId, method, baseUrl }
   amount = Math.round(amount);
   if (!available()) throw new PaymentsUnavailable('Mobile Money and card payments aren’t available yet. Pay with cash for now.');
   if (!(amount > 0)) throw new PaymentsUnavailable('Nothing to pay.');
-  const tx_ref = newRef(purpose === 'topup' ? 'KWT-TOP' : 'KWT-TRP');
+  const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : 'FLY-TRP');
   await db.query(
     'INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount) VALUES ($1,$2,$3,$4,$5)',
     [tx_ref, user.id, purpose, tripId || null, amount]
@@ -46,13 +46,13 @@ async function createCheckout({ user, amount, purpose, tripId, method, baseUrl }
     redirect_url: `${baseUrl}/api/payments/callback`,
     payment_options: method === 'card' ? 'card' : 'mobilemoneyuganda',
     customer: {
-      email: user.email || `${user.phone.replace('+', '')}@riders.kwata.app`,
+      email: user.email || `${user.phone.replace('+', '')}@riders.flytte.app`,
       phonenumber: user.phone,
       name: user.name,
     },
     customizations: {
-      title: 'Kwata',
-      description: purpose === 'topup' ? 'Kwata wallet top-up' : `Kwata trip #${tripId}`,
+      title: 'Flytte',
+      description: purpose === 'topup' ? 'Flytte wallet top-up' : `Flytte trip #${tripId}`,
     },
   };
   const r = await fetch('https://api.flutterwave.com/v3/payments', {

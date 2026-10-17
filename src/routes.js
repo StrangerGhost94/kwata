@@ -120,7 +120,7 @@ async function createAccount(body, role, { approved = false } = {}) {
 }
 
 // Riders sign up and ride straight away. Drivers can apply from the driver app,
-// but stay 'pending' (can't go online) until the Kwata team checks their
+// but stay 'pending' (can't go online) until the Flytte team checks their
 // documents and approves them. The team can also add drivers directly.
 r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
   const role = (req.body || {}).role || 'rider';
@@ -257,7 +257,7 @@ r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
     const near = rt.nearbyDrivers(pickup.lat, pickup.lng, o.id)[0];
     o.etaMin = near ? Math.max(2, Math.round(((near.km * 1.3) / 20) * 60)) : null;
   }
-  // Discounts (first ride or promo code). Kwata pays them; the driver still earns on the full fare.
+  // Discounts (first ride or promo code). Flytte pays them; the driver still earns on the full fare.
   const code = req.body.promoCode ? String(req.body.promoCode).trim().toUpperCase() : null;
   for (const o of q.options) {
     const d = await growth.discountFor(req.user.id, o.id, o.fare, code);
@@ -307,7 +307,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const svc = typeof service === 'string' && Object.prototype.hasOwnProperty.call(s.services, service) ? s.services[service] : null;
   if (!svc || !svc.enabled) return bad(res, 'That ride type is not available.');
   if (!['cash', 'wallet', 'momo', 'card'].includes(paymentMethod)) return bad(res, 'Choose a payment method.');
-  if (['momo', 'card'].includes(paymentMethod) && !payments.available()) return bad(res, 'Mobile Money and card payments aren’t available yet. Choose cash or your Kwata wallet.');
+  if (['momo', 'card'].includes(paymentMethod) && !payments.available()) return bad(res, 'Mobile Money and card payments aren’t available yet. Choose cash or your Flytte wallet.');
 
   // Scheduled ride: between 20 minutes and 7 days ahead.
   let scheduledFor = null;
@@ -346,7 +346,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
     km = q.distanceKm; min = o.durationMin; fare = scheduledFor ? o.regularFare : o.fare; // scheduled rides never surge
     const expected = Number(req.body.expectedFare);
     if (expected > 0 && fare > expected * 1.05 + 100) {
-      return res.status(409).json({ error: `Prices have just changed. ${svc.name.replace('Kwata ', '')} is now UGX ${fare.toLocaleString()}.`, code: 'PRICE_CHANGED', fare });
+      return res.status(409).json({ error: `Prices have just changed. ${svc.name.replace('Flytte ', '')} is now UGX ${fare.toLocaleString()}.`, code: 'PRICE_CHANGED', fare });
     }
   }
   const promo = await growth.discountFor(req.user.id, service, fare, req.body.promoCode || (locked && locked.promoCode));
@@ -533,7 +533,7 @@ r.post('/trips/:id/complete', auth.requireAuth('driver'), wrap(async (req, res) 
   rt.setDriverFree(req.user.id);
   await rt.broadcast(t.id);
   if (settled && settled.referral && settled.referral.referrerReward) {
-    rt.notify(settled.referral.referrerId, 'toast', { text: `🎉 Your friend took their first Kwata trip. UGX ${settled.referral.referrerReward.toLocaleString()} added to your wallet.` });
+    rt.notify(settled.referral.referrerId, 'toast', { text: `🎉 Your friend took their first Flytte trip. UGX ${settled.referral.referrerReward.toLocaleString()} added to your wallet.` });
   }
   res.json({ ok: true });
 }));
@@ -563,7 +563,7 @@ r.get('/trips/upcoming', auth.requireAuth('rider'), wrap(async (req, res) => {
   res.json(out);
 }));
 
-// ---------- Invite friends & Kwata Rewards ----------
+// ---------- Invite friends & Flytte Rewards ----------
 r.get('/me/growth', auth.requireAuth('rider'), wrap(async (req, res) => {
   const s = await getSettings();
   const code = await growth.ensureReferralCode(req.user);
@@ -587,7 +587,7 @@ r.post('/rewards/redeem', auth.requireAuth('rider'), wrap(async (req, res) => {
     const u = await tx.one('SELECT points FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
     if (u.points < rw.redeemPoints) { out = { error: `You need ${rw.redeemPoints} points to redeem.` }; return; }
     await tx.query('UPDATE users SET points = points - $1 WHERE id = $2', [rw.redeemPoints, req.user.id]);
-    await growth.credit(tx, req.user.id, rw.redeemValue, `Kwata Rewards: ${rw.redeemPoints} points`);
+    await growth.credit(tx, req.user.id, rw.redeemValue, `Flytte Rewards: ${rw.redeemPoints} points`);
     out = { ok: true, points: u.points - rw.redeemPoints };
   });
   if (out.error) return bad(res, out.error);
@@ -615,7 +615,7 @@ r.post('/wallet/topup', auth.requireAuth('rider'), wrap(async (req, res) => {
 // ---------- Payments (Flutterwave) ----------
 r.get('/payments/callback', wrap(async (req, res) => {
   const ref = String(req.query.tx_ref || '').slice(0, 80);
-  const result = /^KWT-(TOP|TRP)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
+  const result = /^(?:FLY|KWT)-(TOP|TRP)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
   const p = ref && await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
   if (p && p.trip_id && result.ok) await rt.broadcast(p.trip_id);
   if (p && result.ok) rt.notify(p.user_id, 'toast', { text: 'Payment received ✅' });
@@ -625,7 +625,7 @@ r.get('/payments/callback', wrap(async (req, res) => {
 r.post('/payments/webhook', wrap(async (req, res) => {
   if (!payments.webhookAuthentic(req)) return res.status(401).end();
   const ref = req.body && req.body.data && String(req.body.data.tx_ref || '');
-  if (ref && /^KWT-(TOP|TRP)-\d+-[0-9a-f]{8}$/.test(ref)) {
+  if (ref && /^(?:FLY|KWT)-(TOP|TRP)-\d+-[0-9a-f]{8}$/.test(ref)) {
     const result = await payments.verifyAndApply(ref);
     const p = await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
     if (p && result.ok) {

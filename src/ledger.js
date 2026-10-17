@@ -8,7 +8,7 @@ async function commissionFor(fare) {
 }
 
 // Called inside a db transaction when a driver completes a trip.
-// `fare` is the full price; the rider pays `fare - discount` and Kwata covers the
+// `fare` is the full price; the rider pays `fare - discount` and Flytte covers the
 // discount, so the driver always earns on the full fare.
 async function settleCompletedTrip(t, trip) {
   const commission = await commissionFor(trip.fare);
@@ -32,11 +32,11 @@ async function settleCompletedTrip(t, trip) {
 
   if (method === 'cash') {
     // Driver already holds the cash (fare minus any discount). We take our commission
-    // from their balance and pay them back the discount Kwata gave the rider.
+    // from their balance and pay them back the discount Flytte gave the rider.
     await t.query('UPDATE drivers SET earnings_balance = earnings_balance - $1 + $2 WHERE user_id = $3', [commission, discount, trip.driver_id]);
     await t.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'commission',$2,$3,'Commission on cash trip')",
       [trip.driver_id, -commission, trip.id]);
-    if (discount) await t.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'promo_cover',$2,$3,'Rider discount paid by Kwata')",
+    if (discount) await t.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'promo_cover',$2,$3,'Rider discount paid by Flytte')",
       [trip.driver_id, discount, trip.id]);
     paymentStatus = 'paid';
   }
@@ -76,7 +76,7 @@ async function creditDriver(t, trip, commission) {
 
 // Rider paid the driver in cash after all (e.g. Mobile Money isn't available or failed).
 // Same books as a cash trip: the driver holds the money, so we take our commission from
-// their balance and give back any discount Kwata covered.
+// their balance and give back any discount Flytte covered.
 async function settleAsCash(t, tripId) {
   const trip = await t.one('SELECT * FROM trips WHERE id = $1 FOR UPDATE', [tripId]);
   if (!trip || trip.status !== 'completed' || trip.payment_status === 'paid' || !['momo', 'card'].includes(trip.payment_method)) return null;
@@ -84,7 +84,7 @@ async function settleAsCash(t, tripId) {
   const discount = trip.discount || 0;
   await t.query('UPDATE drivers SET earnings_balance = earnings_balance - $1 + $2 WHERE user_id = $3', [commission, discount, trip.driver_id]);
   await t.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'commission',$2,$3,'Commission on cash trip (rider switched to cash)')", [trip.driver_id, -commission, trip.id]);
-  if (discount) await t.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'promo_cover',$2,$3,'Rider discount paid by Kwata')", [trip.driver_id, discount, trip.id]);
+  if (discount) await t.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'promo_cover',$2,$3,'Rider discount paid by Flytte')", [trip.driver_id, discount, trip.id]);
   await t.query("UPDATE trips SET payment_method = 'cash', payment_status = 'paid', commission = $1 WHERE id = $2", [commission, trip.id]);
   return { ...trip, payment_method: 'cash', payment_status: 'paid' };
 }

@@ -5,26 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#FFFFFF">
 <meta name="description" content="Boda, car, parcel and airport rides in Kampala.">
-<title>Kwata Driver</title>
+<title>Flytte Driver</title>
 <link rel="manifest" href="/manifest-driver.json">
 <link rel="icon" href="/icons/driver-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/icons/driver-apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Kwata Driver">
+<meta name="apple-mobile-web-app-title" content="Flytte Driver">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/vendor/maplibre/maplibre-gl.css">
-<script>/* Signed out: the welcome and sign-in screens are dark, so launch dark too (iOS colours the strip under the clock from the launch screen). */try{if(!localStorage.getItem('kwata_driver'))document.documentElement.classList.add('launch-dark')}catch(e){}</script>
+<script>/* Signed out: the welcome and sign-in screens are dark, so launch dark too (iOS colours the strip under the clock from the launch screen). */try{if(!(localStorage.getItem('flytte_driver')||localStorage.getItem('kwata_driver')))document.documentElement.classList.add('launch-dark')}catch(e){}</script>
 <link rel="stylesheet" href="/css/app.css">
 </head>
 <body data-app="driver">
-<div id="splash" class="splash" role="status" aria-label="Loading Kwata Driver">
+<div id="splash" class="splash" role="status" aria-label="Loading Flytte Driver">
   <div class="sp-center">
-    <div class="sp-icon"><svg viewBox="0 0 140 100" aria-hidden="true"><defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs><g fill="url(#kg)"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg></div>
-    <div class="sp-name">Kwata<span>Driver</span></div>
+    <div class="sp-icon"><svg viewBox="0 0 140 100" aria-hidden="true"><defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs><g fill="url(#kg)"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg></div>
+    <div class="sp-name">Flytte<span>Driver</span></div>
     <div class="sp-tag">Earn · Drive · Grow</div>
   </div>
   <div class="sp-load" aria-hidden="true"><i></i></div>

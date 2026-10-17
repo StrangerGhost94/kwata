@@ -25,7 +25,7 @@ const api = async (path, body, token) => {
   const p = await c.newPage();
   p.on('pageerror', (e) => errors.push(e.message));
   await p.addInitScript((s) => {
-    localStorage.setItem('kwata_rider', s); localStorage.setItem('kwata_onboarded', '1'); localStorage.setItem('kwata_loc_asked', '1'); localStorage.setItem('kwata_install_dismissed', '1');
+    localStorage.setItem('flytte_rider', s); localStorage.setItem('flytte_onboarded', '1'); localStorage.setItem('flytte_loc_asked', '1'); localStorage.setItem('flytte_install_dismissed', '1');
     // Simulate "permission denied" the way phones report it.
     navigator.geolocation.getCurrentPosition = (ok, fail) => setTimeout(() => fail({ code: 1, message: 'denied' }), 50);
   }, JSON.stringify(user));
@@ -88,7 +88,7 @@ const api = async (path, body, token) => {
   // ---- 5. Sign-in: Google is clearly unavailable
   const c2 = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const p2 = await c2.newPage(); p2.on('pageerror', (e) => errors.push(e.message));
-  await p2.addInitScript(() => { localStorage.setItem('kwata_onboarded', '1'); });
+  await p2.addInitScript(() => { localStorage.setItem('flytte_onboarded', '1'); });
   await p2.goto(BASE + '/'); await p2.waitForSelector('[data-google]', { timeout: 15000 });
   ok(await p2.getAttribute('[data-google]', 'aria-disabled') === 'true' && /coming soon/i.test(await p2.textContent('[data-google]')), 'Google sign-in is labelled “Coming soon” and disabled');
   await p2.fill('#ph', '12345'); await p2.fill('#pw', 'x'); await p2.click('button[type=submit]');
@@ -98,7 +98,7 @@ const api = async (path, body, token) => {
   // ---- 6. Second open is served from the phone; offline reopen still shows the app
   const c3 = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'allow' });
   const p3 = await c3.newPage(); p3.on('pageerror', (e) => errors.push(e.message));
-  await p3.addInitScript((s) => { localStorage.setItem('kwata_rider', s); localStorage.setItem('kwata_onboarded', '1'); localStorage.setItem('kwata_loc_asked', '1');
+  await p3.addInitScript((s) => { localStorage.setItem('flytte_rider', s); localStorage.setItem('flytte_onboarded', '1'); localStorage.setItem('flytte_loc_asked', '1');
     navigator.geolocation.getCurrentPosition = (ok, fail) => setTimeout(() => fail({ code: 1 }), 50); }, JSON.stringify(user));
   await p3.goto(BASE + '/'); await p3.waitForSelector('#whereBtn', { timeout: 20000 });
   await p3.evaluate(() => navigator.serviceWorker.ready); await p3.waitForTimeout(800);

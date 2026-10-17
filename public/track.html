@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#000000">
-<title>Follow a Kwata ride</title>
+<title>Follow a Flytte ride</title>
 <meta name="robots" content="noindex">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,7 +15,7 @@
 <body data-app="track">
 <div class="app">
   <div id="map" aria-label="Map"></div>
-  <div class="topbar"><a class="pill-chip wordmark" href="/" style="text-decoration:none;font-size:1.1rem;padding:6px 16px 6px 8px"><svg width="30" height="22" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M66 50L110 6H138L80 60Z"/><path d="M64 52L88 48L122 94H94Z"/></g></svg><span>Kwata</span></a></div>
+  <div class="topbar"><a class="pill-chip wordmark" href="/" style="text-decoration:none;font-size:1.1rem;padding:6px 16px 6px 8px"><svg width="30" height="22" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg><span>Flytte</span></a></div>
   <section class="sheet" id="sheet" aria-live="polite"><div class="grabber"></div><i class="sk" style="width:60%;height:24px"></i><i class="sk" style="width:85%;height:12px;margin-top:12px"></i><i class="sk" style="width:100%;height:56px;margin-top:16px"></i></section>
 </div>
 <script src="/vendor/leaflet/leaflet.js"></script>
@@ -52,7 +52,7 @@
     const d = t.driver;
     sheet.innerHTML = `<div class="grabber"></div>
       <h2>${label}</h2>
-      <p class="small muted">You’re following ${K.esc(t.rider.name)}’s Kwata trip live.</p>
+      <p class="small muted">You’re following ${K.esc(t.rider.name)}’s Flytte trip live.</p>
       ${d ? `<div class="driver-card" style="margin:12px 0"><span class="photo">${d.photo ? `<img src="${K.esc(d.photo)}" alt="">` : K.initials(d.name)}</span>
         <span class="grow"><b style="display:block">${K.esc(d.name)}</b><span class="small muted">${K.esc(d.vehicle || '')}</span></span>
         <span style="text-align:right"><span class="plate-chip">${K.esc(d.plate)}</span><span style="display:block;width:70px;height:44px;margin-top:4px">${K.artFor(null, d.vehicleType)}</span></span></div>` : ''}

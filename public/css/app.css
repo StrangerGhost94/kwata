@@ -1,4 +1,4 @@
-/* Kwata design system — yellow & black
+/* Flytte design system — yellow & black
    Brand yellow does the talking (buttons, selection, progress); black frames
    the splash and dark moments (ride requests, live trip banners); white cards
    carry the content. */
@@ -1379,3 +1379,6 @@ html.launch-dark .sp-name { color: #FFFFFF; }
 html.launch-dark .sp-name span { color: var(--brand); }
 html.launch-dark .sp-tag { color: #A1A1A8; }
 html.launch-dark .sp-load { background: rgba(255,255,255,.14); }
+
+/* Flytte wordmark: the F's top bar reaches right, so the letters sit just clear of it */
+.wm-k { margin-right: .02em; }

@@ -1,6 +1,6 @@
 {
- "name": "Kwata",
- "short_name": "Kwata",
+ "name": "Flytte",
+ "short_name": "Flytte",
  "description": "Boda, car, parcel and airport rides in Kampala.",
  "id": "/",
  "start_url": "/?source=pwa",

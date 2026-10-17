@@ -1,4 +1,4 @@
-// Kwata service worker: opens instantly from the home screen, stays current, and
+// Flytte service worker: opens instantly from the home screen, stays current, and
 // shows a friendly screen when there's no connection. Bump VERSION on each release.
 //
 // How it stays fast AND fresh:
@@ -8,8 +8,8 @@
 //   so they're served straight from the phone ("cache first") with no network wait.
 //   A new deploy has new ?v= links, so the new files are fetched once and kept.
 // - Maps, payments and live data are never cached.
-const VERSION = 'kwata-v42';
-const ASSETS = 'kwata-assets';        // versioned js/css; kept across releases, trimmed below
+const VERSION = 'flytte-v43';
+const ASSETS = 'flytte-assets';        // versioned js/css; kept across releases, trimmed below
 const SHELL = [
   '/offline.html', '/socket.io/socket.io.js',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
