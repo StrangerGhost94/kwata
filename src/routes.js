@@ -8,6 +8,7 @@ const ledger = require('./ledger');
 const payments = require('./payments');
 const growth = require('./growth');
 const dtools = require('./drivers');
+const sms = require('./sms');
 const { getSettings, updateSettings, quote } = require('./pricing');
 const surge = require('./surge');
 const { haversineKm: haversine } = require('./pricing');
@@ -65,6 +66,7 @@ r.get('/config', wrap(async (req, res) => {
     paymentsLive: payments.enabled(),            // real Flutterwave payments
     paymentsAvailable: payments.available(),     // Mobile Money / card / top-ups can be used (live or local demo)
     paymentsDemo: payments.demo(),
+    smsLogin: sms.enabled(),                      // sign in with an SMS code instead of a password
     commissionPct: s.commissionPct,
     supportPhone: supportPhone(s),
     minWithdrawal: s.minWithdrawal,
@@ -132,7 +134,14 @@ r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
     referrer = await growth.userByReferral(req.body.inviteCode);
     if (!referrer) return bad(res, 'That invite code isn’t valid. Check it, or leave it empty.');
   }
-  const out = await createAccount(req.body, role);
+  const body = { ...(req.body || {}) };
+  // With SMS sign-in on, a new account needs the code check first, and has no password.
+  if (sms.configured() || body.phoneToken) {
+    const p = auth.normalizePhone(body.phone);
+    if (!p || !auth.verifyPhone(body.phoneToken, p)) return bad(res, 'Confirm your number with the SMS code first.', 401);
+    body.password = crypto.randomBytes(24).toString('base64');
+  }
+  const out = await createAccount(body, role);
   if (out.error) return bad(res, out.error);
   if (role === 'rider') {
     if (referrer) await db.query('UPDATE users SET referred_by = $1 WHERE id = $2', [referrer.id, out.user.id]);
@@ -276,6 +285,51 @@ r.post('/auth/check', limit(20, 10 * 60e3), wrap(async (req, res) => {
   if (!p) return bad(res, 'Enter a valid Ugandan mobile number, e.g. 0772 123456.');
   const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
   res.json({ exists: !!u, role: u ? u.role : null });
+}));
+
+// ---------- Sign in with an SMS code ----------
+const OTP_TTL = 5 * 60e3, OTP_RESEND = 30e3, OTP_PER_HOUR = 5, OTP_TRIES = 5;
+const otpDomain = () => { try { return new URL(process.env.PUBLIC_URL || ('https://' + process.env.RAILWAY_PUBLIC_DOMAIN)).hostname; } catch { return ''; } };
+r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
+  if (!sms.enabled()) return bad(res, 'SMS sign-in isn’t set up yet.', 503);
+  const p = auth.normalizePhone((req.body || {}).phone);
+  if (!p) return bad(res, 'Enter a valid Ugandan mobile number, e.g. 0772 123456.');
+  const now = Date.now();
+  const row = await db.one('SELECT * FROM otp_codes WHERE phone = $1', [p]);
+  if (row && now - Number(row.sent_at) < OTP_RESEND) return bad(res, `Wait ${Math.ceil((OTP_RESEND - (now - Number(row.sent_at))) / 1000)} seconds before asking for another code.`, 429);
+  const sameHour = row && now - Number(row.hour_start) < 3600e3;
+  if (sameHour && row.sends_hour >= OTP_PER_HOUR) return bad(res, 'Too many codes for this number. Try again in an hour.', 429);
+  const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
+  await db.query(`INSERT INTO otp_codes(phone, code_hash, expires_at, attempts, sent_at, hour_start, sends_hour) VALUES ($1,$2,$3,0,$4,$5,$6)
+    ON CONFLICT (phone) DO UPDATE SET code_hash = $2, expires_at = $3, attempts = 0, sent_at = $4, hour_start = $5, sends_hour = $6`,
+    [p, auth.hashCode(p, code), now + OTP_TTL, now, sameHour ? Number(row.hour_start) : now, sameHour ? row.sends_hour + 1 : 1]);
+  const dom = otpDomain();
+  try { await sms.send(p, `${code} is your Flytte code. It expires in 5 minutes. Never share it with anyone.${dom ? `\n\n@${dom} #${code}` : ''}`); }
+  catch { await db.query('DELETE FROM otp_codes WHERE phone = $1', [p]); return bad(res, 'We couldn’t send the SMS. Check the number and try again.', 502); }
+  const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
+  res.json({ ok: true, exists: !!u, role: u ? u.role : null, resendIn: OTP_RESEND / 1000, ...(sms.demo() ? { demoCode: code } : {}) });
+}));
+r.post('/auth/otp/verify', limit(20, 10 * 60e3), wrap(async (req, res) => {
+  const p = auth.normalizePhone((req.body || {}).phone);
+  const code = String((req.body || {}).code || '').replace(/\D/g, '');
+  if (!p) return bad(res, 'Enter a valid Ugandan mobile number.');
+  if (code.length !== 6) return bad(res, 'Enter the 6-digit code.');
+  const row = await db.one('SELECT * FROM otp_codes WHERE phone = $1', [p]);
+  if (!row || Date.now() > Number(row.expires_at)) return bad(res, 'That code has expired. Ask for a new one.');
+  if (row.attempts >= OTP_TRIES) return bad(res, 'Too many wrong tries. Ask for a new code.');
+  const a = Buffer.from(auth.hashCode(p, code)), b = Buffer.from(row.code_hash);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    await db.query('UPDATE otp_codes SET attempts = attempts + 1 WHERE phone = $1', [p]);
+    return bad(res, row.attempts + 1 >= OTP_TRIES ? 'Too many wrong tries. Ask for a new code.' : 'That code isn’t right. Check the SMS and try again.');
+  }
+  // Keep the row (with an expired code) so the resend limits still count.
+  await db.query('UPDATE otp_codes SET expires_at = 0 WHERE phone = $1', [p]);
+  const u = await db.one('SELECT * FROM users WHERE phone = $1', [p]);
+  if (u) {
+    if (u.blocked) return bad(res, 'This account is suspended. Contact support.', 403);
+    return res.json({ token: auth.sign(u), user: auth.publicUser(u) });
+  }
+  res.json({ verified: true, phoneToken: auth.signPhone(p) });
 }));
 
 r.post('/auth/login', limit(15, 10 * 60e3), wrap(async (req, res) => {

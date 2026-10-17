@@ -210,6 +210,15 @@ async function migrate() {
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS otp_codes (
+    phone TEXT PRIMARY KEY,
+    code_hash TEXT NOT NULL,
+    expires_at BIGINT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    sent_at BIGINT NOT NULL,
+    hour_start BIGINT NOT NULL,
+    sends_hour INTEGER NOT NULL DEFAULT 1
+  );
   CREATE TABLE IF NOT EXISTS app_keys (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

@@ -1570,3 +1570,13 @@ html.top-dark .sb-scrim { opacity: 0; }
 .phone-chip .flag { font-size: 20px; line-height: 1; }
 .phone-chip .num { flex: 1; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
 .phone-chip .link-btn { font-weight: 600; }
+
+/* SMS code: one real input (so iPhone/Android autofill the code) drawn as six boxes */
+.otp-wrap { position: relative; margin: 18px 0 4px; }
+.otp-wrap input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; caret-color: transparent; border: 0; z-index: 1; }
+.otp-boxes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.otp-boxes i { height: 58px; border-radius: 14px; background: var(--fill, #F2F2F7); display: grid; place-items: center; font: 700 24px/1 var(--font); font-style: normal; font-variant-numeric: tabular-nums; color: var(--ink); border: 1.5px solid transparent; transition: border-color .15s, box-shadow .15s; }
+.otp-boxes i.on { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(255,196,0,.25); }
+.code-step > .btn-lg { margin-top: 16px; }
+.code-step .link-btn[disabled] { color: var(--ink-3, #8E8E93); font-weight: 500; cursor: default; }
+.phone-field input:focus, .phone-field input:focus-visible { outline: none !important; box-shadow: none !important; border: 0 !important; }

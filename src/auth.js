@@ -15,6 +15,12 @@ function sign(user) {
   return jwt.sign({ id: user.id, role: user.role }, SECRET, { expiresIn: '30d' });
 }
 
+// Short-lived proof that someone entered the SMS code for this phone (used to finish signing up).
+function signPhone(phone) { return jwt.sign({ phone, purpose: 'phone' }, SECRET, { expiresIn: '30m' }); }
+function verifyPhone(token, phone) { try { const p = jwt.verify(String(token || ''), SECRET); return p.purpose === 'phone' && p.phone === phone; } catch { return false; } }
+// Codes are stored only as a keyed hash.
+function hashCode(phone, code) { return require('crypto').createHmac('sha256', SECRET).update(phone + ':' + code).digest('hex'); }
+
 function verify(token) {
   try { return jwt.verify(token, SECRET); } catch { return null; }
 }
@@ -55,4 +61,4 @@ function publicUser(u) {
   };
 }
 
-module.exports = { sign, verify, requireAuth, normalizePhone, publicUser };
+module.exports = { sign, verify, requireAuth, normalizePhone, publicUser, signPhone, verifyPhone, hashCode };

@@ -697,7 +697,7 @@
         <h1>Create your account</h1><p class="lead">It takes less than a minute.</p>
         ${phoneChip()}
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" placeholder="e.g. Grace Nalubega" value="${K.esc(draft.name || '')}" required>
-        <label for="pw">Password</label>${pwField('pw', 'new-password', 'At least 6 characters')}
+        ${draft.phoneToken ? '' : `<label for="pw">Password</label>${pwField('pw', 'new-password', 'At least 6 characters')}`}
         ${(() => { let ref = ''; try { ref = localStorage.getItem('flytte_ref') || ''; } catch {} return ref
           ? `<label for="ic">Invite code</label><input id="ic" name="inviteCode" value="${K.esc(ref)}" style="text-transform:uppercase;font-weight:700;letter-spacing:.05em">`
           : `<button type="button" class="link-btn" id="icToggle" style="align-self:flex-start;margin-top:12px">Have an invite code?</button><div id="icWrap" class="hidden"><label for="ic">Invite code</label><input id="ic" name="inviteCode" placeholder="e.g. GRACE123" style="text-transform:uppercase;font-weight:700;letter-spacing:.05em"></div>`; })()}
@@ -713,11 +713,11 @@
         const err = f.querySelector('.error'); err.textContent = '';
         draft.name = f.nm.value.trim();
         if (draft.name.length < 2) { err.textContent = 'Enter your full name.'; f.nm.focus(); return; }
-        if (f.pw.value.length < 6) { err.textContent = 'Your password needs at least 6 characters.'; f.pw.focus(); return; }
+        if (f.pw && f.pw.value.length < 6) { err.textContent = 'Your password needs at least 6 characters.'; f.pw.focus(); return; }
         const inviteCode = f.ic && f.ic.value.trim() ? f.ic.value.trim().toUpperCase() : undefined;
         busy(f, true);
-        try { const out = await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw.value, role: 'rider', inviteCode }); try { localStorage.removeItem('flytte_ref'); } catch {} await finish(out); }
-        catch (ex) { if (/already has an account/.test(ex.message)) { passwordStep(); return; } err.textContent = ex.message; busy(f, false); }
+        try { const out = await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw ? f.pw.value : undefined, phoneToken: draft.phoneToken, role: 'rider', inviteCode }); try { localStorage.removeItem('flytte_ref'); } catch {} await finish(out); }
+        catch (ex) { if (/already has an account/.test(ex.message) && !draft.phoneToken) { passwordStep(); return; } if (/SMS code first/.test(ex.message)) { draft.phoneToken = null; phoneStep(); return; } err.textContent = ex.message; busy(f, false); }
       };
     }
 
@@ -726,7 +726,7 @@
         <h1>Your details</h1><p class="lead">We’ll check these before your first trip.</p>
         ${phoneChip()}
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" value="${K.esc(draft.name || '')}" required>
-        <label for="pw">Create a password</label>${pwField('pw', 'new-password', 'At least 6 characters')}
+        ${draft.phoneToken ? '' : `<label for="pw">Create a password</label>${pwField('pw', 'new-password', 'At least 6 characters')}`}
         <label for="vt">What do you drive?</label><select id="vt" name="vehicleType"><option value="boda">Boda boda (motorcycle)</option><option value="car">Car</option></select>
         <div class="row"><div class="fill"><label for="pl">Number plate</label><input id="pl" name="plate" placeholder="UFA 123X" required></div>
           <div class="fill"><label for="co">Colour</label><input id="co" name="vehicleColor" placeholder="Red"></div></div>
@@ -743,8 +743,9 @@
         const err = f.querySelector('.error'); err.textContent = '';
         const data = Object.fromEntries(new FormData(f).entries());
         data.phone = draft.phone; draft.name = (data.name || '').trim();
+        if (draft.phoneToken) data.phoneToken = draft.phoneToken;
         const need = [[(data.name || '').trim().length >= 2, 'nm', 'Enter your full name.'],
-          [(data.password || '').length >= 6, 'pw', 'Your password needs at least 6 characters.'], [(data.plate || '').trim().length >= 4, 'pl', 'Enter the number plate.'], [(data.licenseNo || '').trim(), 'lc', 'Enter your driving permit number.'],
+          [!!draft.phoneToken || (data.password || '').length >= 6, 'pw', 'Your password needs at least 6 characters.'], [(data.plate || '').trim().length >= 4, 'pl', 'Enter the number plate.'], [(data.licenseNo || '').trim(), 'lc', 'Enter your driving permit number.'],
           [!data.momoNumber || K.validPhone(data.momoNumber), 'mm', 'Enter a valid Mobile Money number, or leave it empty.']].find(([ok]) => !ok);
         if (need) { err.textContent = need[2]; f[need[1]].focus(); return; }
         data.phone = toLocal(data.phone);
@@ -766,21 +767,73 @@
         <label for="ph" class="sr-only">Mobile number</label>${phoneField('ph', draft.phone)}
         <p class="error" role="alert"></p>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
-        <p class="fine">If you already have an account we’ll ask for your password. If not, we’ll set one up${driver ? ' and check your documents before your first trip' : ''}.</p>
+        <p class="fine" data-fine>We’ll text you a 6-digit code to confirm it’s your number.</p>
       </form>`, stepBack);
       const f = root.querySelector('#f');
+      K.cfg().then((c) => { const t = root.querySelector('[data-fine]'); if (t && !c.smsLogin) t.textContent = `If you already have an account we’ll ask for your password. If not, we’ll set one up${driver ? ' and check your documents before your first trip' : ''}.`; }).catch(() => {});
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
         const ph = f.ph.value.trim();
         if (!K.validPhone(ph)) { err.textContent = 'Enter a valid Ugandan mobile number, e.g. 0772 123456.'; f.ph.focus(); return; }
-        if (ph !== draft.phone) draft = { phone: ph };
+        if (ph !== draft.phone || !draft.phoneToken) draft = { phone: ph, name: draft.name };
         busy(f, true);
         try {
           const out = await K.api('/auth/check', { phone: toLocal(ph) });
           if (out.exists && out.role !== role) { err.textContent = wrongApp[out.role] || 'This number can’t be used here.'; busy(f, false); return; }
+          const cfg = await K.cfg().catch(() => ({}));
+          if (cfg.smsLogin) { await sendCode(); codeStep(); return; }
           if (out.exists) passwordStep(); else if (driver) driverForm(); else signUp();
         } catch (ex) { err.textContent = ex.message; busy(f, false); }
+      };
+    }
+
+    // SMS code: sent to the number, valid for 5 minutes.
+    let resendAt = 0;
+    async function sendCode() {
+      const out = await K.api('/auth/otp/send', { phone: toLocal(draft.phone) });
+      resendAt = Date.now() + (out.resendIn || 30) * 1000;
+      if (out.demoCode) K.toast(`Test mode (no SMS set up): your code is ${out.demoCode}`, 8000);
+      return out;
+    }
+    function codeStep() {
+      shell(`<form id="f" novalidate class="auth-body code-step">
+        <h1>Enter the code</h1>
+        <p class="lead">We sent a 6-digit code by SMS to</p>
+        ${phoneChip()}
+        <label for="otp" class="sr-only">6-digit code</label>
+        <div class="otp-wrap"><input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" spellcheck="false">
+          <div class="otp-boxes" aria-hidden="true">${'<i></i>'.repeat(6)}</div></div>
+        <p class="error" role="alert"></p>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
+        <p class="fine"><button type="button" class="link-btn" data-resend disabled></button></p>
+      </form>`, phoneStep);
+      bindChip();
+      const f = root.querySelector('#f'), inp = f.otp, boxes = f.querySelectorAll('.otp-boxes i'), rs = f.querySelector('[data-resend]'), err = f.querySelector('.error');
+      const paint = () => { const v = inp.value; boxes.forEach((b, i) => { b.textContent = v[i] || ''; b.classList.toggle('on', i === Math.min(v.length, 5) && document.activeElement === inp); }); };
+      inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 6); err.textContent = ''; paint(); if (inp.value.length === 6) f.requestSubmit(); });
+      inp.addEventListener('focus', paint); inp.addEventListener('blur', paint);
+      setTimeout(() => inp.focus({ preventScroll: true }), 350);
+      let tick;
+      const timer = () => { const left = Math.ceil((resendAt - Date.now()) / 1000); rs.disabled = left > 0; rs.textContent = left > 0 ? `Send a new code in ${left}s` : 'Send a new code'; if (left <= 0) clearInterval(tick); };
+      tick = setInterval(timer, 1000); timer();
+      rs.onclick = async () => { rs.disabled = true; try { await sendCode(); K.toast('New code sent'); inp.value = ''; paint(); } catch (ex) { err.textContent = ex.message; } clearInterval(tick); tick = setInterval(timer, 1000); timer(); };
+      // Android Chrome can read the code straight from the SMS.
+      if ('OTPCredential' in window) { const ac = new AbortController(); f.addEventListener('submit', () => ac.abort(), { once: true }); navigator.credentials.get({ otp: { transport: ['sms'] }, signal: ac.signal }).then((c) => { if (c && c.code) { inp.value = c.code; paint(); f.requestSubmit(); } }).catch(() => {}); }
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        if (inp.value.length !== 6) { err.textContent = 'Enter the 6-digit code from the SMS.'; inp.focus(); return; }
+        busy(f, true);
+        try {
+          const out = await K.api('/auth/otp/verify', { phone: toLocal(draft.phone), code: inp.value });
+          clearInterval(tick);
+          if (out.token) {
+            if (out.user.role !== role) throw new Error(wrongApp[out.user.role] || 'This account can’t be used here.');
+            await finish(out); return;
+          }
+          draft.phoneToken = out.phoneToken;
+          if (role === 'driver') driverForm(); else signUp();
+        } catch (ex) { err.textContent = ex.message; busy(f, false); inp.value = ''; paint(); inp.focus(); }
       };
     }
 

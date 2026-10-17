@@ -93,13 +93,32 @@ const api = async (path, body, token) => {
   ok(!(await p2.$('[data-google]')) && !(await p2.$('.phone-first #pw')), 'sign-in starts with just the phone number (no Google, no password yet)');
   await p2.fill('#ph', '12345'); await p2.click('button[type=submit]');
   ok(/valid Ugandan mobile number/.test(await p2.textContent('.error')), 'phone step checks the number before sending');
+  // registered number: SMS code, then straight in
+  let lastCode = null;
+  p2.on('response', async (r) => { if (r.url().endsWith('/api/auth/otp/send')) { try { lastCode = (await r.json()).demoCode; } catch {} } });
   await p2.fill('#ph', user.user.phone.replace(/^\+?256/, '0')); await p2.click('button[type=submit]');
-  await p2.waitForSelector('#pw', { timeout: 10000 });
-  ok(/Welcome back/.test(await p2.textContent('h1')) && !!(await p2.$('.phone-chip')), 'a registered number goes to the password step');
-  await p2.click('[data-chg]'); await p2.waitForSelector('.phone-first #ph');
-  await p2.fill('#ph', '0759' + String(Date.now()).slice(-6)); await p2.click('button[type=submit]');
-  await p2.waitForSelector('#nm', { timeout: 10000 });
-  ok(/Create your account/.test(await p2.textContent('h1')) && !(await p2.$('#f #ph')), 'a new number goes straight to creating an account');
+  await p2.waitForSelector('#otp', { timeout: 10000 });
+  ok(/Enter the code/.test(await p2.textContent('h1')) && (await p2.$$('.otp-boxes i')).length === 6 && await p2.getAttribute('#otp', 'autocomplete') === 'one-time-code', 'a registered number gets the 6-box SMS code screen with code autofill');
+  ok(/Send a new code in \d+s/.test(await p2.textContent('[data-resend]')), 'resend waits with a countdown');
+  await p2.waitForFunction(() => true); for (let i = 0; i < 20 && !lastCode; i++) await p2.waitForTimeout(100);
+  await p2.fill('#otp', lastCode);
+  await p2.waitForFunction(() => !!localStorage.getItem('flytte_rider'), null, { timeout: 10000 });
+  ok(JSON.parse(await p2.evaluate(() => localStorage.getItem('flytte_rider'))).user.id === user.user.id, 'typing the code logs the rider in, no password');
+  // new number: code, then name only
+  const c2b = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const p2b = await c2b.newPage(); p2b.on('pageerror', (e) => errors.push(e.message));
+  await p2b.addInitScript(() => { localStorage.setItem('flytte_onboarded', '1'); });
+  let code2 = null; p2b.on('response', async (r) => { if (r.url().endsWith('/api/auth/otp/send')) { try { code2 = (await r.json()).demoCode; } catch {} } });
+  await p2b.goto(BASE + '/'); await p2b.waitForSelector('.phone-first #ph', { timeout: 15000 });
+  await p2b.fill('#ph', '0759' + String(Date.now()).slice(-6)); await p2b.click('button[type=submit]');
+  await p2b.waitForSelector('#otp'); for (let i = 0; i < 20 && !code2; i++) await p2b.waitForTimeout(100);
+  await p2b.fill('#otp', code2);
+  await p2b.waitForSelector('#nm', { timeout: 10000 });
+  ok(/Create your account/.test(await p2b.textContent('h1')) && !(await p2b.$('#pw')), 'a new number confirms the code, then asks only for a name (no password)');
+  await p2b.fill('#nm', 'New Otp Rider'); await p2b.click('button[type=submit]');
+  await p2b.waitForFunction(() => !!localStorage.getItem('flytte_rider'), null, { timeout: 10000 });
+  ok(true, 'new rider account created from the code screen');
+  await c2b.close();
   await c2.close();
 
   // ---- 6. Second open is served from the phone; offline reopen still shows the app
