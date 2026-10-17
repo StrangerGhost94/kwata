@@ -210,7 +210,33 @@
   // ---------- formatting ----------
   K.ugx = (n) => 'UGX ' + Math.round(Number(n) || 0).toLocaleString('en-UG');
   K.esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  K.validPhone = (raw) => { let p = String(raw || '').replace(/[^\d]/g, ''); if (p.startsWith('256')) p = p.slice(3); if (p.startsWith('0')) p = p.slice(1); return /^7\d{8}$/.test(p); };
+  // Countries Flytte serves; numbers go to the server as +<code><9 digits>.
+  K.COUNTRIES = [
+    { id: 'UG', cc: '256', flag: '🇺🇬', name: 'Uganda', ex: '772 123 456', re: /^(7\d{8}|[234]\d{8})$/ },
+    { id: 'KE', cc: '254', flag: '🇰🇪', name: 'Kenya', ex: '712 345 678', re: /^[17]\d{8}$/ },
+    { id: 'TZ', cc: '255', flag: '🇹🇿', name: 'Tanzania', ex: '712 345 678', re: /^[67]\d{8}$/ },
+    { id: 'RW', cc: '250', flag: '🇷🇼', name: 'Rwanda', ex: '788 123 456', re: /^7[2389]\d{7}$/ },
+  ];
+  const byId = (id) => K.COUNTRIES.find((c) => c.id === id);
+  K.country = (id) => { if (id && byId(id)) return byId(id); let v = null; try { v = localStorage.getItem('flytte_cc'); } catch {} return byId(v) || K.COUNTRIES[0]; };
+  K.setCountry = (id) => { try { localStorage.setItem('flytte_cc', id); } catch {} };
+  // Any form (+254 712…, 254712…, 0712…, 712…) → "+254712345678", or null if it isn't a valid number.
+  K.e164 = (raw, id) => {
+    const s = String(raw || '').trim(); let d = s.replace(/\D/g, ''); if (!d) return null;
+    if (s.startsWith('00')) d = d.slice(2);
+    let c = K.COUNTRIES.find((x) => d.startsWith(x.cc) && d.length === x.cc.length + 9), nsn;
+    if (c) nsn = d.slice(c.cc.length); else { c = K.country(id); nsn = d.startsWith('0') ? d.slice(1) : d; }
+    return c.re.test(nsn) ? '+' + c.cc + nsn : null;
+  };
+  K.validPhone = (raw, id) => !!K.e164(raw, id);
+  K.countryOf = (e164) => K.COUNTRIES.find((c) => String(e164 || '').replace(/\D/g, '').startsWith(c.cc)) || K.COUNTRIES[0];
+  // Uganda numbers read the local way (0772 123 456); other countries with their code (+254 712 345 678).
+  K.prettyPhone = (e164) => {
+    const d = String(e164 || '').replace(/\D/g, ''); const c = K.COUNTRIES.find((x) => d.startsWith(x.cc) && d.length === x.cc.length + 9);
+    if (!c) return String(e164 || '');
+    const n = d.slice(c.cc.length).replace(/^(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3');
+    return c.id === 'UG' ? '0' + n : `+${c.cc} ${n}`;
+  };
   K.initials = (name) => String(name || '?').split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
   K.first = (name) => String(name || '').split(' ')[0];
   K.when = (d) => new Date(d).toLocaleString('en-UG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -596,14 +622,23 @@
     start();
   });
 
-  const phoneField = (id, val = '') => `<div class="phone-field"><span class="cc" aria-hidden="true">🇺🇬 +256</span><input id="${id}" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="772 123 456" value="${K.esc(val)}" aria-describedby="${id}-hint" required></div><span class="sr-only" id="${id}-hint">Ugandan mobile number. You can start with 0 or 7.</span>`;
+  // Phone box with a country picker (the native list on phones).
+  const phoneField = (id, val = '') => { const c = K.country(); return `<div class="phone-field"><label class="cc" title="Country code"><span class="cc-show" aria-hidden="true">${c.flag} +${c.cc}</span>
+    <select class="cc-pick" data-for="${id}" aria-label="Country">${K.COUNTRIES.map((x) => `<option value="${x.id}"${x.id === c.id ? ' selected' : ''}>${x.flag} ${x.name} (+${x.cc})</option>`).join('')}</select></label>
+    <input id="${id}" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="${c.ex}" value="${K.esc(val)}" data-cc="${c.id}" aria-describedby="${id}-hint" required></div><span class="sr-only" id="${id}-hint">Mobile number. You can start with 0.</span>`; };
+  document.addEventListener('change', (e) => {
+    const sel = e.target.closest && e.target.closest('.cc-pick'); if (!sel) return;
+    const c = K.country(sel.value), inp = document.getElementById(sel.dataset.for);
+    sel.parentElement.querySelector('.cc-show').textContent = `${c.flag} +${c.cc}`;
+    if (inp) { inp.dataset.cc = c.id; inp.placeholder = c.ex; inp.focus(); }
+    K.setCountry(c.id);
+  });
 
   // Public app settings (support line, commission…), fetched once and shared.
   let cfgP = null;
   K.cfg = () => (cfgP = cfgP || K.api('/config').catch((e) => { cfgP = null; throw e; }));
   const supportLink = (label, cls = 'btn btn-primary btn-block btn-lg') => K.cfg().then((c) => c.supportPhone
     ? `<a class="${cls}" href="tel:${K.esc(c.supportPhone.replace(/\s/g, ''))}">${label} · ${K.esc(c.supportPhone)}</a>` : '').catch(() => '');
-  const toLocal = (raw) => { const d = String(raw || '').replace(/\D/g, ''); return d.startsWith('256') ? d : d.startsWith('0') ? d : '0' + d; };
 
   const pwField = (id, auto, ph = '') => `<div class="pw-field"><input id="${id}" name="password" type="password" autocomplete="${auto}" minlength="6" placeholder="${ph}" required><button type="button" class="eye" aria-label="Show password">${K.ic('eye')}</button></div>`;
 
@@ -636,8 +671,7 @@
       }
     };
     // The number they typed, shown at the top of the next step with a way back to change it.
-    const pretty = (raw) => { let d = String(raw || '').replace(/\D/g, ''); if (d.startsWith('256')) d = d.slice(3); if (d.startsWith('0')) d = d.slice(1); return d.replace(/^(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3'); };
-    const phoneChip = () => `<div class="phone-chip"><span class="flag" aria-hidden="true">🇺🇬</span><span class="num">+256 ${K.esc(pretty(draft.phone))}</span><button type="button" class="link-btn" data-chg>Change</button></div>`;
+    const phoneChip = () => `<div class="phone-chip"><span class="flag" aria-hidden="true">${K.countryOf(draft.e164).flag}</span><span class="num">+${K.countryOf(draft.e164).cc} ${K.esc(K.prettyPhone(draft.e164).replace(/^\+\d+ /, '').replace(/^0/, ''))}</span><button type="button" class="link-btn" data-chg>Change</button></div>`;
     const bindChip = () => { const c = root.querySelector('[data-chg]'); if (c) c.onclick = () => { dir = 'back'; phoneStep(); }; };
     const wrongApp = { driver: 'This number belongs to a driver account. Open the Flytte Driver app to sign in.', rider: 'This number has a rider account. Use a different number to drive with Flytte.', admin: 'This is a staff account.' };
     const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.innerHTML = on ? '<span class="spin"></span>Please wait…' : btn.dataset.label; };
@@ -716,7 +750,7 @@
         if (f.pw && f.pw.value.length < 6) { err.textContent = 'Your password needs at least 6 characters.'; f.pw.focus(); return; }
         const inviteCode = f.ic && f.ic.value.trim() ? f.ic.value.trim().toUpperCase() : undefined;
         busy(f, true);
-        try { const out = await K.api('/auth/register', { name: draft.name, phone: toLocal(draft.phone), password: f.pw ? f.pw.value : undefined, phoneToken: draft.phoneToken, role: 'rider', inviteCode }); try { localStorage.removeItem('flytte_ref'); } catch {} await finish(out); }
+        try { const out = await K.api('/auth/register', { name: draft.name, phone: draft.e164, password: f.pw ? f.pw.value : undefined, phoneToken: draft.phoneToken, role: 'rider', inviteCode }); try { localStorage.removeItem('flytte_ref'); } catch {} await finish(out); }
         catch (ex) { if (/already has an account/.test(ex.message) && !draft.phoneToken) { passwordStep(); return; } if (/SMS code first/.test(ex.message)) { draft.phoneToken = null; phoneStep(); return; } err.textContent = ex.message; busy(f, false); }
       };
     }
@@ -746,9 +780,10 @@
         if (draft.phoneToken) data.phoneToken = draft.phoneToken;
         const need = [[(data.name || '').trim().length >= 2, 'nm', 'Enter your full name.'],
           [!!draft.phoneToken || (data.password || '').length >= 6, 'pw', 'Your password needs at least 6 characters.'], [(data.plate || '').trim().length >= 4, 'pl', 'Enter the number plate.'], [(data.licenseNo || '').trim(), 'lc', 'Enter your driving permit number.'],
-          [!data.momoNumber || K.validPhone(data.momoNumber), 'mm', 'Enter a valid Mobile Money number, or leave it empty.']].find(([ok]) => !ok);
+          [!data.momoNumber || K.validPhone(data.momoNumber, K.countryOf(draft.e164).id), 'mm', 'Enter a valid Mobile Money number, or leave it empty.']].find(([ok]) => !ok);
         if (need) { err.textContent = need[2]; f[need[1]].focus(); return; }
-        data.phone = toLocal(data.phone);
+        data.phone = draft.e164;
+        if (data.momoNumber) data.momoNumber = K.e164(data.momoNumber, K.countryOf(draft.e164).id);
         busy(f, true);
         try { const out = await K.api('/auth/register', { ...data, role: 'driver' }); K.session.set(out); K.verifyDocs(root, { onDone: () => onDone(out) }); }
         catch (ex) { err.textContent = ex.message; busy(f, false); }
@@ -774,12 +809,12 @@
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
-        const ph = f.ph.value.trim();
-        if (!K.validPhone(ph)) { err.textContent = 'Enter a valid Ugandan mobile number, e.g. 0772 123456.'; f.ph.focus(); return; }
-        if (ph !== draft.phone || !draft.phoneToken) draft = { phone: ph, name: draft.name };
+        const ph = f.ph.value.trim(), c = K.country(f.ph.dataset.cc), e164 = K.e164(ph, c.id);
+        if (!e164) { err.textContent = `Enter a valid ${c.name} mobile number, e.g. 0${c.ex}.`; f.ph.focus(); return; }
+        if (e164 !== draft.e164 || !draft.phoneToken) draft = { phone: ph, e164, name: draft.name };
         busy(f, true);
         try {
-          const out = await K.api('/auth/check', { phone: toLocal(ph) });
+          const out = await K.api('/auth/check', { phone: e164 });
           if (out.exists && out.role !== role) { err.textContent = wrongApp[out.role] || 'This number can’t be used here.'; busy(f, false); return; }
           const cfg = await K.cfg().catch(() => ({}));
           if (cfg.smsLogin) { await sendCode(); codeStep(); return; }
@@ -791,7 +826,7 @@
     // SMS code: sent to the number, valid for 5 minutes.
     let resendAt = 0;
     async function sendCode() {
-      const out = await K.api('/auth/otp/send', { phone: toLocal(draft.phone) });
+      const out = await K.api('/auth/otp/send', { phone: draft.e164 });
       resendAt = Date.now() + (out.resendIn || 30) * 1000;
       if (out.demoCode) K.toast(`Test mode (no SMS set up): your code is ${out.demoCode}`, 8000);
       return out;
@@ -825,7 +860,7 @@
         if (inp.value.length !== 6) { err.textContent = 'Enter the 6-digit code from the SMS.'; inp.focus(); return; }
         busy(f, true);
         try {
-          const out = await K.api('/auth/otp/verify', { phone: toLocal(draft.phone), code: inp.value });
+          const out = await K.api('/auth/otp/verify', { phone: draft.e164, code: inp.value });
           clearInterval(tick);
           if (out.token) {
             if (out.user.role !== role) throw new Error(wrongApp[out.user.role] || 'This account can’t be used here.');
@@ -841,7 +876,7 @@
       shell(`<form id="f" novalidate class="auth-body">
         <h1>Welcome back</h1><p class="lead">Enter your password to log in.</p>
         ${phoneChip()}
-        <input type="tel" name="username" autocomplete="username" value="${K.esc(toLocal(draft.phone))}" hidden>
+        <input type="tel" name="username" autocomplete="username" value="${K.esc(draft.e164)}" hidden>
         <label for="pw">Password</label>${pwField('pw', 'current-password')}
         <div class="row" style="justify-content:flex-end;margin-top:8px"><button type="button" class="link-btn" data-forgot>Forgot password?</button></div>
         <p class="error" role="alert"></p>
@@ -857,7 +892,7 @@
         if (!f.pw.value) { err.textContent = 'Enter your password.'; f.pw.focus(); return; }
         busy(f, true);
         try {
-          const out = await K.api('/auth/login', { phone: toLocal(draft.phone), password: f.pw.value });
+          const out = await K.api('/auth/login', { phone: draft.e164, password: f.pw.value });
           if (out.user.role !== role) throw new Error(wrongApp[out.user.role] || 'This account can’t be used here.');
           await finish(out);
         } catch (ex) { err.textContent = /Wrong phone number or password/.test(ex.message) ? 'That password isn’t right. Try again, or tap “Forgot password?”.' : ex.message; busy(f, false); }
@@ -889,12 +924,12 @@
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
-        draft.phone = f.ph.value.trim();
-        if (!K.validPhone(draft.phone)) { err.textContent = 'Enter a valid Ugandan mobile number, e.g. 0772 123456.'; f.ph.focus(); return; }
+        draft.phone = f.ph.value.trim(); draft.e164 = K.e164(draft.phone, f.ph.dataset.cc);
+        if (!draft.e164) { err.textContent = 'Enter a valid phone number, e.g. 0772 123456.'; f.ph.focus(); return; }
         if (!f.pw.value) { err.textContent = 'Enter your password.'; f.pw.focus(); return; }
         busy(f, true);
         try {
-          const out = await K.api('/auth/login', { phone: toLocal(draft.phone), password: f.pw.value });
+          const out = await K.api('/auth/login', { phone: draft.e164, password: f.pw.value });
           if (out.user.role !== role) throw new Error({ driver: 'This is a driver account. Use the Flytte Driver app.', rider: 'This number is a rider account. Use a different number for driving.', admin: 'This is a staff account.' }[out.user.role] || 'This account can’t be used here.');
           await finish(out);
         } catch (ex) { err.textContent = ex.message; busy(f, false); }

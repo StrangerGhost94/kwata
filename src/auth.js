@@ -25,14 +25,28 @@ function verify(token) {
   try { return jwt.verify(token, SECRET); } catch { return null; }
 }
 
-// Normalise Ugandan phone numbers to +2567XXXXXXXX
-function normalizePhone(raw) {
-  let p = String(raw || '').replace(/[^\d+]/g, '');
-  if (p.startsWith('+')) p = p.slice(1);
-  if (p.startsWith('0')) p = '256' + p.slice(1);
-  if (p.length === 9 && p.startsWith('7')) p = '256' + p;
-  if (!/^2567\d{8}$/.test(p)) return null;
-  return '+' + p;
+// Countries Flytte serves. Numbers are stored as +<country code><9-digit national number>.
+// Uganda also accepts fixed lines (020x Airtel, 031x/039x MTN, 041x UTL, other area codes).
+const COUNTRIES = {
+  256: { id: 'UG', re: /^(7\d{8}|[234]\d{8})$/ },
+  254: { id: 'KE', re: /^[17]\d{8}$/ },
+  255: { id: 'TZ', re: /^[67]\d{8}$/ },
+  250: { id: 'RW', re: /^7[2389]\d{7}$/ },
+};
+// The country code of a stored number (Uganda for anything unknown).
+function ccOf(phone) { const d = String(phone || '').replace(/\D/g, ''); return Object.keys(COUNTRIES).find((c) => d.startsWith(c) && d.length === c.length + 9) || '256'; }
+// Accepts +254712345678, 254712345678, 00254…, or a local number (0712 345 678) in defaultCc's country.
+function normalizePhone(raw, defaultCc = '256') {
+  const s = String(raw || '').trim();
+  let d = s.replace(/\D/g, '');
+  if (!d) return null;
+  if (s.startsWith('00')) d = d.slice(2);
+  let cc = Object.keys(COUNTRIES).find((c) => d.startsWith(c) && d.length === c.length + 9);
+  let nsn;
+  if (cc) nsn = d.slice(cc.length);
+  else { cc = COUNTRIES[defaultCc] ? String(defaultCc) : '256'; nsn = d.startsWith('0') ? d.slice(1) : d; }
+  if (!COUNTRIES[cc].re.test(nsn)) return null;
+  return '+' + cc + nsn;
 }
 
 function requireAuth(...roles) {
@@ -61,4 +75,4 @@ function publicUser(u) {
   };
 }
 
-module.exports = { sign, verify, requireAuth, normalizePhone, publicUser, signPhone, verifyPhone, hashCode };
+module.exports = { sign, verify, requireAuth, normalizePhone, ccOf, COUNTRIES, publicUser, signPhone, verifyPhone, hashCode };

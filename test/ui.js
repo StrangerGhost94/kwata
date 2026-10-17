@@ -92,7 +92,7 @@ const api = async (path, body, token) => {
   await p2.goto(BASE + '/'); await p2.waitForSelector('.phone-first #ph', { timeout: 15000 });
   ok(!(await p2.$('[data-google]')) && !(await p2.$('.phone-first #pw')), 'sign-in starts with just the phone number (no Google, no password yet)');
   await p2.fill('#ph', '12345'); await p2.click('button[type=submit]');
-  ok(/valid Ugandan mobile number/.test(await p2.textContent('.error')), 'phone step checks the number before sending');
+  ok(/valid Uganda mobile number/.test(await p2.textContent('.error')), 'phone step checks the number before sending');
   // registered number: SMS code, then straight in
   let lastCode = null;
   p2.on('response', async (r) => { if (r.url().endsWith('/api/auth/otp/send')) { try { lastCode = (await r.json()).demoCode; } catch {} } });
@@ -119,6 +119,20 @@ const api = async (path, body, token) => {
   await p2b.waitForFunction(() => !!localStorage.getItem('flytte_rider'), null, { timeout: 10000 });
   ok(true, 'new rider account created from the code screen');
   await c2b.close();
+  // country picker
+  const c2c = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const p2c = await c2c.newPage(); p2c.on('pageerror', (e) => errors.push(e.message));
+  await p2c.addInitScript(() => { localStorage.setItem('flytte_onboarded', '1'); });
+  await p2c.goto(BASE + '/'); await p2c.waitForSelector('.phone-first #ph', { timeout: 15000 });
+  ok((await p2c.$$eval('.cc-pick option', (o) => o.map((x) => x.value))).join() === 'UG,KE,TZ,RW', 'country picker offers Uganda, Kenya, Tanzania and Rwanda');
+  await p2c.selectOption('.cc-pick', 'KE');
+  ok(/\+254/.test(await p2c.textContent('.cc-show')) && await p2c.getAttribute('#ph', 'placeholder') === '712 345 678', 'choosing Kenya shows +254 and a Kenyan example');
+  await p2c.fill('#ph', '0712 ' + String(Date.now()).slice(-6)); await p2c.click('button[type=submit]');
+  await p2c.waitForSelector('#otp', { timeout: 10000 });
+  ok(/\+254 712/.test(await p2c.textContent('.phone-chip')), 'the code screen shows the Kenyan number with +254');
+  await p2c.reload(); await p2c.waitForSelector('.phone-first #ph');
+  ok(/\+254/.test(await p2c.textContent('.cc-show')), 'the chosen country is remembered');
+  await c2c.close();
   await c2.close();
 
   // ---- 6. Second open is served from the phone; offline reopen still shows the app

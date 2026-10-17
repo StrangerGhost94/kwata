@@ -33,7 +33,7 @@
   const payOK = (k) => !['mtn', 'airtel', 'card'].includes(k) || !!(S.config && S.config.paymentsAvailable);
   const pref = () => (PAY[S.user && S.user.payPref] && payOK(S.user.payPref) ? S.user.payPref : 'cash');
   const payOfTrip = (t) => t.paymentMethod === 'momo' ? (S.user.payPref === 'airtel' ? 'airtel' : 'mtn') : t.paymentMethod;
-  const prettyPhone = (p) => String(p || '').replace(/^\+256/, '0').replace(/^(\d{4})(\d{3})(\d{3})$/, '$1 $2 $3');
+  const prettyPhone = (p) => K.prettyPhone(p);
   const who = (t) => (t.driver && t.driver.vehicleType === 'car') || ['car', 'comfort', 'airport'].includes(t.service) ? 'driver' : 'rider';
   const svcName = (id) => K.SERVICE_LABEL[id] || id;
 

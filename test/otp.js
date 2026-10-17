@@ -52,6 +52,23 @@ const assert = (c, m) => { console.log(c ? '✓' : '✗', m); if (!c) failed++; 
   const locked = await call('/auth/otp/verify', { phone: p3, code: s3.body.demoCode });
   assert(locked.status === 400 && /Too many wrong tries/.test(locked.body.error), 'after five wrong tries even the right code is refused');
 
+  // Other countries and Uganda landlines
+  const ke = '+2547' + rnd();
+  const sk = await call('/auth/otp/send', { phone: ke });
+  assert(sk.status === 200 && sk.body.exists === false, 'a Kenyan number (+254) gets a code');
+  const vk = await call('/auth/otp/verify', { phone: ke, code: sk.body.demoCode });
+  const rk = await call('/auth/register', { name: 'Wanjiku K', phone: ke, phoneToken: vk.body.phoneToken, role: 'rider' });
+  assert(rk.status === 200 && rk.body.user.phone === ke, 'Kenyan rider account stored as +254…');
+  const ecK2 = await fetch(BASE + '/api/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + rk.body.token }, body: JSON.stringify({ emergencyContact: '0722 123 456' }) }).then((r) => r.json());
+  assert(ecK2.user && ecK2.user.emergencyContact === '+254722123456', 'a local number typed by a Kenyan rider is read as Kenyan (+254)');
+  const chk = async (phone) => (await call('/auth/check', { phone })).status;
+  assert(await chk('+255712345678') === 200 && await chk('+255654123456') === 200, 'Tanzania numbers (+255 6x / 7x) accepted');
+  assert(await chk('+250788123456') === 200 && await chk('+250722123456') === 200, 'Rwanda numbers (+250 78 / 72) accepted');
+  assert(await chk('0200123456') === 200 && await chk('0414123456') === 200 && await chk('0393123456') === 200, 'Uganda landlines (0200, 0414, 0393) accepted');
+  assert(await chk('+250612345678') === 400 && await chk('+254612345678') === 400, 'numbers that don’t exist in a country are refused');
+  const old = await call('/auth/check', { phone: '0700000000' });
+  assert(old.status === 200 && old.body.role === 'admin', 'existing Uganda numbers typed the old way still match their accounts');
+
   const badNum = await call('/auth/otp/send', { phone: '12345' });
   assert(badNum.status === 400, 'an invalid number gets no code');
   console.log(failed ? `${failed} OTP CHECK(S) FAILED` : 'ALL OTP CHECKS PASSED');

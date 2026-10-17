@@ -8,7 +8,7 @@
   if (!K.token()) K.authScreen(root, { role: 'driver', onDone: start });
   else start();
 
-  const prettyPhone = (p) => String(p || '').replace(/^\+256/, '0').replace(/^(\d{4})(\d{3})(\d{3})$/, '$1 $2 $3');
+  const prettyPhone = (p) => K.prettyPhone(p);
   const photoUrl = () => (S.hasPhoto && S.photoData) || null;   // own photo, loaded privately (works while pending approval)
   const photo = (cls = 'photo') => `<span class="${cls}">${photoUrl() ? `<img src="${photoUrl()}" alt="">` : K.initials(S.user.name)}</span>`;
   const fmtKm = (km) => (km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km');

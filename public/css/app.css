@@ -1580,3 +1580,9 @@ html.top-dark .sb-scrim { opacity: 0; }
 .code-step > .btn-lg { margin-top: 16px; }
 .code-step .link-btn[disabled] { color: var(--ink-3, #8E8E93); font-weight: 500; cursor: default; }
 .phone-field input:focus, .phone-field input:focus-visible { outline: none !important; box-shadow: none !important; border: 0 !important; }
+
+/* Country picker inside the phone box: the real <select> sits invisibly over the flag and code */
+.phone-field .cc { position: relative; cursor: pointer; margin: 0; }
+.phone-field .cc-show { pointer-events: none; display: inline-flex; align-items: center; gap: 6px; }
+.phone-field .cc-show::after { content: ''; width: 7px; height: 7px; margin-left: 2px; border-right: 1.8px solid currentColor; border-bottom: 1.8px solid currentColor; transform: translateY(-2px) rotate(45deg); opacity: .5; }
+.phone-field .cc-pick { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; border: 0; padding: 0; -webkit-appearance: none; appearance: none; }

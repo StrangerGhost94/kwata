@@ -87,7 +87,7 @@ async function createAccount(body, role, { approved = false } = {}) {
   const { name, phone, password, email } = body || {};
   const p = auth.normalizePhone(phone);
   if (clean(name, 80).length < 2) return { error: 'Enter the full name.' };
-  if (!p) return { error: 'Enter a valid Ugandan phone number, e.g. 0772 123456.' };
+  if (!p) return { error: 'Enter a valid phone number, e.g. 0772 123456.' };
   if (!password || String(password).length < 6) return { error: 'Password must be at least 6 characters.' };
   if (String(password).length > 72) return { error: 'Password must be 72 characters or fewer.' };
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return { error: 'Enter a valid email address, or leave it empty.' };
@@ -101,11 +101,11 @@ async function createAccount(body, role, { approved = false } = {}) {
     if (!licenseNo) return { error: 'Enter the driving permit number.' };
     const s = await getSettings();
     const services = Object.entries(s.services).filter(([, v]) => v.vehicle === vehicleType).map(([id]) => id);
-    if (momoNumber && !auth.normalizePhone(momoNumber)) return { error: 'Enter a valid Mobile Money number, or leave it empty to use your phone number.' };
+    if (momoNumber && !auth.normalizePhone(momoNumber, auth.ccOf(p))) return { error: 'Enter a valid Mobile Money number, or leave it empty to use your phone number.' };
     driverInfo = {
       vehicleType, services: services.join(','), plate: clean(plate, 12).toUpperCase(),
       vehicleMake: clean(vehicleMake, 60), vehicleColor: clean(vehicleColor, 30),
-      licenseNo: clean(licenseNo, 40), momo: auth.normalizePhone(momoNumber) || p,
+      licenseNo: clean(licenseNo, 40), momo: auth.normalizePhone(momoNumber, auth.ccOf(p)) || p,
     };
   }
 
@@ -273,7 +273,7 @@ r.post('/me/password', auth.requireAuth(), wrap(async (req, res) => {
 // Phone-first sign in: tells the app whether to ask for a password or show sign-up.
 r.post('/auth/check', limit(30, 10 * 60e3), wrap(async (req, res) => {
   const p = auth.normalizePhone((req.body || {}).phone);
-  if (!p) return bad(res, 'Enter a valid Ugandan mobile number, e.g. 0772 123456.');
+  if (!p) return bad(res, 'Enter a valid mobile number, e.g. 0772 123456.');
   const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
   res.json({ phone: p, exists: !!u, role: u ? u.role : null });
 }));
@@ -282,7 +282,7 @@ r.post('/auth/check', limit(30, 10 * 60e3), wrap(async (req, res) => {
 // Only says whether the number is registered and as what; never a name or anything else.
 r.post('/auth/check', limit(20, 10 * 60e3), wrap(async (req, res) => {
   const p = auth.normalizePhone((req.body || {}).phone);
-  if (!p) return bad(res, 'Enter a valid Ugandan mobile number, e.g. 0772 123456.');
+  if (!p) return bad(res, 'Enter a valid mobile number, e.g. 0772 123456.');
   const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
   res.json({ exists: !!u, role: u ? u.role : null });
 }));
@@ -292,7 +292,7 @@ const OTP_TTL = 5 * 60e3, OTP_RESEND = 30e3, OTP_PER_HOUR = 5, OTP_TRIES = 5;
 r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
   if (!sms.enabled()) return bad(res, 'SMS sign-in isn’t set up yet.', 503);
   const p = auth.normalizePhone((req.body || {}).phone);
-  if (!p) return bad(res, 'Enter a valid Ugandan mobile number, e.g. 0772 123456.');
+  if (!p) return bad(res, 'Enter a valid mobile number, e.g. 0772 123456.');
   const now = Date.now();
   const row = await db.one('SELECT * FROM otp_codes WHERE phone = $1', [p]);
   if (row && now - Number(row.sent_at) < OTP_RESEND) return bad(res, `Wait ${Math.ceil((OTP_RESEND - (now - Number(row.sent_at))) / 1000)} seconds before asking for another code.`, 429);
@@ -311,7 +311,7 @@ r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
 r.post('/auth/otp/verify', limit(20, 10 * 60e3), wrap(async (req, res) => {
   const p = auth.normalizePhone((req.body || {}).phone);
   const code = String((req.body || {}).code || '').replace(/\D/g, '');
-  if (!p) return bad(res, 'Enter a valid Ugandan mobile number.');
+  if (!p) return bad(res, 'Enter a valid mobile number.');
   if (code.length !== 6) return bad(res, 'Enter the 6-digit code.');
   const row = await db.one('SELECT * FROM otp_codes WHERE phone = $1', [p]);
   if (!row || Date.now() > Number(row.expires_at)) return bad(res, 'That code has expired. Ask for a new one.');
@@ -359,14 +359,14 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
     await db.query('UPDATE users SET pay_pref = $1 WHERE id = $2', [payPref, req.user.id]);
   }
   if (payPhone !== undefined) {
-    const pp = auth.normalizePhone(payPhone);
+    const pp = auth.normalizePhone(payPhone, auth.ccOf(req.user.phone));
     if (!pp) return bad(res, 'Enter a valid Mobile Money number.');
     await db.query('UPDATE users SET pay_phone = $1 WHERE id = $2', [pp, req.user.id]);
   }
   if (name !== undefined && clean(name, 80).length < 2) return bad(res, 'Enter your full name.');
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return bad(res, 'Enter a valid email address.');
-  const ec = emergencyContact ? auth.normalizePhone(emergencyContact) : null;
-  if (emergencyContact && !ec) return bad(res, 'Emergency contact must be a valid Ugandan number.');
+  const ec = emergencyContact ? auth.normalizePhone(emergencyContact, auth.ccOf(req.user.phone)) : null;
+  if (emergencyContact && !ec) return bad(res, 'Enter a valid phone number for your emergency contact.');
   if (savedPlaces && typeof savedPlaces === 'object') {
     let current = {};
     try { current = JSON.parse(req.user.saved_places || '{}'); } catch {}
@@ -469,7 +469,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   // Booking for someone else
   let passengerJson = null;
   if (req.body.passenger && req.body.passenger.name) {
-    const pp = auth.normalizePhone(req.body.passenger.phone);
+    const pp = auth.normalizePhone(req.body.passenger.phone, auth.ccOf(req.user.phone));
     if (clean(req.body.passenger.name, 60).length < 2) return bad(res, 'Enter the passenger’s name.');
     if (!pp) return bad(res, 'Enter the passenger’s phone number so the driver can call them.');
     passengerJson = JSON.stringify({ name: clean(req.body.passenger.name, 60), phone: pp });
@@ -499,7 +499,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   let parcelJson = null;
   if (service === 'parcel') {
     const pc = parcel || {};
-    const rp = auth.normalizePhone(pc.recipientPhone);
+    const rp = auth.normalizePhone(pc.recipientPhone, auth.ccOf(req.user.phone));
     if (clean(pc.recipientName, 80).length < 2 || !rp || !clean(pc.item, 120)) return bad(res, 'Add the recipient name, phone and what you are sending.');
     parcelJson = JSON.stringify({ recipientName: clean(pc.recipientName, 80), recipientPhone: rp, item: clean(pc.item, 120) });
   }
