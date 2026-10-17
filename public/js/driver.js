@@ -225,7 +225,7 @@
     K.$('#earn').onclick = () => openTab('earnings');
     const on = K.$('#on'); if (on) on.onclick = () => setOnline(true);
     const off = K.$('#off'); if (off) off.onclick = () => setOnline(false);
-    K.installCard(K.$('#installHost'), 'Flytte Driver', '/icons/driver-192.png');
+    K.installCard(K.$('#installHost'), 'Flytte Driver', '/icons/flytte-driver-192.png');
   }
 
   // Screen 18: new ride request

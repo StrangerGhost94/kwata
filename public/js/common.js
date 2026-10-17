@@ -481,7 +481,7 @@
   let installEvt = null;
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; document.dispatchEvent(new Event('flytte:installable')); });
   K.standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  K.installCard = function (host, appName = 'Flytte', icon = '/icons/icon-192.png') {
+  K.installCard = function (host, appName = 'Flytte', icon = '/icons/flytte-icon-192.png') {
     const key = 'flytte_install_dismissed_' + APP;
     const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     let dismissed = false; try { dismissed = !!localStorage.getItem(key); } catch {}
@@ -539,7 +539,7 @@
     // Auth layout: photo header with the logo, white card that slides up with the form.
     const shell = (inner, back) => {
       root.innerHTML = `<div class="auth2 ${dir === 'back' ? 'nav-back' : 'nav-fwd'}">
-        <div class="auth-hero"><img src="/img/onboarding.jpg" alt="" decoding="async"><div class="auth-shade"></div>
+        <div class="auth-hero"><img src="/img/welcome.jpg" alt="" decoding="async"><div class="auth-shade"></div>
           ${back ? `<button class="glass-back" data-back aria-label="Back">${K.ic('back')}</button>` : ''}
           <div class="auth-logo">${K.wordmark(role === 'driver')}</div></div>
         <div class="auth-card">${inner}</div></div>`;
@@ -574,7 +574,7 @@
     // Welcome screens: the Flytte rider photo, the wordmark, and swipeable text.
     const hero = (driver, slides, ctaLabel) => {
       root.innerHTML = `<div class="onboard hero">
-        <div class="hero-photo"><img src="/img/onboarding.jpg" alt="" decoding="async"></div>
+        <div class="hero-photo"><img src="/img/welcome.jpg" alt="" decoding="async"></div>
         <div class="hero-logo">${K.wordmark(driver)}</div>
         <div class="slides" id="sl">${slides.map(([a, b2, p]) => `<div class="slide"><h1>${a}<br><span>${b2}</span></h1><p>${p}</p></div>`).join('')}</div>
         ${slides.length > 1 ? `<div class="dots">${slides.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
