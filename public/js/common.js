@@ -508,7 +508,7 @@
     let quick = false;
     try { const last = Number(localStorage.getItem('flytte_opened')) || 0; quick = Date.now() - last < 12 * 3600e3; localStorage.setItem('flytte_opened', String(Date.now())); } catch {}
     const photoMode = document.documentElement.classList.contains('launch-dark') && sp.querySelector('.sp-photo');
-    if (photoMode) { if (quick) sp.classList.add('quick'); return settleIntoSignIn(sp, quick); }
+    if (photoMode) return settleIntoSignIn(sp, quick);
     if (quick) sp.classList.add('quick');
     const wait = Math.max(0, (quick ? 350 : 1300) - (performance.now() - T0));
     setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 400); }, wait);
@@ -529,11 +529,23 @@
       auth.querySelectorAll('.auth-body > *').forEach((el, i) => el.style.setProperty('--i', Math.min(i, 8)));
       auth.classList.add('intro');
       void auth.offsetHeight;                       // lay out the intro pose before the splash leaves
+      // Match the page to the splash exactly (logo position and size, photo zoom), so nothing jumps.
+      const logo = auth.querySelector('.auth-logo'), lw = logo && logo.querySelector('.wm'), sw = sp.querySelector('.sp-mark .wm');
+      const heroImg = auth.querySelector('.auth-hero img'), spImg = sp.querySelector('.sp-photo img');
+      if (logo && lw && sw) {
+        const a = sw.getBoundingClientRect(), b = lw.getBoundingClientRect();
+        if (a.width && b.width) {
+          const base = getComputedStyle(logo).transform, k = a.width / b.width;
+          logo.style.transform = `translate(${(a.left + a.width / 2) - (b.left + b.width / 2)}px, ${(a.top + a.height / 2) - (b.top + b.height / 2)}px) ${base === 'none' ? '' : base} scale(${k})`;
+        }
+      }
+      if (heroImg && spImg) { const t = getComputedStyle(spImg).transform; if (t && t !== 'none') heroImg.style.transform = t; }
+      void auth.offsetHeight;
       sp.classList.add('out');                       // splash and page now look the same: a quick fade hides any seam
       setTimeout(() => {
         sp.remove();
         auth.classList.add('settle');
-        requestAnimationFrame(() => auth.classList.remove('intro'));
+        requestAnimationFrame(() => { auth.classList.remove('intro'); if (logo) logo.style.transform = ''; if (heroImg) heroImg.style.transform = ''; });
         setTimeout(() => { auth.classList.remove('settle'); auth.querySelectorAll('.auth-body > *').forEach((el) => el.style.removeProperty('--i')); }, 2000);
       }, 200);
     });

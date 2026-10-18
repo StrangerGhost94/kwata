@@ -8,7 +8,7 @@
 //   so they're served straight from the phone ("cache first") with no network wait.
 //   A new deploy has new ?v= links, so the new files are fetched once and kept.
 // - Maps, payments and live data are never cached.
-const VERSION = 'flytte-v58';
+const VERSION = 'flytte-v59';
 const ASSETS = 'flytte-assets';        // versioned js/css; kept across releases, trimmed below
 const SHELL = [
   '/offline.html', '/socket.io/socket.io.js',
