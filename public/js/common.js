@@ -512,10 +512,11 @@
     try { const last = Number(localStorage.getItem('flytte_opened')) || 0; quick = Date.now() - last < 12 * 3600e3; localStorage.setItem('flytte_opened', String(Date.now())); } catch {}
     const photoMode = document.documentElement.classList.contains('launch-dark') && sp.querySelector('.sp-photo');
     if (photoMode) return settleIntoSignIn(sp, quick);
-    if (quick) sp.classList.add('quick');
-    // The launch screen is static (like a native one), so it only needs to stay long enough to read.
-    const wait = Math.max(0, (quick ? 250 : 900) - (performance.now() - T0));
-    setTimeout(() => requestAnimationFrame(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 480); }), wait);
+    // Signed in: the launch screen is static, like a native one. It always stays long enough to
+    // register (a split-second flash looks like a glitch), a little longer on the first open of the day.
+    if (quick) sp.classList.add('repeat');
+    const wait = Math.max(0, (quick ? 800 : 1100) - (performance.now() - T0));
+    setTimeout(() => requestAnimationFrame(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 650); }), wait);
   };
 
   // Signed out: the launch photo becomes the sign-in page. The page is drawn underneath in the same

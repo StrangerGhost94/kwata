@@ -1809,3 +1809,7 @@ html.theme-dark:not(.launch-dark) .sp-name { color: #fff; }
 html.theme-dark:not(.launch-dark) .sp-name span { color: var(--brand); }
 html.theme-dark:not(.launch-dark) .sp-tag { color: #8E8E93; }
 html.theme-dark:not(.launch-dark) .sp-load { background: rgba(255,255,255,.14); }
+/* Signed-in exit, unhurried: the logo eases away, then the screen dissolves into the app. */
+html:not(.launch-dark) .splash .sp-center { transition: opacity .28s ease, transform .45s cubic-bezier(.32,.72,0,1); }
+html:not(.launch-dark) .splash.out { transition: opacity .42s cubic-bezier(.4,0,.2,1) .14s, visibility 0s linear .6s; }
+.splash.repeat .sp-load { display: none; }
