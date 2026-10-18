@@ -31,7 +31,7 @@ const pageCache = {};
 const page = (f) => (req, res) => {
   let html = pageCache[f];
   if (!html) {
-    html = fs.readFileSync(path.join(__dirname, 'public', f), 'utf8').replace(/((?:src|href)="\/(?:js\/[\w-]+\.js|css\/app\.css))"/g, `$1?v=${BUILD}"`);
+    html = fs.readFileSync(path.join(__dirname, 'public', f), 'utf8').replace(/((?:src|href)="\/(?:js\/[\w-]+\.js|css\/[\w-]+\.css))"/g, `$1?v=${BUILD}"`);
     if (process.env.NODE_ENV === 'production' || process.env.DATABASE_URL) pageCache[f] = html;
   }
   res.setHeader('Cache-Control', 'no-cache');
@@ -47,7 +47,7 @@ const underClock = (f, manifest, title) => (req, res) => {
   let html = pageCache[key];
   if (!html) {
     html = fs.readFileSync(path.join(__dirname, 'public', f), 'utf8')
-      .replace(/((?:src|href)="\/(?:js\/[\w-]+\.js|css\/app\.css))"/g, `$1?v=${BUILD}"`)
+      .replace(/((?:src|href)="\/(?:js\/[\w-]+\.js|css\/[\w-]+\.css))"/g, `$1?v=${BUILD}"`)
       .replace('<html lang="en">', '<html lang="en" class="under-clock">')
       .replace(/(name="apple-mobile-web-app-status-bar-style" content=)"default"/, '$1"black-translucent"')
       .replace(/(name="apple-mobile-web-app-title" content=)"[^"]*"/, `$1"${title}"`)

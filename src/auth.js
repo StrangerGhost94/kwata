@@ -55,7 +55,7 @@ function requireAuth(...roles) {
     const payload = verify(h.startsWith('Bearer ') ? h.slice(7) : '');
     if (!payload) return res.status(401).json({ error: 'Please sign in again.' });
     const user = await db.one('SELECT * FROM users WHERE id = $1', [payload.id]);
-    if (!user) return res.status(401).json({ error: 'Account not found.' });
+    if (!user || user.deleted_at) return res.status(401).json({ error: 'Account not found.' });
     if (user.blocked) return res.status(403).json({ error: 'This account is suspended. Contact support.' });
     if (roles.length && !roles.includes(user.role)) return res.status(403).json({ error: 'Not allowed.' });
     req.user = user;

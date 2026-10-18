@@ -1190,21 +1190,50 @@
   async function openRewards(onBack) {
     const sp = subPage('Flytte Rewards', onBack);
     const draw = (g) => {
-      const rw = g.rewards, t = g.tier;
-      const pct = Math.min(100, Math.round((g.points / rw.redeemPoints) * 100));
-      const tierPct = t.next ? Math.min(100, Math.round((g.lifetimePoints / t.at) * 100)) : 100;
-      sp.body.innerHTML = `<div class="rewards-card tier-${t.name.toLowerCase()}"><span class="tiny">${t.name} member</span><b>${g.points}</b><span>points</span>
-          <div class="bar" style="background:rgba(255,255,255,.25);margin:12px 0 4px"><i style="width:${pct}%;background:#fff"></i></div>
-          <span class="tiny">${g.points >= rw.redeemPoints ? 'Ready to redeem!' : `${rw.redeemPoints - g.points} more points for ${K.ugx(rw.redeemValue)}`}</span></div>
-        <button class="btn btn-primary btn-block btn-lg" id="redeem" ${g.points >= rw.redeemPoints ? '' : 'disabled'}>Redeem ${rw.redeemPoints} points for ${K.ugx(rw.redeemValue)}</button>
-        <h3 style="margin-top:20px">How it works</h3>
-        <div class="kv"><span>Earn</span><b>${rw.pointsPer1000} point for every UGX 1,000 you pay</b></div>
-        <div class="kv"><span>Redeem</span><b>${rw.redeemPoints} points = ${K.ugx(rw.redeemValue)} wallet credit</b></div>
-        <div class="kv"><span>${t.next ? `Next level: ${t.next}` : 'Top level'}</span><b>${t.next ? `${g.lifetimePoints}/${t.at} lifetime points` : 'You’re Gold ✨'}</b></div>
-        <div class="bar" style="margin-top:8px"><i style="width:${tierPct}%"></i></div>`;
+      const rw = g.rewards, t = g.tier, tiers = g.tiers || [{ name: 'Bronze', at: 0 }, { name: 'Silver', at: 100 }, { name: 'Gold', at: 300 }];
+      const ready = g.points >= rw.redeemPoints;
+      const pct = Math.min(1, g.points / rw.redeemPoints);
+      const C = 2 * Math.PI * 34;
+      const top = tiers[tiers.length - 1].at;
+      const lifePct = Math.min(100, (g.lifetimePoints / top) * 100);
+      const toNext = t.next ? Math.max(0, t.at - g.lifetimePoints) : 0;
+      const when = (d) => new Date(d).toLocaleDateString('en-UG', { day: 'numeric', month: 'short' });
+      sp.body.innerHTML = `
+        ${rw.enabled === false ? '<div class="rw-paused">Rewards are paused right now. Your points are safe.</div>' : ''}
+        <div class="rw-hero tier-${t.name.toLowerCase()}">
+          <div class="rw-top"><span class="rw-pill">${t.name} member</span><span class="rw-brand">Flytte Rewards</span></div>
+          <div class="rw-main">
+            <div><b class="rw-pts">${g.points.toLocaleString()}</b><span class="rw-unit">points</span>
+              <p class="rw-sub">${ready ? `Ready to swap for ${K.ugx(rw.redeemValue)}` : `${(rw.redeemPoints - g.points).toLocaleString()} more points for ${K.ugx(rw.redeemValue)}`}</p></div>
+            <svg class="rw-ring" viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="34" class="bg"/><circle cx="40" cy="40" r="34" class="fg" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/>
+              <text x="40" y="38" text-anchor="middle" class="v">${Math.round(pct * 100)}%</text><text x="40" y="52" text-anchor="middle" class="l">to reward</text></svg>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block btn-lg" id="redeem" ${ready && rw.enabled !== false ? '' : 'disabled'}>${ready ? `Swap ${rw.redeemPoints} points for ${K.ugx(rw.redeemValue)}` : `Swap at ${rw.redeemPoints} points`}</button>
+
+        <h3 class="set-h">Your level</h3>
+        <div class="set-card rw-level">
+          <div class="rw-track"><i style="width:${lifePct}%"></i>
+            ${tiers.map((x) => `<span class="rw-node ${g.lifetimePoints >= x.at ? 'on' : ''} ${x.name === t.name ? 'cur' : ''}" style="left:${(x.at / top) * 100}%"><em></em><b>${x.name}</b><small>${x.at}</small></span>`).join('')}</div>
+          <p class="rw-note">${t.next ? `<b>${toNext.toLocaleString()} lifetime points</b> to reach ${t.next}.` : '<b>You’ve reached Gold</b>, our top level.'} Lifetime points count every point you’ve earned, so your level never drops when you swap points.</p>
+        </div>
+
+        <h3 class="set-h">How you earn</h3>
+        <div class="set-card list rw-how">
+          <div class="set-row"><span class="rw-ic">${K.ic('nav')}</span><span class="grow"><b>Ride or send a parcel</b><small>${rw.pointsPer1000} point${rw.pointsPer1000 === 1 ? '' : 's'} for every UGX 1,000 you pay</small></span></div>
+          <div class="set-row"><span class="rw-ic">${K.ic('check')}</span><span class="grow"><b>Points arrive when the trip ends</b><small>On every completed trip, any payment method</small></span></div>
+          <div class="set-row"><span class="rw-ic">${K.ic('wallet')}</span><span class="grow"><b>Swap for wallet credit</b><small>${rw.redeemPoints} points = ${K.ugx(rw.redeemValue)}, spent on your next trips</small></span></div>
+        </div>
+
+        <h3 class="set-h">Recent points</h3>
+        <div class="set-card list">${(g.history || []).length ? g.history.map((h) => h.kind === 'earn'
+          ? `<div class="set-row"><span class="grow"><b>${K.esc(svcName(h.service) || 'Trip')}${h.to ? ` to ${K.esc(String(h.to).split(',')[0])}` : ''}</b><small>${when(h.at)}</small></span><span class="rw-delta plus">+${h.points}</span></div>`
+          : `<div class="set-row"><span class="grow"><b>Swapped for ${K.ugx(h.value)}</b><small>${when(h.at)}</small></span><span class="rw-delta">${h.points}</span></div>`).join('')
+          : '<p class="rw-empty">Points from your trips will appear here.</p>'}</div>`;
       K.$('#redeem', sp.page).onclick = async () => {
+        const btn = K.$('#redeem', sp.page); btn.disabled = true;
         try { const out = await K.api('/rewards/redeem', {}); S.user.walletBalance = out.walletBalance; K.toast(`🎉 ${K.ugx(rw.redeemValue)} added to your wallet`); S.growth = await K.api('/me/growth'); draw(S.growth); }
-        catch (e) { K.toast(e.message); }
+        catch (e) { K.toast(e.message); btn.disabled = false; }
       };
     };
     sp.body.innerHTML = K.skeleton('list', 2);
@@ -1216,13 +1245,15 @@
   function openTab(tab) {
     if (tab !== 'home' && S.view !== 'home') return;
     root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false'));
-    document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
-    if (tab === 'home') return;
+    const old = [...document.querySelectorAll('.page[data-tabpage]')];
+    if (tab === 'home') { old.forEach((p) => p.remove()); return; }
+    if (old.some((p) => p.dataset.tabpage === tab)) { old.filter((p) => p.dataset.tabpage !== tab).forEach((p) => p.remove()); return; }
     const page = document.createElement('div');
-    page.className = 'page tab-in grouped'; page.dataset.tabpage = tab;
+    page.className = 'page tab-swap grouped'; page.dataset.tabpage = tab;
     page.innerHTML = `<div class="page-inner">${K.skeleton('title-list')}</div>`;
     root.querySelector('#app').insertBefore(page, K.$('#tabs'));
     (tab === 'activity' ? drawActivity : drawAccount)(page.firstElementChild);
+    old.forEach((p) => p.remove());                 // only after the new page is in place: no gap to see through
   }
 
   function subPage(title, onBack) {
@@ -1280,6 +1311,7 @@
       <button class="menu-item" data-a="wallet"><span class="ic">${K.ic('wallet')}</span><span class="grow">Flytte Wallet<br><span class="small muted">${K.ugx(u.walletBalance)}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="safety"><span class="ic">${K.ic('shield')}</span><span class="grow">Safety<br><span class="small muted">${u.emergencyContact ? 'Emergency contact ' + K.esc(prettyPhone(u.emergencyContact)) : 'Add an emergency contact'}</span></span>${K.ic('chev', 'sm')}</button>
       ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Help & Support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
+      <button class="menu-item" data-a="settings"><span class="ic">${K.ic('settings')}</span><span class="grow">Settings<br><span class="small muted">Appearance, language, privacy</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
       <p class="tiny faint" style="text-align:center;margin-top:18px">Flytte 1.0</p>`;
     const redraw = () => drawAccount(el);
@@ -1291,6 +1323,7 @@
       else if (a === 'places') openPlaces(redraw);
       else if (a === 'wallet') openWallet(redraw);
       else if (a === 'safety') openEmergency(redraw);
+      else if (a === 'settings') K.openSettings({ role: 'rider', onBack: redraw });
       else if (a === 'out') { K.session.clear(); location.reload(); }
     });
   }

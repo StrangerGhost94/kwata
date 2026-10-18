@@ -365,6 +365,38 @@ r.get('/me', auth.requireAuth(), wrap(async (req, res) => {
   res.json(out);
 }));
 
+// Delete my account. Personal details are erased now; trips and payments stay as anonymous
+// records (needed for accounting and safety), and the phone number becomes free to use again.
+r.post('/me/delete', auth.requireAuth('rider', 'driver'), limit(5, 10 * 60e3), wrap(async (req, res) => {
+  const u = req.user, { forfeit } = req.body || {};
+  const live = await db.one(`SELECT id FROM trips WHERE (rider_id = $1 OR driver_id = $1) AND status IN ('requested','accepted','arrived','in_progress') LIMIT 1`, [u.id]);
+  if (live) return bad(res, 'Finish or cancel your current trip first.', 409);
+  if (u.role === 'driver') {
+    const d = await db.one('SELECT earnings_balance FROM drivers WHERE user_id = $1', [u.id]);
+    if (d && d.earnings_balance > 0) return bad(res, `Cash out your balance of UGX ${d.earnings_balance.toLocaleString()} first.`, 409);
+    if (d && d.earnings_balance < 0) return bad(res, `Pay the UGX ${(-d.earnings_balance).toLocaleString()} you owe in commission first.`, 409);
+    const w = await db.one("SELECT id FROM withdrawals WHERE driver_id = $1 AND status = 'pending' LIMIT 1", [u.id]).catch(() => null);
+    if (w) return bad(res, 'Wait until your cash-out is paid, then try again.', 409);
+  }
+  if (u.wallet_balance > 0 && !forfeit) return res.status(409).json({ error: `Your Flytte Wallet has UGX ${u.wallet_balance.toLocaleString()}. It will be lost if you delete your account.`, code: 'WALLET' });
+  const scrub = crypto.randomBytes(6).toString('hex');
+  const oldPhone = u.phone;
+  await db.tx(async (t) => {
+    await t.query(`UPDATE users SET name = 'Deleted account', phone = $2, email = NULL, password_hash = $3, emergency_contact = NULL,
+      saved_places = NULL, pay_phone = NULL, pay_pref = NULL, referral_code = NULL, wallet_balance = 0, points = 0, blocked = TRUE, deleted_at = NOW() WHERE id = $1`,
+      [u.id, `deleted:${u.id}:${scrub}`, await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10)]);
+    if (u.role === 'driver') {
+      await t.query(`UPDATE drivers SET status = 'deleted', license_no = NULL, momo_number = NULL, home_lat = NULL, home_lng = NULL, home_address = NULL WHERE user_id = $1`, [u.id]);
+      await t.query('DELETE FROM driver_docs WHERE user_id = $1', [u.id]);
+      await t.query('DELETE FROM driver_changes WHERE driver_id = $1', [u.id]);
+    }
+    await t.query('DELETE FROM push_subscriptions WHERE user_id = $1', [u.id]);
+    await t.query('DELETE FROM otp_codes WHERE phone = $1', [oldPhone]);
+  });
+  if (u.role === 'driver') { try { rt.forceOffline(u.id); } catch {} }
+  res.json({ ok: true });
+}));
+
 r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
   const { name, email, emergencyContact, savedPlaces, payPref, payPhone } = req.body || {};
   if (payPref !== undefined) {
@@ -799,10 +831,19 @@ r.get('/me/growth', auth.requireAuth('rider'), wrap(async (req, res) => {
   const friends = await db.one('SELECT COUNT(*)::int AS joined, COUNT(*) FILTER (WHERE referral_rewarded)::int AS rode FROM users WHERE referred_by = $1', [req.user.id]);
   const earned = await db.one("SELECT COALESCE(SUM(amount),0)::int AS n FROM transactions WHERE user_id = $1 AND type = 'reward' AND note LIKE 'Invite reward%'", [req.user.id]);
   const u = await db.one('SELECT points, lifetime_points FROM users WHERE id = $1', [req.user.id]);
+  // Points history: what each trip earned, and each redemption.
+  const { rows: earnedRows } = await db.query(`SELECT id, service, drop_address, points_earned, created_at FROM trips
+    WHERE rider_id = $1 AND status = 'completed' AND points_earned > 0 ORDER BY id DESC LIMIT 12`, [req.user.id]);
+  const { rows: spentRows } = await db.query(`SELECT amount, note, created_at FROM transactions WHERE user_id = $1 AND note LIKE 'Flytte Rewards:%' ORDER BY id DESC LIMIT 12`, [req.user.id]);
+  const history = [
+    ...earnedRows.map((t) => ({ kind: 'earn', points: t.points_earned, service: t.service, to: t.drop_address, at: t.created_at })),
+    ...spentRows.map((x) => ({ kind: 'redeem', points: -(parseInt((/(\d+) points/.exec(x.note) || [])[1], 10) || 0), value: x.amount, at: x.created_at })),
+  ].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 12);
   res.json({
     code, link: `${baseUrl(req)}/?ref=${code}`, friends, earned: earned.n,
     referral: s.growth.referral, rewards: s.growth.rewards,
     points: u.points, lifetimePoints: u.lifetime_points, tier: growth.tier(u.lifetime_points),
+    tiers: [{ name: 'Bronze', at: 0 }, { name: 'Silver', at: 100 }, { name: 'Gold', at: 300 }], history,
     firstRide: s.growth.firstRide.enabled && await growth.firstRideEligible(req.user.id) ? s.growth.firstRide : null,
   });
 }));
@@ -1044,6 +1085,7 @@ r.get('/admin/drivers', admin, wrap(async (req, res) => {
       (SELECT COUNT(*)::int FROM driver_events e WHERE e.driver_id = u.id AND e.kind IN ('offer_declined','offer_missed') AND e.created_at > NOW() - INTERVAL '30 days') AS ev_rej,
       (SELECT COUNT(*)::int FROM driver_events e WHERE e.driver_id = u.id AND e.kind = 'driver_cancelled' AND e.created_at > NOW() - INTERVAL '30 days') AS ev_can
     FROM drivers d JOIN users u ON u.id = d.user_id
+    WHERE u.deleted_at IS NULL
     ORDER BY CASE d.status WHEN 'pending' THEN 0 ELSE 1 END, u.id DESC LIMIT 300`);
   res.json(rows.map((x) => ({
     id: x.id, name: x.name, phone: x.phone, status: x.status, vehicleType: x.vehicle_type, plate: x.plate,
@@ -1179,7 +1221,7 @@ r.post('/admin/drivers/:id/status', admin, wrap(async (req, res) => {
 r.get('/admin/riders', admin, wrap(async (req, res) => {
   const { rows } = await db.query(`SELECT u.id, u.name, u.phone, u.wallet_balance, u.blocked, u.created_at,
       (SELECT COUNT(*)::int FROM trips t WHERE t.rider_id = u.id AND t.status = 'completed') AS trips
-    FROM users u WHERE role = 'rider' ORDER BY id DESC LIMIT 300`);
+    FROM users u WHERE role = 'rider' AND u.deleted_at IS NULL ORDER BY id DESC LIMIT 300`);
   res.json(rows);
 }));
 

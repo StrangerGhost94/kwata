@@ -724,13 +724,15 @@
     if (tab !== 'home' && S.trip) return;
     S.tab = tab;
     root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false'));
-    document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
-    if (tab === 'home') { if (!S.trip && sheet) vHome(); return; }
+    const old = [...document.querySelectorAll('.page[data-tabpage]')];
+    if (tab === 'home') { old.forEach((p) => p.remove()); if (!S.trip && sheet) vHome(); return; }
+    if (old.some((p) => p.dataset.tabpage === tab)) { old.filter((p) => p.dataset.tabpage !== tab).forEach((p) => p.remove()); return; }
     const page = document.createElement('div');
-    page.className = 'page tab-in grouped'; page.dataset.tabpage = tab;
+    page.className = 'page tab-swap grouped'; page.dataset.tabpage = tab;
     page.innerHTML = `<div class="page-inner">${K.skeleton(tab === 'earnings' ? 'earnings' : 'title-list')}</div>`;
     root.querySelector('#app').insertBefore(page, K.$('#tabs'));
     (tab === 'earnings' ? drawEarnings : drawProfile)(page.firstElementChild);
+    old.forEach((p) => p.remove());                 // only after the new page is in place: no gap to see through
   }
 
   // Earnings were loaded when the app opened: show them instantly, refresh in the background.
@@ -852,6 +854,7 @@
       <button class="menu-item" data-a="alerts"><span class="ic">${K.ic('bell')}</span><span class="grow">Ride alerts<br><span class="small muted">${S.ov && S.ov.push ? 'On · requests ring when your phone is locked' : pushSupported() ? 'Off · turn on to get requests when your phone is locked' : isIOS && !K.standalone() ? 'Add the app to your Home Screen to use them' : 'Not available in this browser'}</span></span>${S.ov && S.ov.push ? '<span class="badge ok">On</span>' : K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="manual"><span class="ic">${K.ic('pin')}</span><span class="grow">${S.manual ? 'Use phone GPS' : 'Set position on map'}<br><span class="small muted">For testing without GPS</span></span></button>
       ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Driver support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
+      <button class="menu-item" data-a="settings"><span class="ic">${K.ic('settings')}</span><span class="grow">Settings<br><span class="small muted">Appearance, language, privacy</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
       <p class="tiny faint" style="text-align:center;margin-top:18px">Flytte Driver 1.0</p>`;
 
@@ -861,6 +864,7 @@
       identity: () => openIdentity(() => drawProfile(el)),
       alerts: async () => { if (S.ov && S.ov.push) await disablePush(); else await enablePush(false); await loadOverview(); drawProfile(el); },
       manual: () => { if (S.manual) { S.manual = false; startGps(); } else { S.manual = true; navigator.geolocation && navigator.geolocation.clearWatch(watchId); K.toast('Tap the map to move your position.'); } openTab('home'); },
+      settings: () => K.openSettings({ role: 'driver', onBack: () => drawProfile(el) }),
       out: () => { if (S.online) setOnline(false); K.session.clear(); location.reload(); },
     })[b.dataset.a]());
   }

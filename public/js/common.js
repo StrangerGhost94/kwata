@@ -454,9 +454,12 @@
   // When iOS cuts the installed app short, the band under it takes the page's
   // background colour. Keep that colour matched to whatever is at the bottom of
   // the screen, so the band blends in: dark screens, the map, or the white sheet.
-  const STRIP = { dark: '#0E0E10', map: '#F8F5F0', sheet: '#FDFCFB', page: '#FFFFFF', grouped: '#F2F2F7' };
+  const STRIP_LIGHT = { dark: '#0E0E10', map: '#F8F5F0', sheet: '#FDFCFB', page: '#FFFFFF', grouped: '#F2F2F7' };
+  const STRIP_DARK = { dark: '#0E0E10', map: '#1A1B1E', sheet: '#1C1C1E', page: '#000000', grouped: '#000000' };
+  let STRIP = STRIP_LIGHT;
   let stripRaf;
   function syncStrip() {
+    STRIP = document.documentElement.classList.contains('theme-dark') ? STRIP_DARK : STRIP_LIGHT;
     cancelAnimationFrame(stripRaf);
     stripRaf = requestAnimationFrame(() => {
       const q = (sel) => document.querySelector(sel);
@@ -796,14 +799,15 @@
       const driver = role === 'driver';
       shell(`<form id="f" novalidate class="auth-body phone-first">
         <h1>${driver ? 'Drive with Flytte' : 'Welcome to Flytte'}</h1>
-        <p class="lead">Enter your mobile number to sign in.</p>
+        <p class="lead">${driver ? 'Sign in, or apply to drive, with your mobile number.' : 'Sign in or create an account with your mobile number.'}</p>
         <label for="ph" class="sr-only">Mobile number</label>${phoneField('ph', draft.phone)}
         <p class="error" role="alert"></p>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Sign In">Sign In</button>
-        <p class="fine" data-fine>New to Flytte? Use the same button. We’ll send you a code to confirm your number${driver ? ', then check your documents before your first trip' : ''}.</p>
+        <p class="fine" data-fine>We’ll send a one-time code to verify your number.${driver ? ' New drivers are reviewed before their first trip.' : ''}</p>
+        <p class="fine legal">By continuing, you agree to Flytte’s <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
       </form>`, null);
       const f = root.querySelector('#f');
-      K.cfg().then((c) => { const t = root.querySelector('[data-fine]'); if (t && !c.smsLogin) t.textContent = `If you already have an account we’ll ask for your password. If not, we’ll set one up${driver ? ' and check your documents before your first trip' : ''}.`; }).catch(() => {});
+      K.cfg().then((c) => { const t = root.querySelector('[data-fine]'); if (t && !c.smsLogin) t.textContent = `Existing accounts sign in with a password; new accounts are set up in a few steps.${driver ? ' New drivers are reviewed before their first trip.' : ''}`; }).catch(() => {});
       f.onsubmit = async (e) => {
         e.preventDefault();
         const err = f.querySelector('.error'); err.textContent = '';
@@ -1046,7 +1050,89 @@
   };
 
   // ---------- maps ----------
-  K.dark = () => false; // the brand is designed light-first, like the mockups
+  // ---------- language: English or Kiswahili (translations live in i18n.js) ----------
+  K.lang = () => window.FLYTTE_LANG || 'en';
+  K.setLang = (l) => { try { localStorage.setItem('flytte_lang', l); } catch {} location.reload(); };
+
+  // ---------- Settings (both apps): appearance, language, legal, delete account ----------
+  K.openSettings = function ({ role = APP, onBack } = {}) {
+    const page = document.createElement('div');
+    page.className = 'page push-in grouped nav-large'; page.style.zIndex = 870;
+    page.innerHTML = `<div class="page-inner"><div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Back">${K.ic('back')}</button><h2 aria-hidden="true">Settings</h2></div>
+      <h1 class="page-title">Settings</h1><div data-body></div></div>`;
+    (document.getElementById('app') || document.body).appendChild(page);
+    K.$('[data-x]', page).onclick = () => K.pop(page, onBack);
+    const body = K.$('[data-body]', page);
+    const draw = () => {
+      const t = K.themePref(), l = K.lang();
+      body.innerHTML = `
+        <h3 class="set-h">Appearance</h3>
+        <div class="set-card"><div class="set-seg" role="radiogroup" aria-label="Appearance">
+          ${[['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([k, n]) => `<button role="radio" aria-checked="${t === k}" data-theme="${k}">
+            <span class="set-swatch sw-${k}" aria-hidden="true"><i></i><i></i></span>${n}</button>`).join('')}</div>
+          <p class="set-note">${t === 'auto' ? 'Follows your phone’s light or dark setting.' : t === 'dark' ? 'Easier on the eyes at night.' : 'The classic Flytte look.'}</p></div>
+        <h3 class="set-h">Language</h3>
+        <div class="set-card list" role="radiogroup" aria-label="Language">
+          ${[['en', 'English', 'English'], ['sw', 'Kiswahili', 'Swahili']].map(([k, n, sub]) => `<button class="set-row" role="radio" aria-checked="${l === k}" data-lang="${k}"><span class="grow"><b>${n}</b><small>${sub}</small></span>${l === k ? K.ic('check') : ''}</button>`).join('')}
+        </div>
+        <h3 class="set-h">Legal</h3>
+        <div class="set-card list">
+          <a class="set-row" href="/terms" target="_blank" rel="noopener"><span class="grow"><b>Terms of Service</b></span>${K.ic('chev', 'sm')}</a>
+          <a class="set-row" href="/privacy" target="_blank" rel="noopener"><span class="grow"><b>Privacy Policy</b></span>${K.ic('chev', 'sm')}</a>
+        </div>
+        <div class="set-card list" style="margin-top:22px"><button class="set-row danger" data-del><span class="grow"><b>Delete my account</b></span>${K.ic('chev', 'sm')}</button></div>
+        <p class="set-foot">Flytte ${role === 'driver' ? 'Driver ' : ''}1.0</p>`;
+      body.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { K.haptic(); K.setTheme(b.dataset.theme); draw(); });
+      body.querySelectorAll('[data-lang]').forEach((b) => b.onclick = () => { if (b.dataset.lang === K.lang()) return; K.haptic(); K.setLang(b.dataset.lang); });
+      K.$('[data-del]', body).onclick = () => deleteAccount(role);
+    };
+    draw();
+    return page;
+  };
+
+  function deleteAccount(role) {
+    const driver = role === 'driver';
+    const m = K.modal(`<div class="del-sheet"><div class="del-ic">${K.ic('logout')}</div><h2>Delete your account?</h2>
+      <p class="muted">This can’t be undone.</p>
+      <ul class="del-list">
+        <li>Your name, phone number${driver ? ', documents, photos' : ''}, saved places and emergency contact are erased.</li>
+        <li>${driver ? 'You’ll stop getting requests straight away.' : 'Any Flytte Wallet balance and Rewards points are lost.'}</li>
+        <li>Past trips and payments are kept only as anonymous records, as the law requires.</li>
+        <li>You can sign up again later with the same number.</li>
+      </ul>
+      <p class="error" role="alert"></p>
+      <button class="btn btn-block btn-lg btn-danger" data-go>Delete account</button>
+      <button class="btn btn-block btn-lg btn-ghost" data-close>Keep my account</button></div>`);
+    const go = K.$('[data-go]', m.el), err = K.$('.error', m.el);
+    const run = async (forfeit) => {
+      go.disabled = true; go.innerHTML = '<span class="spin"></span>Deleting…'; err.textContent = '';
+      try {
+        await K.api('/me/delete', { forfeit: !!forfeit });
+        K.session.clear(); try { localStorage.removeItem('flytte_onboarded'); } catch {}
+        m.close(); K.toast('Your account has been deleted.'); setTimeout(() => location.reload(), 900);
+      } catch (e) {
+        go.disabled = false; go.textContent = 'Delete account';
+        if (/Wallet has/.test(e.message) && !forfeit) { err.textContent = e.message; go.textContent = 'Delete anyway'; go.onclick = () => run(true); return; }
+        err.textContent = e.message;
+      }
+    };
+    go.onclick = () => run(false);
+  }
+
+  // ---------- appearance: Light, Dark or Automatic (follows the phone) ----------
+  // The choice is applied by a tiny script in each page's <head>, before the first frame.
+  K.themePref = () => { try { return localStorage.getItem('flytte_theme') || 'light'; } catch { return 'light'; } };
+  K.dark = () => document.documentElement.classList.contains('theme-dark');
+  const mqDark = matchMedia('(prefers-color-scheme: dark)');
+  K.applyTheme = function () {
+    const p = K.themePref(), dark = p === 'dark' || (p === 'auto' && mqDark.matches), was = K.dark();
+    document.documentElement.classList.toggle('theme-dark', dark);
+    const meta = document.querySelector('meta[name=theme-color]'); if (meta && APP !== 'admin') meta.content = dark ? '#000000' : '#FFFFFF';
+    if (was !== dark) (K._maps || []).forEach((g) => { try { g.setStyle(`https://tiles.openfreemap.org/styles/${dark ? 'dark' : 'liberty'}`); } catch {} });
+    if (typeof syncStrip === 'function') syncStrip();
+  };
+  K.setTheme = (p) => { try { localStorage.setItem('flytte_theme', p); } catch {} K.applyTheme(); };
+  (mqDark.addEventListener ? mqDark.addEventListener('change', K.applyTheme) : mqDark.addListener(K.applyTheme));
   const webgl = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })();
   // Crisp vector streets (OpenFreeMap, free, no API key). Falls back to plain
   // OpenStreetMap tiles on old phones without WebGL.
@@ -1060,6 +1146,7 @@
           attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © OpenStreetMap',
         }).addTo(m);
         const glMap = gl.getMaplibreMap && gl.getMaplibreMap();
+        if (glMap) (K._maps = K._maps || []).push(glMap);
         if (glMap) glMap.on('error', (e) => { if (!m._fellBack && /style|Failed to fetch/i.test(String(e && e.error && e.error.message))) { m._fellBack = true; m.removeLayer(gl); osm(); } });
       } catch { osm(); }
     } else osm();
