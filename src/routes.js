@@ -1062,7 +1062,9 @@ r.post('/push/subscribe', auth.requireAuth(), wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 r.post('/push/unsubscribe', auth.requireAuth(), wrap(async (req, res) => {
-  await dtools.unsubscribe(req.user.id, (req.body || {}).endpoint);
+  // all: switch alerts off for this account everywhere (also clears links from old installs).
+  if ((req.body || {}).all) await db.query('DELETE FROM push_subscriptions WHERE user_id = $1', [req.user.id]);
+  else await dtools.unsubscribe(req.user.id, (req.body || {}).endpoint);
   rt.markPush(req.user.id, await dtools.hasPush(req.user.id));
   res.json({ ok: true });
 }));

@@ -19,42 +19,61 @@
 
   // ---------- ride alerts (Web Push) ----------
   // With alerts on, a request still rings when the phone is locked or Flytte Driver is in the background.
-  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-  const b64ToU8 = (b64) => { const pad = '='.repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, (c) => c.charCodeAt(0)); };
+  // The driver's own choice is remembered on this phone and is never overridden: we only re-link
+  // quietly when they chose "on" and the phone lost its link (e.g. after an app update).
+  const pushSupported = () => K.push.supported();
+  const PREF = 'flytte_driver_alerts';
+  const alertPref = () => { try { return localStorage.getItem(PREF); } catch { return null; } };   // 'on' | 'off' | null
+  const setAlertPref = (v) => { try { localStorage.setItem(PREF, v); } catch {} };
+  let pushBusy = false;
+  // Real state of this phone: permission granted and a live subscription.
+  async function alertsOnHere() { S.alertsHere = !!(await K.push.current()); return S.alertsHere; }
+  const alertsShown = () => (S.alertsHere != null ? S.alertsHere : !!(S.ov && S.ov.push));
   async function enablePush(silent) {
-    if (!pushSupported()) {
-      if (!silent) K.toast(isIOS && !K.standalone() ? 'Add Flytte Driver to your Home Screen first (Share → Add to Home Screen), then turn on ride alerts.' : 'This browser can’t show ride alerts.', 6000);
-      return false;
-    }
+    if (pushBusy) return false;
+    pushBusy = true;
     try {
-      const perm = Notification.permission === 'granted' ? 'granted' : (silent ? Notification.permission : await Notification.requestPermission());
-      if (perm !== 'granted') { if (!silent) K.toast('Ride alerts are blocked. Allow notifications for Flytte Driver in your phone settings.', 6000); return false; }
-      const reg = await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) { const { key } = await K.api('/push/key'); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) }); }
-      await K.api('/push/subscribe', { subscription: sub.toJSON() });
+      if (silent && (!pushSupported() || Notification.permission !== 'granted')) return false;
+      await K.push.enable();
+      setAlertPref('on');
+      S.alertsHere = true;
       if (S.ov) S.ov.push = true;
       if (!silent) K.toast('Ride alerts are on. Requests will ring even when your phone is locked.', 5000);
       return true;
     } catch (e) {
-      if (!silent) K.toast(`Couldn’t turn on ride alerts: ${e.message}`, 6000);
+      if (!silent) K.toast(e.message, 6000);
       return false;
-    }
+    } finally { pushBusy = false; }
   }
   async function disablePush() {
+    if (pushBusy) return false;
+    pushBusy = true;
     try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) { await K.api('/push/unsubscribe', { endpoint: sub.endpoint }); await sub.unsubscribe(); }
+      setAlertPref('off');
+      const sub = await K.push.current();
+      if (sub) { try { await sub.unsubscribe(); } catch {} }
+      S.alertsHere = false;
+      await K.api('/push/unsubscribe', { all: true });
       if (S.ov) S.ov.push = false;
       K.toast('Ride alerts are off. Keep the app open to get requests.', 4500);
-    } catch (e) { K.toast(e.message); }
+      return true;
+    } catch (e) { K.toast(e.message); return false; }
+    finally { pushBusy = false; }
+  }
+  // Keeps the server in step with this phone, without ever undoing the driver's choice.
+  async function syncPush() {
+    if (!S.ov || pushBusy) return;
+    const here = await alertsOnHere();
+    if (alertPref() === 'off') { if (S.ov.push) { S.ov.push = false; K.api('/push/unsubscribe', { all: true }).catch(() => {}); } return; }
+    if (here && !S.ov.push) { enablePush(true); return; }                 // phone linked, server forgot: re-send
+    if (!here && alertPref() === 'on' && pushSupported() && Notification.permission === 'granted') enablePush(true);
+    if (!here && S.ov.push && Notification.permission !== 'granted') S.ov.push = false;   // blocked in phone settings
   }
 
   // ---------- overview: alerts, money owed, documents, heading home, bonuses ----------
   async function loadOverview() {
     try { S.ov = await K.api('/driver/overview'); } catch { return; }
-    if (!S.ov.push && pushSupported() && Notification.permission === 'granted') enablePush(true); // quietly re-link this phone
+    syncPush();
     const el = K.$('#tools');
     if (el && S.tab === 'home' && !S.trip) { el.innerHTML = toolsHtml(); bindTools(el); }
   }
@@ -63,7 +82,7 @@
   function toolsHtml() {
     const o = S.ov; if (!o) return '';
     const cards = [];
-    if (!o.push && S.online) {
+    if (!alertsShown() && S.online && alertPref() !== 'off') {   // not shown once they've chosen "off" in Profile
       const can = pushSupported();
       cards.push(`<div class="tool-card info"><span class="ic">${K.ic('bell')}</span><span class="grow"><b>Get requests when your phone is locked</b>
         <span>${can ? 'Turn on ride alerts so you don’t miss trips when the screen is off.' : isIOS && !K.standalone() ? 'Add Flytte Driver to your Home Screen (Share → Add to Home Screen), then open it from there to turn on ride alerts.' : 'This browser can’t show ride alerts. Keep the app open while online.'}</span></span>
@@ -288,6 +307,7 @@
     if (sock && (now - lastSent > 2500 || S.manual)) { sock.emit('driver:location', S.loc); lastSent = now; }
     updateBanner();
     if (K.Nav.active()) K.Nav.update(S.loc);
+    else if (first && S.trip) syncNav();   // a trip was accepted before the first GPS fix
   }
 
   // ---------- online ----------
@@ -517,8 +537,8 @@
     K.Nav.start({
       map, loc: S.loc, target, externalUrl: navLink(target),
       arriveLabel: toDrop ? (t.service === 'parcel' ? 'You’ve reached the drop-off' : 'You’ve reached the destination') : 'You’ve reached the pickup',
-      onArrive: () => { K.Nav.stop(true); routedFor = null; render(); },
-      onExit: () => { S.navOn = false; routedFor = null; render(); },
+      onArrive: () => { S.navSkip = `${t.id}:${t.status}`; K.Nav.stop(true); routedFor = null; render(); },
+      onExit: () => { S.navOn = false; S.navSkip = `${t.id}:${t.status}`; routedFor = null; render(); },
     });
   }
   function syncNav() {
@@ -527,8 +547,13 @@
     const target = t.status === 'in_progress' ? t.drop : t.pickup;
     const cur = K.Nav.target();
     if (cur && (cur.lat !== target.lat || cur.lng !== target.lng)) { K.Nav.stop(true); routedFor = null; }
-    if (S.navOn && !K.Nav.active() && t.status === 'in_progress') startNav();
+    if (K.Nav.active() || !S.loc || S.offer) return;
+    // Directions open by themselves on accepting and when the trip starts (unless the driver
+    // switched that off, or closed navigation for this leg).
+    const leg = `${t.id}:${t.status}`;
+    if ((S.navOn && t.status === 'in_progress') || (autoNav() && S.navSkip !== leg && ['accepted', 'in_progress'].includes(t.status))) startNav();
   }
+  const autoNav = () => { try { return localStorage.getItem('flytte_auto_nav') !== 'off'; } catch { return true; } };
 
   // Screen 19: active trip
   function vTrip() {
@@ -899,7 +924,8 @@
       <button class="menu-item" data-a="identity"><span class="ic">${K.ic('user')}</span><span class="grow">Photo & vehicle<br><span class="small muted">${identitySub()}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="trips"><span class="ic">${K.ic('receipt')}</span><span class="grow">Trip history</span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="docs"><span class="ic">${K.ic('idcard')}</span><span class="grow">Documents<br><span class="small muted">${S.ov && S.ov.docs && S.ov.docs.length ? `<span style="color:var(--stop)">${S.ov.docs.length} need${S.ov.docs.length === 1 ? 's' : ''} attention</span>` : 'ID, driving permit, insurance, vehicle, photo'}</span></span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="alerts"><span class="ic">${K.ic('bell')}</span><span class="grow">Ride alerts<br><span class="small muted">${S.ov && S.ov.push ? 'On · requests ring when your phone is locked' : pushSupported() ? 'Off · turn on to get requests when your phone is locked' : isIOS && !K.standalone() ? 'Add the app to your Home Screen to use them' : 'Not available in this browser'}</span></span>${S.ov && S.ov.push ? '<span class="badge ok">On</span>' : K.ic('chev', 'sm')}</button>
+      <button class="menu-item" data-a="alerts" role="switch" aria-checked="${alertsShown()}" ${pushSupported() ? '' : 'disabled'}><span class="ic">${K.ic('bell')}</span><span class="grow">Ride alerts<br><span class="small muted">${alertsShown() ? 'On · requests ring when your phone is locked' : pushSupported() ? (Notification.permission === 'denied' ? 'Blocked · allow notifications for Flytte Driver in your phone settings' : 'Off · turn on to get requests when your phone is locked') : isIOS && !K.standalone() ? 'Add the app to your Home Screen to use them' : 'Not available in this browser'}</span></span>${pushSupported() ? `<span class="set-switch${alertsShown() ? ' on' : ''}" aria-hidden="true"><i></i></span>` : ''}</button>
+      <button class="menu-item" data-a="autonav" role="switch" aria-checked="${autoNav()}"><span class="ic">${K.ic('nav')}</span><span class="grow">Start navigation automatically<br><span class="small muted">${autoNav() ? 'Flytte directions open when you accept a trip' : 'Off · tap Navigate on a trip to open directions'}</span></span><span class="set-switch${autoNav() ? ' on' : ''}" aria-hidden="true"><i></i></span></button>
       <button class="menu-item" data-a="manual"><span class="ic">${K.ic('pin')}</span><span class="grow">${S.manual ? 'Use phone GPS' : 'Set position on map'}<br><span class="small muted">For testing without GPS</span></span></button>
       ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Driver support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
       <button class="menu-item" data-a="settings"><span class="ic">${K.ic('settings')}</span><span class="grow">Settings<br><span class="small muted">Appearance, language, privacy</span></span>${K.ic('chev', 'sm')}</button>
@@ -910,7 +936,18 @@
       trips: openTrips,
       docs: openDocs,
       identity: () => openIdentity(() => drawProfile(el)),
-      alerts: async () => { if (S.ov && S.ov.push) await disablePush(); else await enablePush(false); await loadOverview(); drawProfile(el); },
+      alerts: async () => {
+        if (pushBusy) return;
+        // Decide from the state we already know: no waiting before the permission prompt (iOS needs it in the tap).
+        const on = alertsShown();
+        const btn = el.querySelector('[data-a="alerts"]'), sw = btn && btn.querySelector('.set-switch');
+        if (sw) sw.classList.toggle('on', !on);
+        if (btn) btn.disabled = true;
+        if (on) await disablePush(); else await enablePush(false);
+        await alertsOnHere();
+        await loadOverview(); drawProfile(el);
+      },
+      autonav: () => { try { localStorage.setItem('flytte_auto_nav', autoNav() ? 'off' : 'on'); } catch {} K.haptic && K.haptic(); drawProfile(el); },
       manual: () => { if (S.manual) { S.manual = false; startGps(); } else { S.manual = true; navigator.geolocation && navigator.geolocation.clearWatch(watchId); K.toast('Tap the map to move your position.'); } openTab('home'); },
       settings: () => K.openSettings({ role: 'driver', onBack: () => drawProfile(el) }),
       out: () => { if (S.online) setOnline(false); K.session.clear(); location.reload(); },
