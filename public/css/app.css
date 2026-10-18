@@ -1793,3 +1793,4 @@ html.theme-dark .nav-btn { background: #2C2C2E; }
 @keyframes navIn { from { transform: translateY(-14px); opacity: 0; } }
 @keyframes navUp { from { transform: translateY(14px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .nav-top, .nav-bot { animation: none; } }
+.nav-ui [hidden] { display: none !important; }
