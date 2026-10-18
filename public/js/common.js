@@ -1104,8 +1104,8 @@
     const done = (u) => { clearInterval(tick); onDone && onDone(u); };
     const step1 = () => {
       host.innerHTML = `<form class="email-flow" novalidate>
-        <h1>Get receipts by email</h1>
-        <p class="lead">We’ll email a receipt after every trip. Handy for work expenses.</p>
+        <h1>Add your email</h1>
+        <p class="lead">Stay in the loop with your trips and your Flytte account.</p>
         <label for="em" class="sr-only">Email address</label>
         <input id="em" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="you@example.com" value="${K.esc(addr)}">
         <p class="error" role="alert"></p>
@@ -1148,7 +1148,7 @@
       const sk = K.$('[data-skip]', host); if (sk) sk.onclick = () => done(null);
       const go = async () => {
         err.textContent = '';
-        try { const out = await K.api('/me/email/verify', { code: inp.value }); K.toast('Email confirmed. Receipts will come here.'); done(out.user); }
+        try { const out = await K.api('/me/email/verify', { code: inp.value }); K.toast('Email confirmed'); done(out.user); }
         catch (ex) { err.textContent = ex.message; inp.value = ''; inp.focus(); }
       };
       inp.oninput = () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 6); if (inp.value.length === 6) go(); };
