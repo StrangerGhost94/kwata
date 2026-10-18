@@ -1794,3 +1794,18 @@ html.theme-dark .nav-btn { background: #2C2C2E; }
 @keyframes navUp { from { transform: translateY(14px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .nav-top, .nav-bot { animation: none; } }
 .nav-ui [hidden] { display: none !important; }
+
+/* Signed-in launch v3: behaves like a native launch screen.
+   Static from the first frame (no fade-in from blank), follows the chosen theme, and leaves in two
+   beats: the logo goes first, then the background clears, so the logo never ghosts over the map. */
+html:not(.launch-dark) .splash .sp-icon, html:not(.launch-dark) .splash .sp-name, html:not(.launch-dark) .splash .sp-tag { animation: none; }
+html:not(.launch-dark) .splash .sp-center { transition: opacity .2s ease, transform .3s cubic-bezier(.32,.72,0,1); }
+html:not(.launch-dark) .splash.out .sp-center { opacity: 0; transform: scale(.94); }
+html:not(.launch-dark) .splash.out .sp-load { opacity: 0; transition: opacity .15s; }
+html:not(.launch-dark) .splash.out { transition: opacity .32s cubic-bezier(.4,0,.2,1) .1s, visibility 0s linear .42s; }
+html.theme-dark:not(.launch-dark) .splash { background: #000; }
+html.theme-dark:not(.launch-dark) .sp-icon { background: linear-gradient(160deg, #2A2B2F, #141416); box-shadow: 0 14px 34px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.1); }
+html.theme-dark:not(.launch-dark) .sp-name { color: #fff; }
+html.theme-dark:not(.launch-dark) .sp-name span { color: var(--brand); }
+html.theme-dark:not(.launch-dark) .sp-tag { color: #8E8E93; }
+html.theme-dark:not(.launch-dark) .sp-load { background: rgba(255,255,255,.14); }

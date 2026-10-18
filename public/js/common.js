@@ -513,8 +513,9 @@
     const photoMode = document.documentElement.classList.contains('launch-dark') && sp.querySelector('.sp-photo');
     if (photoMode) return settleIntoSignIn(sp, quick);
     if (quick) sp.classList.add('quick');
-    const wait = Math.max(0, (quick ? 350 : 1300) - (performance.now() - T0));
-    setTimeout(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 400); }, wait);
+    // The launch screen is static (like a native one), so it only needs to stay long enough to read.
+    const wait = Math.max(0, (quick ? 250 : 900) - (performance.now() - T0));
+    setTimeout(() => requestAnimationFrame(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 480); }), wait);
   };
 
   // Signed out: the launch photo becomes the sign-in page. The page is drawn underneath in the same
