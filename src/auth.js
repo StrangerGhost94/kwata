@@ -76,6 +76,7 @@ function publicUser(u) {
     savedPlaces: (() => { try { return JSON.parse(u.saved_places || '{}'); } catch { return {}; } })(),
     payPref: u.pay_pref || 'cash', payPhone: u.pay_phone || u.phone,
     walletLock: !!u.wallet_lock,
+    emailVerified: !!u.email_verified, emailReceipts: u.email_receipts !== false,
   };
 }
 

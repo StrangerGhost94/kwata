@@ -176,6 +176,7 @@ async function activateScheduled() {
   await seedAdmin();
   const server = http.createServer(app);
   rt.init(server);
+  require('./src/receipts').start();   // trip receipts by email
   await resumeDispatch();
   setInterval(() => activateScheduled().catch(console.error), 30e3);
   setTimeout(() => activateScheduled().catch(console.error), 5000);

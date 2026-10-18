@@ -51,6 +51,7 @@
     chevDown: '<path d="m6 9 6 6 6-6"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     locate: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/>',
+    mail: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/>',
     lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
     refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
@@ -725,8 +726,16 @@
     const bindChip = () => { const c = root.querySelector('[data-chg]'); if (c) c.onclick = () => { dir = 'back'; phoneStep(); }; };
     const wrongApp = { driver: 'This number belongs to a driver account. Open the Flytte Driver app to sign in.', rider: 'This number has a rider account. Use a different number to drive with Flytte.', admin: 'This is a staff account.' };
     const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.innerHTML = on ? '<span class="spin" aria-hidden="true"></span><span class="sr-only">Loading</span>' : btn.dataset.label; };
-    const finish = async (out) => {
+    const finish = async (out, { isNew } = {}) => {
       K.session.set(out);
+      // New riders: optional email for receipts, right after the account is made (skippable).
+      if (isNew && role === 'rider') {
+        const c = await K.cfg().catch(() => ({}));
+        if (c.emailReceipts) await new Promise((resolve) => {
+          shell('<div class="auth-body" data-email></div>', null);
+          K.emailFlow(root.querySelector('[data-email]'), { skip: 'Skip for now', onDone: (u) => { if (u) { out.user = u; K.session.set(out); } resolve(); } });
+        });
+      }
       if (role === 'rider') await K.askLocation(root);
       // Installed iPhone app: reopen once so iOS takes the white strip under the clock from the
       // white launch screen (the signed-out screens launched it dark).
@@ -758,7 +767,7 @@
         if (f.pw && f.pw.value.length < 6) { err.textContent = 'Your password needs at least 6 characters.'; f.pw.focus(); return; }
         const inviteCode = f.ic && f.ic.value.trim() ? f.ic.value.trim().toUpperCase() : undefined;
         busy(f, true);
-        try { const out = await K.api('/auth/register', { name: draft.name, phone: draft.e164, password: f.pw ? f.pw.value : undefined, phoneToken: draft.phoneToken, role: 'rider', inviteCode }); try { localStorage.removeItem('flytte_ref'); } catch {} await finish(out); }
+        try { const out = await K.api('/auth/register', { name: draft.name, phone: draft.e164, password: f.pw ? f.pw.value : undefined, phoneToken: draft.phoneToken, role: 'rider', inviteCode }); try { localStorage.removeItem('flytte_ref'); } catch {} await finish(out, { isNew: true }); }
         catch (ex) { if (/already has an account/.test(ex.message) && !draft.phoneToken) { passwordStep(); return; } if (/SMS code first/.test(ex.message)) { draft.phoneToken = null; phoneStep(); return; } err.textContent = ex.message; busy(f, false); }
       };
     }
@@ -1086,6 +1095,67 @@
     }
     return { supported, enable, disable, current, iosBrowser };
   })();
+
+  // ---------- Email for receipts ----------
+  // Two steps rendered into any host element: the address, then the 6-digit code from the email.
+  // opts: { skip: label for a skip link (sign-up), onDone(user|null), current: existing email }
+  K.emailFlow = function (host, { skip, onDone, current } = {}) {
+    let addr = current || '', resendAt = 0, tick;
+    const done = (u) => { clearInterval(tick); onDone && onDone(u); };
+    const step1 = () => {
+      host.innerHTML = `<form class="email-flow" novalidate>
+        <h1>Get receipts by email</h1>
+        <p class="lead">We’ll email a receipt after every trip. Handy for work expenses.</p>
+        <label for="em" class="sr-only">Email address</label>
+        <input id="em" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="you@example.com" value="${K.esc(addr)}">
+        <p class="error" role="alert"></p>
+        <button class="btn btn-primary btn-block btn-lg" type="submit">Continue</button>
+        ${skip ? `<button type="button" class="link-btn email-skip" data-skip>${K.esc(skip)}</button>` : ''}
+      </form>`;
+      const f = K.$('form', host), inp = K.$('#em', host), err = K.$('.error', host), btn = K.$('button[type=submit]', host);
+      setTimeout(() => inp.focus({ preventScroll: true }), 450);
+      const sk = K.$('[data-skip]', host); if (sk) sk.onclick = () => done(null);
+      f.onsubmit = async (e) => {
+        e.preventDefault(); err.textContent = '';
+        const v = inp.value.trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) { err.textContent = 'Enter a valid email address.'; inp.focus(); return; }
+        btn.disabled = true;
+        try {
+          const out = await K.api('/me/email', { email: v });
+          if (out.already) { K.toast('That email is already confirmed'); done(null); return; }
+          addr = out.email; resendAt = Date.now() + (out.resendIn || 30) * 1000;
+          if (out.demoCode) K.toast(`Test mode: your email code is ${out.demoCode}`, 8000);
+          step2();
+        } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+      };
+    };
+    const step2 = () => {
+      host.innerHTML = `<form class="email-flow" novalidate>
+        <h1>Check your email</h1>
+        <p class="lead">Enter the 6-digit code we sent to <b>${K.esc(addr)}</b></p>
+        <input id="ec" class="pin-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······" aria-label="6-digit code">
+        <p class="error" role="alert"></p>
+        <button class="btn btn-primary btn-block btn-lg" type="submit">Confirm email</button>
+        <p class="fine"><button type="button" class="link-btn" data-resend disabled></button> · <button type="button" class="link-btn" data-change>Use a different email</button></p>
+        ${skip ? `<button type="button" class="link-btn email-skip" data-skip>${K.esc(skip)}</button>` : ''}
+      </form>`;
+      const f = K.$('form', host), inp = K.$('#ec', host), err = K.$('.error', host), rs = K.$('[data-resend]', host);
+      setTimeout(() => inp.focus({ preventScroll: true }), 450);
+      const timer = () => { const left = Math.ceil((resendAt - Date.now()) / 1000); rs.disabled = left > 0; rs.textContent = left > 0 ? `Resend code in 0:${String(left).padStart(2, '0')}` : 'Resend code'; };
+      clearInterval(tick); tick = setInterval(timer, 1000); timer();
+      rs.onclick = async () => { rs.disabled = true; try { const out = await K.api('/me/email', { email: addr }); resendAt = Date.now() + (out.resendIn || 30) * 1000; if (out.demoCode) K.toast(`Test mode: your email code is ${out.demoCode}`, 8000); K.toast('Code resent'); } catch (ex) { err.textContent = ex.message; } timer(); };
+      K.$('[data-change]', host).onclick = () => { clearInterval(tick); step1(); };
+      const sk = K.$('[data-skip]', host); if (sk) sk.onclick = () => done(null);
+      const go = async () => {
+        err.textContent = '';
+        try { const out = await K.api('/me/email/verify', { code: inp.value }); K.toast('Email confirmed. Receipts will come here.'); done(out.user); }
+        catch (ex) { err.textContent = ex.message; inp.value = ''; inp.focus(); }
+      };
+      inp.oninput = () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 6); if (inp.value.length === 6) go(); };
+      f.onsubmit = (e) => { e.preventDefault(); if (inp.value.length !== 6) { err.textContent = 'Enter all 6 digits.'; return; } go(); };
+    };
+    step1();
+  };
 
   // ---------- Wallet lock: fingerprint / face (passkeys) ----------
   // Money leaves a locked wallet only after the phone's own fingerprint or face unlock (checked by

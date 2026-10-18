@@ -268,6 +268,19 @@ async function migrate() {
   );
   CREATE INDEX IF NOT EXISTS driver_changes_idx ON driver_changes(status, driver_id);
   ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_lock BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS email_receipts BOOLEAN NOT NULL DEFAULT TRUE;
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ;
+  CREATE TABLE IF NOT EXISTS email_codes (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    expires_at BIGINT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    sent_at BIGINT NOT NULL,
+    hour_start BIGINT NOT NULL,
+    sends_hour INTEGER NOT NULL DEFAULT 1
+  );
   CREATE TABLE IF NOT EXISTS passkeys (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

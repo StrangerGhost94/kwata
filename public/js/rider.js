@@ -1529,6 +1529,7 @@
       <button class="menu-item" data-a="pay"><span class="ic">${K.ic('card')}</span><span class="grow">Payment methods<br><span class="small muted">${P.name}</span></span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="places"><span class="ic">${K.ic('pin')}</span><span class="grow">Saved places</span>${K.ic('chev', 'sm')}</button>
       <button class="menu-item" data-a="wallet"><span class="ic">${K.ic('wallet')}</span><span class="grow">Flytte Wallet<br><span class="small muted">${K.ugx(u.walletBalance)}</span></span>${K.ic('chev', 'sm')}</button>
+      ${S.config.emailReceipts || u.email ? `<button class="menu-item" data-a="email"><span class="ic">${K.ic('mail')}</span><span class="grow">Email<br><span class="small muted">${u.email && u.emailVerified ? `${u.emailReceipts ? 'Receipts to' : 'Receipts off ·'} ${K.esc(u.email)}` : 'Add an email for trip receipts'}</span></span>${K.ic('chev', 'sm')}</button>` : ''}
       <button class="menu-item" data-a="safety"><span class="ic">${K.ic('shield')}</span><span class="grow">Safety<br><span class="small muted">${u.emergencyContact ? 'Emergency contact ' + K.esc(prettyPhone(u.emergencyContact)) : 'Add an emergency contact'}</span></span>${K.ic('chev', 'sm')}</button>
       ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Help & Support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
       <button class="menu-item" data-a="settings"><span class="ic">${K.ic('settings')}</span><span class="grow">Settings<br><span class="small muted">Appearance, language, privacy</span></span>${K.ic('chev', 'sm')}</button>
@@ -1543,9 +1544,35 @@
       else if (a === 'places') openPlaces(redraw);
       else if (a === 'wallet') openWallet(redraw);
       else if (a === 'safety') openEmergency(redraw);
+      else if (a === 'email') openEmail(redraw);
       else if (a === 'settings') K.openSettings({ role: 'rider', onBack: redraw });
       else if (a === 'out') { K.session.clear(); location.reload(); }
     });
+  }
+
+  // Email for receipts: add/confirm, switch receipts on or off, or remove it.
+  function openEmail(after) {
+    const u = S.user;
+    const apply = (nu) => { if (nu) { Object.assign(S.user, nu); const sess = K.session.get(); if (sess) { sess.user = { ...sess.user, ...nu }; K.session.set(sess); } } };
+    if (!(u.email && u.emailVerified)) {
+      const m = K.modal('<div class="email-modal" data-host></div>');
+      K.emailFlow(K.$('[data-host]', m.el), { current: u.email || '', onDone: (nu) => { apply(nu); m.close(); after && after(); } });
+      return;
+    }
+    const m = K.modal(`<div class="email-modal"><h2>Email</h2>
+      <p class="small muted" style="margin:0 0 12px">${K.esc(u.email)} · Confirmed</p>
+      <div class="set-card list"><button class="set-row" id="rcpt" role="switch" aria-checked="${u.emailReceipts}"><span class="grow"><b>Trip receipts</b><small>Emailed a few minutes after each paid trip</small></span><span class="set-switch${u.emailReceipts ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
+      <button class="btn btn-block" id="chg" style="margin-top:14px">Change email</button>
+      <button class="btn btn-ghost btn-block" id="rm" style="color:var(--stop)">Remove email</button></div>`);
+    K.$('#rcpt', m.el).onclick = async () => {
+      try { const out = await K.api('/me/email/settings', { receipts: !S.user.emailReceipts }); apply(out.user); m.close(); setTimeout(() => openEmail(after), 280); after && after(); }
+      catch (e) { K.toast(e.message); }
+    };
+    K.$('#chg', m.el).onclick = () => { const host = m.el.querySelector('.email-modal'); K.emailFlow(host, { onDone: (nu) => { apply(nu); m.close(); after && after(); } }); };
+    K.$('#rm', m.el).onclick = async () => {
+      try { const out = await K.api('/me/email/settings', { remove: true }); apply(out.user); m.close(); K.toast('Email removed'); after && after(); }
+      catch (e) { K.toast(e.message); }
+    };
   }
 
   // Screen 13: payment methods

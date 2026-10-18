@@ -69,6 +69,7 @@ r.get('/config', wrap(async (req, res) => {
     paymentsAvailable: payments.available(),     // Mobile Money / card / top-ups can be used (live or local demo)
     paymentsDemo: payments.demo(),
     smsLogin: sms.enabled() || wa.enabled() || tg.enabled(), // sign in with a one-time code instead of a password
+    emailReceipts: require('./email').enabled(),   // riders can add an email for trip receipts
     codeChannels: [...(wa.enabled() ? ['whatsapp'] : []), ...(tg.enabled() ? ['telegram'] : []), ...(sms.enabled() ? ['sms'] : [])], // where the code can be sent
     commissionPct: s.commissionPct,
     supportPhone: supportPhone(s),
@@ -290,6 +291,63 @@ r.post('/auth/check', limit(20, 10 * 60e3), wrap(async (req, res) => {
   res.json({ exists: !!u, role: u ? u.role : null });
 }));
 
+// ---------- Email for receipts (verified with a 6-digit code) ----------
+const mailer = require('./email');
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+r.post('/me/email', auth.requireAuth('rider'), limit(10, 10 * 60e3), wrap(async (req, res) => {
+  if (!mailer.enabled()) return bad(res, 'Email isn’t available yet.', 503);
+  const addr = String((req.body || {}).email || '').trim().toLowerCase().slice(0, 120);
+  if (!EMAIL_RE.test(addr)) return bad(res, 'Enter a valid email address.');
+  if (req.user.email_verified && req.user.email === addr) return res.json({ ok: true, already: true });
+  const now = Date.now();
+  const row = await db.one('SELECT * FROM email_codes WHERE user_id = $1', [req.user.id]);
+  if (row && now - Number(row.sent_at) < OTP_RESEND) return bad(res, `Wait ${Math.ceil((OTP_RESEND - (now - Number(row.sent_at))) / 1000)} seconds before asking for another code.`, 429);
+  const sameHour = row && now - Number(row.hour_start) < 3600e3;
+  if (sameHour && row.sends_hour >= OTP_PER_HOUR) return bad(res, 'Too many codes. Try again in an hour.', 429);
+  const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
+  await db.query(`INSERT INTO email_codes(user_id, email, code_hash, expires_at, attempts, sent_at, hour_start, sends_hour) VALUES ($1,$2,$3,$4,0,$5,$6,$7)
+    ON CONFLICT (user_id) DO UPDATE SET email = $2, code_hash = $3, expires_at = $4, attempts = 0, sent_at = $5, hour_start = $6, sends_hour = $7`,
+  [req.user.id, addr, auth.hashCode('email:' + addr, code), now + 15 * 60e3, now, sameHour ? Number(row.hour_start) : now, sameHour ? row.sends_hour + 1 : 1]);
+  const first = String(req.user.name || '').trim().split(/\s+/)[0] || 'there';
+  try {
+    await mailer.send({ to: addr, tag: 'verify', subject: `${code} is your Flytte email code`,
+      text: `Hi ${first},\n\nYour Flytte code is ${code}. Enter it in the app to confirm this email for trip receipts. It expires in 15 minutes.\n\nIf you didn’t ask for this, you can ignore this email.`,
+      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:440px;margin:0 auto;padding:28px 20px;color:#141414"><div style="font-size:20px;font-weight:800;margin-bottom:18px"><span style="background:#FFC400;border-radius:8px;padding:3px 9px;margin-right:8px">F</span>Flytte</div><p style="font-size:15px;margin:0 0 14px">Hi ${first.replace(/[<>&"]/g, '')}, enter this code in the app to confirm your email for trip receipts:</p><p style="font-size:34px;font-weight:800;letter-spacing:.18em;margin:0 0 14px">${code}</p><p style="font-size:13px;color:#6b6b70;margin:0">It expires in 15 minutes. If you didn’t ask for this, you can ignore this email.</p></div>` });
+  } catch (e) {
+    await db.query('DELETE FROM email_codes WHERE user_id = $1', [req.user.id]);
+    return bad(res, 'We couldn’t send the email. Check the address and try again.', 502);
+  }
+  res.json({ ok: true, email: addr, resendIn: OTP_RESEND / 1000, ...(mailer.demo() ? { demoCode: code } : {}) });
+}));
+r.post('/me/email/verify', auth.requireAuth('rider'), limit(20, 10 * 60e3), wrap(async (req, res) => {
+  const code = String((req.body || {}).code || '').replace(/\D/g, '');
+  if (code.length !== 6) return bad(res, 'Enter the 6-digit code.');
+  const row = await db.one('SELECT * FROM email_codes WHERE user_id = $1', [req.user.id]);
+  if (!row || Date.now() > Number(row.expires_at)) return bad(res, 'That code has expired. Ask for a new one.');
+  if (row.attempts >= OTP_TRIES) return bad(res, 'Too many wrong tries. Ask for a new code.');
+  const a = Buffer.from(auth.hashCode('email:' + row.email, code)), b = Buffer.from(row.code_hash);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    await db.query('UPDATE email_codes SET attempts = attempts + 1 WHERE user_id = $1', [req.user.id]);
+    return bad(res, row.attempts + 1 >= OTP_TRIES ? 'Too many wrong tries. Ask for a new code.' : 'That code isn’t right. Check the email and try again.');
+  }
+  await db.query('DELETE FROM email_codes WHERE user_id = $1', [req.user.id]);
+  const u = await db.one('UPDATE users SET email = $1, email_verified = TRUE, email_receipts = TRUE WHERE id = $2 RETURNING *', [row.email, req.user.id]);
+  res.json({ ok: true, user: auth.publicUser(u) });
+}));
+// Local testing only (demo email, never on a live server): read the outbox and send due receipts now.
+r.get('/dev/emails', wrap(async (req, res) => {
+  if (!mailer.demo()) return bad(res, 'Not found.', 404);
+  if (req.query.run) await require('./receipts').sendDue({ delaySec: 0 });
+  res.json(mailer._outbox.slice(-20).map((m) => ({ to: m.to, subject: m.subject, tag: m.tag, text: m.text, html: m.html })));
+}));
+r.post('/me/email/settings', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const b = req.body || {};
+  let u;
+  if (b.remove) u = await db.one('UPDATE users SET email = NULL, email_verified = FALSE WHERE id = $1 RETURNING *', [req.user.id]);
+  else u = await db.one('UPDATE users SET email_receipts = $1 WHERE id = $2 RETURNING *', [b.receipts !== false, req.user.id]);
+  res.json({ ok: true, user: auth.publicUser(u) });
+}));
+
 // ---------- Wallet lock (fingerprint / face) ----------
 const walletlock = require('./walletlock');
 const wl = (fn) => wrap(async (req, res) => { try { res.json(await fn(req, res)); } catch (e) { if (e.status) return bad(res, e.message, e.status); throw e; } });
@@ -458,8 +516,8 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
     await db.query('UPDATE users SET saved_places = $1 WHERE id = $2', [JSON.stringify(current), req.user.id]);
   }
   const u = await db.one(
-    'UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), emergency_contact = COALESCE($3, emergency_contact) WHERE id = $4 RETURNING *',
-    [name ? clean(name, 80) : null, email ? String(email).trim().slice(0, 120) : null, ec, req.user.id]);
+    'UPDATE users SET name = COALESCE($1, name), emergency_contact = COALESCE($2, emergency_contact) WHERE id = $3 RETURNING *',
+    [name ? clean(name, 80) : null, ec, req.user.id]);   // email changes go through /me/email (confirmed with a code)
   res.json({ user: auth.publicUser(u) });
 }));
 
