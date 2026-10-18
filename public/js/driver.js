@@ -399,7 +399,7 @@
 
   // A small sketch of the trip: you → pickup (dashed) → destination (gold).
   function routeSketch(o) {
-    const pts = [S.loc, o.pickup, o.drop].filter(Boolean);
+    const pts = [S.loc, o.pickup, o.drop && o.drop.lat != null ? o.drop : null].filter(Boolean);
     const W = 300, H = 92, pad = 14;
     const kx = Math.cos((o.pickup.lat * Math.PI) / 180);
     const xs = pts.map((p) => p.lng * kx), ys = pts.map((p) => -p.lat);
@@ -407,14 +407,14 @@
     const sc = Math.min((W - 2 * pad) / Math.max(maxX - minX, 1e-4), (H - 2 * pad) / Math.max(maxY - minY, 1e-4));
     const ox = (W - (maxX - minX) * sc) / 2, oy = (H - (maxY - minY) * sc) / 2;
     const P = (p) => [ox + (p.lng * kx - minX) * sc, oy + (-p.lat - minY) * sc].map((v) => v.toFixed(1));
-    const [px, py] = P(o.pickup), [dx, dy] = P(o.drop);
+    const [px, py] = P(o.pickup), [dx, dy] = o.drop && o.drop.lat != null ? P(o.drop) : P(o.pickup);
     const you = S.loc ? P(S.loc) : null;
     return `<svg class="route-sketch" viewBox="0 0 ${W} ${H}" aria-hidden="true">
       ${you ? `<line x1="${you[0]}" y1="${you[1]}" x2="${px}" y2="${py}" stroke="#8E8E93" stroke-width="2.5" stroke-dasharray="4 5" stroke-linecap="round"/>` : ''}
-      <line x1="${px}" y1="${py}" x2="${dx}" y2="${dy}" stroke="#F2B705" stroke-width="4" stroke-linecap="round"/>
+      ${o.drop && o.drop.hidden ? '' : `<line x1="${px}" y1="${py}" x2="${dx}" y2="${dy}" stroke="#F2B705" stroke-width="4" stroke-linecap="round"/>`}
       ${you ? `<circle cx="${you[0]}" cy="${you[1]}" r="6" fill="#0A84FF" stroke="#fff" stroke-width="2.5"/>` : ''}
       <circle cx="${px}" cy="${py}" r="6.5" fill="#fff" stroke="#141414" stroke-width="3"/>
-      <rect x="${(dx - 6).toFixed(1)}" y="${(dy - 6).toFixed(1)}" width="12" height="12" rx="2" fill="#141414"/></svg>`;
+      ${o.drop && o.drop.hidden ? '' : `<rect x="${(dx - 6).toFixed(1)}" y="${(dy - 6).toFixed(1)}" width="12" height="12" rx="2" fill="#141414"/>`}</svg>`;
   }
 
   function vOffer() {
@@ -437,8 +437,9 @@
           <span class="badge" style="background:var(--ink);color:#fff">${K.esc(K.SERVICE_LABEL[o.service])}</span></div>
         <div class="stops">
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(o.pickup.address)}</b></span></div>
-          <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination · ${o.distanceKm.toFixed(1)} km, ${Math.round(o.durationMin)} min</small><b class="ellipsis">${K.esc(o.drop.address)}</b></span></div>
+          <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination · ${o.distanceKm.toFixed(1)} km, ${Math.round(o.durationMin)} min</small><b class="ellipsis">${o.drop.hidden ? 'Shown after you accept' : K.esc(o.drop.address)}</b></span></div>
         </div>
+        ${o.notes ? `<p class="note-line">${K.ic('msg', 'sm')}<span><small>Pickup note</small>${K.esc(o.notes)}</span></p>` : ''}
         <div class="est"><div class="est-row"><span><small>You earn</small><b>${K.ugx(o.earning)}</b></span>
           <span class="est-side"><b>${totalMin} min</b><small>in total</small><b>${K.ugx(perKm)}</b><small>per km</small></span></div>
           <span class="small muted" style="display:block">${o.paymentMethod === 'cash' && o.discount ? `Collect ${K.ugx(o.payable)} cash · Flytte pays the ${K.ugx(o.discount)} discount` : `Fare ${K.ugx(o.fare)} · ${o.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[o.paymentMethod]}`}</span>
@@ -547,6 +548,7 @@
         <button class="round brand" id="chatBtn" aria-label="Message ${customer(t)}">${K.ic('msg')}${S.unread ? '<span class="dot"></span>' : ''}</button></div>
       ${nextChip}
       ${parcel}
+      ${t.notes && t.status !== 'in_progress' ? `<p class="note-line">${K.ic('msg', 'sm')}<span><small>Pickup note from ${K.esc(K.first(r.name))}</small>${K.esc(t.notes)}</span></p>` : ''}
       ${t.status === 'arrived' ? '<div class="wait-box" id="wait" role="timer" aria-live="off"></div>' : ''}
       <div class="stops">
         <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
@@ -779,6 +781,7 @@
       <div class="seg-tabs"><button aria-pressed="false" data-r="today">Today</button><button aria-pressed="true" data-r="week">This week</button></div>
       <div id="range"></div>
       <div class="chart" aria-label="Earnings for the last 7 days">${e.days.map((d) => `<div class="b ${d.net ? '' : 'zero'} ${d.day === today ? 'today' : ''}" title="${dayName(d.day)}: ${K.ugx(d.net)}"><i style="height:${Math.max(2, (d.net / max) * 100)}%"></i><span>${dayName(d.day)}</span></div>`).join('')}</div>
+      ${weekSummary(e)}
       <div class="kv"><span>Completed trips</span><b>${e.week.trips}</b></div>
       <div class="kv"><span>Cash collected</span><b>${K.ugx(e.cashWeek)}</b></div>
       <div class="kv"><span>Flytte commission</span><b>−${K.ugx(e.commissionWeek)}</b></div>
@@ -807,6 +810,21 @@
     const pd = K.$('#payd', el); if (pd) pd.onclick = async () => { if (!S.ov) await loadOverview(); if (S.ov) payDebt(); };
     el.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { el.querySelectorAll('[data-d]').forEach((x) => x.setAttribute('aria-pressed', x === b)); drawTrips(K.$('#tlist', el), +b.dataset.d); });
     drawTrips(K.$('#tlist', el), 1);
+  }
+
+  // This week against last week, average per trip, and when riders book most.
+  function weekSummary(e) {
+    const sm = e.summary; if (!sm) return '';
+    const now = e.week.net, before = sm.prevWeek.net;
+    const diff = before ? Math.round(((now - before) / before) * 100) : null;
+    const trend = diff == null ? (now ? 'Your first week of earnings' : 'No trips yet this week')
+      : diff === 0 ? 'Same as last week' : `${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)}% vs last week (${K.ugx(before)})`;
+    const hr = (h) => `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`;
+    return `<div class="week-sum">
+      <div class="ws-row"><span><small>Compared with last week</small><em class="${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}">${trend}</em></span>
+        <span class="ws-side"><small>Average per trip</small><b>${sm.avgTrip ? K.ugx(sm.avgTrip) : '—'}</b></span></div>
+      ${sm.busyHours.length ? `<p class="ws-tip">${K.ic('clock', 'sm')}<span>Riders book most around <b>${sm.busyHours.map((x) => hr(x.hour)).join(', ')}</b>. Being online then usually means shorter waits between trips.</span></p>` : ''}
+    </div>`;
   }
 
   // Trip-by-trip breakdown, plus a statement the driver can save or print.
@@ -1051,7 +1069,36 @@
     const list = await K.api('/trips/history').catch(() => []);
     if (!m.el.isConnected) return;
     m.el.innerHTML = `<h2>Trip history</h2>
-      ${list.length ? list.map((t) => `<div class="trip-card"><span class="ic">${K.artFor(t.service)}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(String(t.drop.address).split(',')[0])}</span><span class="s">${K.when(t.createdAt)} · ${K.PAY_LABEL[t.paymentMethod]}</span></span>
-        <span class="p">${t.status === 'completed' ? K.ugx(t.earning) : `<span class="badge bad">${t.status.replace('_', ' ')}</span>`}</span></div>`).join('') : '<p class="muted">Go online to get your first trip.</p>'}`;
+      ${list.length ? list.map((t, i) => `<button class="trip-card" data-i="${i}" style="width:100%;text-align:left;cursor:pointer"><span class="ic">${K.artFor(t.service)}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(String(t.drop.address).split(',')[0])}</span><span class="s">${K.when(t.createdAt)} · ${K.PAY_LABEL[t.paymentMethod]}</span></span>
+        <span class="p">${t.status === 'completed' ? K.ugx(t.earning) : `<span class="badge bad">${t.status.replace('_', ' ')}</span>`}</span></button>`).join('') : '<p class="muted">Go online to get your first trip.</p>'}`;
+    m.el.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => { m.close(); tripHelp(list[+b.dataset.i]); });
+  }
+
+  // Help with a past trip: items left behind, unpaid trips, behaviour and safety.
+  async function tripHelp(t) {
+    let kinds = {}, issues = [];
+    try { const r = await K.api(`/trips/${t.id}/help`); kinds = r.kinds; issues = r.issues || []; } catch (e) { K.toast(e.message); return; }
+    const list = issues.length ? `<h3 class="set-h" style="margin-top:16px">Your reports</h3>${issues.map((i) => `<div class="issue ${i.status}"><div class="row" style="justify-content:space-between;gap:8px"><b>${K.esc(i.label)}</b><span class="badge ${i.status === 'open' ? 'warn' : 'ok'}">${i.status === 'open' ? 'In review' : 'Resolved'}</span></div>
+      <p class="small muted" style="margin:4px 0 0">${K.esc(i.details || '')}</p>${i.reply ? `<div class="issue-reply"><small>Flytte support</small>${K.esc(i.reply)}</div>` : ''}</div>`).join('')}` : '';
+    const mm = K.modal(`<div class="help-sheet"><h2>Trip help</h2>
+      <p class="small muted">${K.when(t.createdAt)} · ${K.esc(String(t.pickup.address).split(',')[0])} → ${K.esc(String(t.drop.address).split(',')[0])}</p>
+      ${t.status === 'completed' ? `<div class="kv"><span>You earned</span><b>${K.ugx(t.earning)}</b></div>` : ''}
+      <div data-step><div class="set-card list" style="margin-top:12px">${Object.entries(kinds).map(([k, l]) => `<button class="set-row" data-kind="${k}"><span class="grow"><b>${K.esc(l)}</b></span>${K.ic('chev', 'sm')}</button>`).join('')}</div>${list}</div>
+      <button class="btn btn-ghost btn-block" style="margin-top:10px" data-close>Close</button></div>`);
+    const step = K.$('[data-step]', mm.el);
+    step.querySelectorAll('[data-kind]').forEach((b) => b.onclick = () => {
+      const kind = b.dataset.kind, lost = kind === 'lost_item';
+      step.innerHTML = `<h3 style="margin:10px 0 4px">${K.esc(kinds[kind])}</h3>
+        <label for="hd">${lost ? 'What was left, and where is it now?' : 'What happened?'}</label>
+        <textarea id="hd" rows="4" maxlength="1000" placeholder="${lost ? 'e.g. Phone on the back seat. I have it with me.' : 'Add any details that will help us'}"></textarea>
+        <p class="error" role="alert"></p>
+        <button class="btn btn-primary btn-block btn-lg" data-send style="margin-top:10px">Send to Flytte</button>`;
+      const ta = K.$('#hd', step), err = K.$('.error', step), send = K.$('[data-send]', step);
+      send.onclick = async () => {
+        err.textContent = ''; send.disabled = true;
+        try { await K.api(`/trips/${t.id}/help`, { kind, details: ta.value.trim() }); mm.close(); K.toast('Report sent. Flytte will reply in Trip history.', 4500); }
+        catch (e) { err.textContent = e.message; send.disabled = false; }
+      };
+    });
   }
 })();

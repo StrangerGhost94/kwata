@@ -267,6 +267,19 @@ async function migrate() {
     decided_at TIMESTAMPTZ
   );
   CREATE INDEX IF NOT EXISTS driver_changes_idx ON driver_changes(status, driver_id);
+  CREATE TABLE IF NOT EXISTS trip_issues (
+    id SERIAL PRIMARY KEY,
+    trip_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    details TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    reply TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ
+  );
+  CREATE INDEX IF NOT EXISTS trip_issues_idx ON trip_issues(status, trip_id);
   CREATE TABLE IF NOT EXISTS driver_reports (
     id SERIAL PRIMARY KEY,
     trip_id INTEGER NOT NULL,

@@ -51,6 +51,8 @@
     chevDown: '<path d="m6 9 6 6 6-6"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     locate: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+    refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
     help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/>',
     logout: '<path d="M15 4h4v16h-4M10 17l5-5-5-5M15 12H3"/>',
@@ -1057,6 +1059,33 @@
   K.setLang = (l) => { try { localStorage.setItem('flytte_lang', l); } catch {} location.reload(); };
 
   // ---------- Settings (both apps): appearance, language, legal, delete account ----------
+  // ---------- lock-screen alerts (Web Push) ----------
+  // Shared by both apps. iOS only allows them once the app is on the Home Screen.
+  K.push = (() => {
+    const supported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const u8 = (b64) => { const pad = '='.repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, (c) => c.charCodeAt(0)); };
+    const iosBrowser = () => /iPhone|iPad|iPod/.test(navigator.userAgent) && !K.standalone();
+    async function current() {
+      if (!supported() || Notification.permission !== 'granted') return null;
+      try { const reg = await navigator.serviceWorker.ready; return await reg.pushManager.getSubscription(); } catch { return null; }
+    }
+    async function enable() {
+      if (!supported()) throw new Error(iosBrowser() ? 'Add Flytte to your Home Screen first (Share → Add to Home Screen), then turn on alerts.' : 'This browser can’t show alerts.');
+      const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+      if (perm !== 'granted') throw new Error('Alerts are blocked. Allow notifications for Flytte in your phone settings.');
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) { const { key } = await K.api('/push/key'); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(key) }); }
+      await K.api('/push/subscribe', { subscription: sub.toJSON() });
+      return true;
+    }
+    async function disable() {
+      const sub = await current();
+      if (sub) { await K.api('/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+    }
+    return { supported, enable, disable, current, iosBrowser };
+  })();
+
   K.openSettings = function ({ role = APP, onBack } = {}) {
     const page = document.createElement('div');
     page.className = 'page push-in grouped nav-large'; page.style.zIndex = 870;
@@ -1065,9 +1094,13 @@
     (document.getElementById('app') || document.body).appendChild(page);
     K.$('[data-x]', page).onclick = () => K.pop(page, onBack);
     const body = K.$('[data-body]', page);
+    let alertsOn = false;
     const draw = () => {
       const t = K.themePref(), l = K.lang();
+      const alertNote = alertsOn ? 'On · we’ll tell you when your driver is close, has arrived, and when your trip ends.' : K.push.supported() ? 'Get a notification when your driver is close or has arrived, even with your phone locked.' : K.push.iosBrowser() ? 'Add Flytte to your Home Screen (Share → Add to Home Screen) to use trip alerts.' : 'Not available in this browser.';
       body.innerHTML = `
+        ${role === 'rider' ? `<h3 class="set-h">Notifications</h3>
+        <div class="set-card list"><button class="set-row" data-alerts role="switch" aria-checked="${alertsOn}" ${K.push.supported() ? '' : 'disabled'}><span class="grow"><b>Trip alerts</b><small>${alertNote}</small></span><span class="set-switch${alertsOn ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>` : ''}
         <h3 class="set-h">Appearance</h3>
         <div class="set-card"><div class="set-seg" role="radiogroup" aria-label="Appearance">
           ${[['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([k, n]) => `<button role="radio" aria-checked="${t === k}" data-theme="${k}">
@@ -1087,8 +1120,16 @@
       body.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { K.haptic(); K.setTheme(b.dataset.theme); draw(); });
       body.querySelectorAll('[data-lang]').forEach((b) => b.onclick = () => { if (b.dataset.lang === K.lang()) return; K.haptic(); K.setLang(b.dataset.lang); });
       K.$('[data-del]', body).onclick = () => deleteAccount(role);
+      const al = K.$('[data-alerts]', body);
+      if (al) al.onclick = async () => {
+        K.haptic(); al.disabled = true;
+        try { if (alertsOn) { await K.push.disable(); alertsOn = false; } else { await K.push.enable(); alertsOn = true; K.toast('Trip alerts are on'); } }
+        catch (e) { K.toast(e.message, 6000); }
+        draw();
+      };
     };
     draw();
+    if (role === 'rider') K.push.current().then((sub) => { if (sub) { alertsOn = true; draw(); } });
     return page;
   };
 

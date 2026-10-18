@@ -688,6 +688,35 @@ r.post('/trips/:id/report', auth.requireAuth('rider'), wrap(async (req, res) => 
   res.json({ ok: true, paused });
 }));
 
+// Help with a trip: lost items, fare questions, behaviour and safety. Goes to the Flytte team
+// with the trip attached; the reply comes back in the app and as an alert.
+const ISSUES = {
+  rider: { lost_item: 'I lost an item', fare: 'I was charged the wrong amount', route: 'The route was longer than it should be', driver: 'Driver behaviour', safety: 'Safety concern', other: 'Something else' },
+  driver: { lost_item: 'A rider left an item', payment: 'I wasn’t paid for this trip', rider: 'Rider behaviour', safety: 'Safety concern', other: 'Something else' },
+};
+const issueView = (x, role) => ({ id: x.id, tripId: x.trip_id, kind: x.kind, label: (ISSUES[role || x.role] || {})[x.kind] || x.kind, details: x.details, status: x.status, reply: x.reply, at: x.created_at, resolvedAt: x.resolved_at });
+r.get('/trips/:id/help', auth.requireAuth('rider', 'driver'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, req.user.role);
+  if (!t) return;
+  const { rows } = await db.query('SELECT * FROM trip_issues WHERE trip_id = $1 AND user_id = $2 ORDER BY id DESC', [t.id, req.user.id]);
+  res.json({ kinds: ISSUES[req.user.role], issues: rows.map((x) => issueView(x)) });
+}));
+r.post('/trips/:id/help', auth.requireAuth('rider', 'driver'), limit(10, 3600e3), wrap(async (req, res) => {
+  const role = req.user.role;
+  const t = await ownTrip(req, res, role);
+  if (!t) return;
+  const kind = (req.body || {}).kind, details = clean((req.body || {}).details, 1000);
+  if (!ISSUES[role][kind]) return bad(res, 'Choose what happened.');
+  if (!details || details.length < 4) return bad(res, kind === 'lost_item' ? 'Describe the item so the driver can find it.' : 'Tell us a little about what happened.');
+  const done = t.completed_at || t.created_at;
+  if (Date.now() - new Date(done).getTime() > 30 * 86400e3) return bad(res, 'Help for trips older than 30 days is by phone. Call Flytte support.');
+  const open = await db.one("SELECT id FROM trip_issues WHERE trip_id = $1 AND user_id = $2 AND kind = $3 AND status = 'open'", [t.id, req.user.id, kind]);
+  if (open) return bad(res, 'You already reported this. The Flytte team will reply here.', 409);
+  const row = await db.one('INSERT INTO trip_issues(trip_id, user_id, role, kind, details) VALUES ($1,$2,$3,$4,$5) RETURNING *', [t.id, req.user.id, role, kind, details]);
+  rt.io.to('admin').emit('admin:issue', { id: row.id, tripId: t.id, user: req.user.name, role, kind, label: ISSUES[role][kind] });
+  res.json(issueView(row));
+}));
+
 r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'rider');
   if (!t) return;
@@ -932,7 +961,14 @@ r.get('/driver/earnings', auth.requireAuth('driver'), wrap(async (req, res) => {
       COALESCE(SUM(commission),0)::int AS commission, COUNT(*)::int AS trips
     FROM trips WHERE driver_id = $1 AND status = 'completed' AND completed_at > NOW() - INTERVAL '7 days'`, [req.user.id]);
   const all = await db.one("SELECT COUNT(*)::int AS trips FROM trips WHERE driver_id = $1 AND status = 'completed'", [req.user.id]);
-  res.json({ balance: d.earnings_balance, momoNumber: d.momo_number, today, week, days, cashWeek: mix.cash, commissionWeek: mix.commission, allTrips: all.trips, transactions: tx, withdrawals: wd });
+  // Weekly summary: this week against the one before, and when riders book most (all of Flytte, last 4 weeks).
+  const prevWeek = await db.one(`SELECT COUNT(*)::int AS trips, COALESCE(SUM(fare - commission),0)::int AS net
+    FROM trips WHERE driver_id = $1 AND status = 'completed' AND completed_at > NOW() - INTERVAL '14 days' AND completed_at <= NOW() - INTERVAL '7 days'`, [req.user.id]);
+  const { rows: hours } = await db.query(`SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Africa/Kampala')::int AS h, COUNT(*)::int AS n
+    FROM trips WHERE created_at > NOW() - INTERVAL '28 days' AND status IN ('completed','no_drivers','cancelled','in_progress','accepted','arrived','requested')
+    GROUP BY 1 ORDER BY n DESC LIMIT 3`);
+  const summary = { prevWeek, busyHours: hours.map((x) => ({ hour: x.h, trips: x.n })).sort((a, z) => a.hour - z.hour), avgTrip: week.trips ? Math.round(week.net / week.trips) : 0 };
+  res.json({ summary, balance: d.earnings_balance, momoNumber: d.momo_number, today, week, days, cashWeek: mix.cash, commissionWeek: mix.commission, allTrips: all.trips, transactions: tx, withdrawals: wd });
 }));
 
 // ---------- Driver tools ----------
@@ -1062,6 +1098,7 @@ r.get('/admin/stats', admin, wrap(async (req, res) => {
       FROM trips WHERE status = 'completed' AND completed_at > NOW() - INTERVAL '24 hours'`),
     allTime: await q("SELECT COUNT(*)::int trips, COALESCE(SUM(fare),0)::int gmv, COALESCE(SUM(commission),0)::int revenue FROM trips WHERE status = 'completed'"),
     openSos: (await q('SELECT COUNT(*)::int n FROM sos_alerts WHERE resolved = FALSE')).n,
+    openIssues: (await q("SELECT COUNT(*)::int n FROM trip_issues WHERE status = 'open'")).n,
     pendingWithdrawals: (await q("SELECT COUNT(*)::int n FROM withdrawals WHERE status = 'pending'")).n,
     pendingChanges: (await q("SELECT COUNT(*)::int n FROM driver_changes WHERE status = 'pending'")).n,
     openReports: (await q('SELECT COUNT(*)::int n FROM driver_reports WHERE resolved = FALSE')).n,
@@ -1146,6 +1183,26 @@ r.post('/admin/changes/:id', admin, wrap(async (req, res) => {
   rt.notify(c.driver_id, 'toast', { text });
   dtools.push(c.driver_id, { type: 'change', tag: `change-${c.kind}`, title: approve ? 'Approved' : 'Not approved', body: text }, { ttl: 86400, urgency: 'normal' }).catch(() => {});
   res.json({ ok: true });
+}));
+
+r.get('/admin/issues', admin, wrap(async (req, res) => {
+  const { rows } = await db.query(`SELECT i.*, u.name, u.phone, t.pickup_address, t.drop_address, t.fare, t.payment_method, t.completed_at, t.created_at AS trip_at,
+      t.rider_id, t.driver_id, ru.name AS rider_name, ru.phone AS rider_phone, du.name AS driver_name, du.phone AS driver_phone, dv.plate
+    FROM trip_issues i JOIN users u ON u.id = i.user_id JOIN trips t ON t.id = i.trip_id
+    LEFT JOIN users ru ON ru.id = t.rider_id LEFT JOIN users du ON du.id = t.driver_id LEFT JOIN drivers dv ON dv.user_id = t.driver_id
+    ORDER BY (i.status = 'open') DESC, i.id DESC LIMIT 200`);
+  res.json(rows.map((x) => ({ ...issueView(x), role: x.role, from: { name: x.name, phone: x.phone },
+    trip: { pickup: x.pickup_address, drop: x.drop_address, fare: x.fare, paymentMethod: x.payment_method, at: x.completed_at || x.trip_at,
+      rider: { name: x.rider_name, phone: x.rider_phone }, driver: x.driver_id ? { name: x.driver_name, phone: x.driver_phone, plate: x.plate } : null } })));
+}));
+r.post('/admin/issues/:id', admin, wrap(async (req, res) => {
+  const reply = clean((req.body || {}).reply, 1000);
+  if (!reply) return bad(res, 'Write a reply for the customer.');
+  const row = await db.one("UPDATE trip_issues SET status = 'resolved', reply = $1, resolved_at = NOW() WHERE id = $2 RETURNING *", [reply, Number(req.params.id)]);
+  if (!row) return bad(res, 'Report not found.', 404);
+  rt.notify(row.user_id, 'toast', { text: 'Flytte replied to your report. See it in Activity.' });
+  dtools.push(row.user_id, { app: row.role === 'driver' ? undefined : 'rider', type: 'issue', tag: `issue-${row.id}`, title: 'Flytte replied to your report', body: reply.slice(0, 140), tripId: row.trip_id }, { ttl: 86400, urgency: 'normal' }).catch(() => {});
+  res.json(issueView(row));
 }));
 
 // Riders' reports that a driver or plate didn't match.

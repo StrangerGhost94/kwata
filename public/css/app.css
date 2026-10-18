@@ -1813,3 +1813,75 @@ html.theme-dark:not(.launch-dark) .sp-load { background: rgba(255,255,255,.14); 
 html:not(.launch-dark) .splash .sp-center { transition: opacity .28s ease, transform .45s cubic-bezier(.32,.72,0,1); }
 html:not(.launch-dark) .splash.out { transition: opacity .42s cubic-bezier(.4,0,.2,1) .14s, visibility 0s linear .6s; }
 .splash.repeat .sp-load { display: none; }
+
+/* ---------- UX round: alerts, help, receipts, notes, arrival, searching, weekly summary ---------- */
+.set-switch { width: 51px; height: 31px; border-radius: 31px; background: var(--surface-2, #E5E5EA); position: relative; flex: none; transition: background .2s; }
+.set-switch i { position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.2); transition: transform .25s cubic-bezier(.32,.72,0,1); }
+.set-switch.on { background: var(--go, #34C759); }
+.set-switch.on i { transform: translateX(20px); }
+.set-row[disabled] { opacity: .55; }
+
+.alert-ask { text-align: center; }
+.alert-ic { width: 64px; height: 64px; border-radius: 20px; margin: 4px auto 14px; display: grid; place-items: center; background: var(--brand-soft); color: var(--accent-ink, #8A6400); }
+html.theme-dark .alert-ic { color: var(--brand); }
+.alert-ic .i { width: 30px; height: 30px; }
+.alert-ask p { margin: 0 0 18px; }
+
+.trip-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.trip-act { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border: 0; border-radius: 14px; background: var(--surface); color: var(--ink); font-weight: 600; font-size: .85rem; cursor: pointer; }
+.trip-act .i { width: 22px; height: 22px; }
+.trip-act:active { transform: scale(.97); }
+
+.issue { background: var(--surface); border-radius: 14px; padding: 12px 14px; margin-top: 8px; }
+.issue-reply { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--card, #fff); border: 1px solid var(--line); font-size: .92rem; }
+.issue-reply small { display: block; font-weight: 700; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 3px; }
+.help-sheet textarea, .modal textarea { width: 100%; resize: vertical; }
+.help-done { text-align: center; padding: 10px 0 0; }
+.help-done > .i { width: 44px; height: 44px; color: var(--go); }
+.help-done h3 { margin: 8px 0 4px; }
+.help-done p { margin: 0 0 16px; }
+
+.receipt .rc-head { display: flex; justify-content: space-between; align-items: baseline; }
+.receipt .rc-head b { font-size: 1.35rem; letter-spacing: -.02em; }
+.receipt .rc-head span { font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+.receipt .rc-no { margin: 2px 0 14px; font-size: .82rem; color: var(--ink-2); }
+.receipt .rc-total { background: var(--surface); border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
+.receipt .rc-total small { display: block; color: var(--ink-2); font-weight: 600; }
+.receipt .rc-total b { display: block; font-size: 2rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.15; }
+.receipt .rc-total span { font-size: .85rem; color: var(--ink-2); }
+
+.note-line { display: flex; gap: 10px; align-items: flex-start; background: var(--brand-soft); border-radius: 14px; padding: 10px 12px; margin: 10px 0; font-size: .95rem; }
+.note-line .i { flex: none; margin-top: 2px; }
+.note-line small { display: block; font-size: .74rem; font-weight: 700; color: var(--ink-2); }
+html.theme-dark .note-line { background: rgba(255,214,10,.12); }
+
+.slow-hint { margin: 12px auto 0; max-width: 320px; background: var(--surface); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; animation: fade .3s; }
+.slow-hint span { font-size: .88rem; color: var(--ink-2); }
+.slow-hint .btn { margin-top: 6px; }
+
+.arrive-hero { text-align: center; background: var(--ink, #141414); color: #fff; border-radius: 20px; padding: 14px 16px 16px; margin-bottom: 4px; animation: arriveIn .45s cubic-bezier(.32,.72,0,1); }
+.arrive-hero small { display: block; font-size: .82rem; font-weight: 600; opacity: .75; }
+.arrive-plate { display: inline-block; margin: 6px 0 4px; padding: 6px 16px; border-radius: 10px; background: var(--brand); color: #141414; font-size: 2rem; font-weight: 800; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.arrive-hero span { display: block; font-size: .9rem; opacity: .85; }
+html.theme-dark .arrive-hero { background: #1C1C1E; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+@keyframes arriveIn { from { transform: scale(.94); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .arrive-hero { animation: none; } }
+
+.week-sum { background: var(--surface); border-radius: 18px; padding: 14px 16px; margin: 14px 0 6px; }
+.ws-row { display: flex; justify-content: space-between; gap: 12px; }
+.ws-row small { display: block; font-size: .78rem; font-weight: 600; color: var(--ink-2); }
+.ws-row b { display: block; font-size: 1.35rem; font-weight: 800; letter-spacing: -.02em; }
+.ws-row em { display: block; font-style: normal; font-size: .82rem; font-weight: 600; color: var(--ink-2); margin-top: 2px; }
+.ws-row em.up { color: var(--go); }
+.ws-row em.down { color: var(--stop); }
+.ws-side { text-align: right; }
+.ws-tip { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: .88rem; }
+.ws-tip .i { flex: none; margin-top: 2px; }
+
+.ws-row em { font-size: .95rem; font-weight: 700; color: var(--ink); margin-top: 4px; }
+.ws-row b { font-size: 1.15rem; }
+.slow-hint .btn { background: var(--card, #fff); box-shadow: inset 0 0 0 1.5px var(--line); font-weight: 700; }
+.note-row .note-ic { background: var(--surface); color: var(--ink); display: grid; place-items: center; }
+html.theme-dark .wait-note { background: rgba(255,214,10,.12); color: #F5F5F7; }
+html.theme-dark .wait-note .i { color: var(--brand); }
+html.theme-dark .receipt .btn, html.theme-dark .trip-act { background: #2C2C2E; color: #F5F5F7; }

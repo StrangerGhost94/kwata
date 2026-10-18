@@ -90,7 +90,9 @@
     sock.on('driver:location', (p) => { if (S.trip && p.tripId === S.trip.id) moveDriver(p); });
     sock.on('toast', (m) => K.toast(m.text));
     sock.on('chat:message', onChat);
-    sock.on('connect', async () => { const a = await K.api('/trips/active').catch(() => null); if (a) onTrip(a); });
+    sock.on('connect', async () => { sock.emit('rider:visible', document.visibilityState === 'visible'); const a = await K.api('/trips/active').catch(() => null); if (a) onTrip(a); });
+    // Trip alerts go to the lock screen only while Flytte isn't on screen.
+    document.addEventListener('visibilitychange', () => sock.emit('rider:visible', document.visibilityState === 'visible'));
     if (active) onTrip(active); else {
       locate(false); render();
       const svc = params.get('service');
@@ -645,6 +647,7 @@
         </button>`).join('')}
       </div>
       <button class="payrow" id="pickRow" style="padding-bottom:4px"><span class="dot-pick" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Pickup</span><span class="ellipsis" id="pickLabel" style="display:block">${K.esc(S.pickup.address)}</span></span><span class="small muted">Change</span></button>
+      <button class="payrow note-row" id="noteBtn"><span class="paylogo note-ic">${K.ic('msg', 'sm')}</span><span class="grow ellipsis">${S.note ? K.esc(S.note) : '<span class="muted">Add a pickup note</span>'}</span>${S.note ? '<span class="small muted">Edit</span>' : K.ic('chev', 'sm')}</button>
       ${S.service === 'parcel' ? `<button class="payrow" id="parcelRow"><span class="paylogo wallet">${K.ic('gift', 'sm')}</span><span class="grow">${S.parcel ? `Package for ${K.esc(S.parcel.recipientName)}` : 'Add delivery details'}</span>${K.ic('chev', 'sm')}</button>` : ''}
       <div class="chip-row">
         <button class="pill-opt ${S.when ? 'on' : ''}" id="whenBtn">${K.ic('clock', 'sm')}<span>${S.when ? K.esc(whenLabel(S.when)) : 'Now'}</span>${K.ic('chevDown', 'sm')}</button>
@@ -652,7 +655,7 @@
         <button class="pill-opt ${S.promoCode ? 'on' : ''}" id="promoBtn">${K.ic('tag', 'sm')}<span>${S.promoCode ? K.esc(S.promoCode) : 'Promo'}</span></button>
       </div>
       <button class="payrow" id="payRow">${P.logo}<span class="grow">${P.name}${p === 'wallet' ? ` · ${K.ugx(S.user.walletBalance)}` : ''}${['mtn', 'airtel'].includes(p) ? `<span class="tiny muted" style="display:block;font-weight:500">${prettyPhone(S.user.payPhone)}</span>` : ''}</span>${K.ic('chev', 'sm')}</button>
-      <div class="sheet-foot"><p class="tiny muted" style="margin:0;text-align:center">Upfront price · you pay what you see</p><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
+      <div class="sheet-foot"><p class="tiny muted" style="margin:0;text-align:center">Upfront price · you pay what you see · <button class="link-btn tiny" id="whyPrice">How it’s priced</button></p><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
       <button class="btn btn-primary btn-block btn-lg" id="request">${S.when ? 'Schedule' : 'Request'} ${K.esc(svcName(sel.id))} · ${K.ugx(payOf(sel))}</button></div>`;
     sheet.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => {
       if (b.dataset.s === S.service) return;
@@ -664,12 +667,47 @@
     K.$('#whenBtn').onclick = openWhen;
     K.$('#whoBtn').onclick = openWho;
     K.$('#promoBtn').onclick = openPromo;
+    K.$('#noteBtn').onclick = openNote;
+    K.$('#whyPrice').onclick = () => whyPrice(q, sel);
     if (q.promoError && S.promoCode && !q._shown) { q._shown = true; K.toast(q.promoError, 4500); }
     K.$('#request').onclick = () => {
       if (S.service === 'parcel' && !S.parcel) { openParcel(); return; }
       if (p === 'wallet' && S.user.walletBalance < payOf(sel)) { K.toast(S.config.paymentsAvailable ? 'Not enough in your wallet. Top up or pick another way to pay.' : 'Not enough in your wallet. Choose cash instead.', 4000); openPayments({ onPick: render }); return; }
       book();
     };
+  }
+
+  // A short note for the driver: where exactly to find you.
+  function openNote() {
+    const ideas = ['At the main gate', 'Call me when you arrive', 'Opposite the petrol station', 'At the stage'];
+    const m = K.modal(`<h2>Pickup note</h2><p class="small muted">Help your ${who({ service: S.service })} find you. They see this when they accept.</p>
+      <textarea id="nt" rows="3" maxlength="200" placeholder="e.g. Blue gate next to the pharmacy">${K.esc(S.note || '')}</textarea>
+      <div class="chip-row" style="flex-wrap:wrap;margin-top:8px">${ideas.map((x) => `<button class="pill-opt" data-idea="${K.esc(x)}">${K.esc(x)}</button>`).join('')}</div>
+      <div class="row" style="gap:8px;margin-top:14px">${S.note ? '<button class="btn fill" id="clr">Remove</button>' : ''}<button class="btn btn-primary fill" id="sv">Save note</button></div>`);
+    const ta = K.$('#nt', m.el);
+    setTimeout(() => ta.focus(), 250);
+    m.el.querySelectorAll('[data-idea]').forEach((b) => b.onclick = () => { ta.value = ta.value.trim() ? `${ta.value.trim()}. ${b.dataset.idea}` : b.dataset.idea; ta.focus(); });
+    K.$('#sv', m.el).onclick = () => { S.note = ta.value.trim().slice(0, 200); m.close(); render(); };
+    const c = K.$('#clr', m.el); if (c) c.onclick = () => { S.note = ''; m.close(); render(); };
+  }
+
+  // "How it's priced": the parts behind the upfront price, and why it may be higher right now.
+  function whyPrice(q, o) {
+    const p = o.parts || {};
+    const sum = (p.base || 0) + (p.distance || 0) + (p.time || 0);
+    const minApplied = p.minFare && sum < p.minFare;
+    const reasons = (o.surgeReasons || []).map((r) => ({ rain: 'It’s raining, so fewer drivers are out', demand: 'Many people are booking nearby', busy: 'Busy time on the roads', traffic: 'Heavy traffic on this route' }[r] || '')).filter(Boolean);
+    K.modal(`<h2>How it’s priced</h2><p class="small muted">${svcName(o.id)} · ${p.km || q.distanceKm} km · about ${p.min || o.durationMin} min</p>
+      <div class="kv"><span>Base fare</span><b>${K.ugx(p.base || 0)}</b></div>
+      <div class="kv"><span>Distance (${p.km || q.distanceKm} km)</span><b>${K.ugx(p.distance || 0)}</b></div>
+      <div class="kv"><span>Time (about ${p.min || o.durationMin} min)</span><b>${K.ugx(p.time || 0)}</b></div>
+      ${minApplied ? `<div class="kv"><span>Minimum fare</span><b>${K.ugx(p.minFare)}</b></div>` : ''}
+      ${o.surge > 1 ? `<div class="kv"><span>Busy-time pricing</span><b>×${o.surge}</b></div>` : ''}
+      ${o.discount ? `<div class="kv"><span>${K.esc(o.promoLabel || 'Discount')}</span><b class="pos">−${K.ugx(o.discount)}</b></div>` : ''}
+      <div class="big-total"><span class="bold">You pay</span><b>${K.ugx(payOf(o))}</b></div>
+      ${reasons.length ? `<p class="small" style="margin:12px 0 0">${K.ic('info', 'sm')} Prices are higher right now: ${reasons.join('; ').toLowerCase()}. They drop again as things calm down.</p>` : ''}
+      <p class="tiny faint" style="margin:12px 0 0">This is an upfront price. It only changes if you change the trip, such as a new destination or a long wait at pickup.</p>
+      <button class="btn btn-block" style="margin-top:14px" data-close>Close</button>`);
   }
 
   function openParcel() {
@@ -718,7 +756,7 @@
     btn.disabled = true; btn.textContent = 'Requesting…'; err.textContent = '';
     if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
     const opt = S.quote.options.find((o) => o.id === S.service);
-    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined };
+    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined, notes: S.note || undefined };
     if (S.service === 'parcel') body.parcel = S.parcel;
     try { onTrip(await K.api('/trips', body, 'POST', { timeout: 45000 })); }
     catch (e) {
@@ -732,9 +770,29 @@
     }
   }
 
+  // Asked once, right after the first booking: the moment the value is obvious.
+  function offerAlerts() {
+    let asked = false; try { asked = localStorage.getItem('flytte_alerts_asked') === '1'; } catch {}
+    if (asked || !K.push.supported() || Notification.permission !== 'default') return;
+    try { localStorage.setItem('flytte_alerts_asked', '1'); } catch {}
+    setTimeout(() => {
+      if (!S.trip || !['requested', 'accepted'].includes(S.trip.status)) return;
+      const m = K.modal(`<div class="alert-ask"><div class="alert-ic">${K.ic('bell')}</div>
+        <h2>Know when your driver arrives</h2>
+        <p class="muted">Get a notification when your driver is close and when they’ve arrived, even with your phone locked.</p>
+        <button class="btn btn-primary btn-block btn-lg" data-on>Turn on trip alerts</button>
+        <button class="btn btn-ghost btn-block btn-lg" data-close>Not now</button></div>`);
+      K.$('[data-on]', m.el).onclick = async () => {
+        try { await K.push.enable(); m.close(); K.toast('Trip alerts are on'); }
+        catch (e) { m.close(); K.toast(e.message, 6000); }
+      };
+    }, 1400);
+  }
+
   // Screen 7: finding your rider
   function vSearching() {
     const t = S.trip;
+    offerAlerts();
     clearNearby(); clearRoute();
     labels.push(L.marker([t.pickup.lat, t.pickup.lng], { icon: K.divIcon('<div class="radar"></div>', [160, 160]), interactive: false }).addTo(map));
     labels.push(L.marker([t.pickup.lat, t.pickup.lng], { icon: K.divIcon('<div class="pin-ci"></div>', [18, 18]), interactive: false }).addTo(map));
@@ -748,10 +806,42 @@
           <svg class="ring" viewBox="0 0 150 150" aria-hidden="true"><circle cx="75" cy="75" r="68" fill="none" stroke="var(--surface-2)" stroke-width="7"/><circle cx="75" cy="75" r="68" fill="none" stroke="var(--brand)" stroke-width="7" stroke-linecap="round" stroke-dasharray="110 330"/></svg>
           <div class="center">${K.artFor(t.service)}</div>
         </div>
-        <p class="small muted">${K.ugx(t.payable)} · ${PAY[payOfTrip(t)].name}</p>
+        <p class="small muted">${K.ugx(t.payable)} · ${PAY[payOfTrip(t)].name} · <span id="elapsed">0:00</span></p>
+        <div class="slow-hint hidden" id="slow"></div>
       </div>
       <div class="sheet-foot"><button class="btn btn-outline btn-block btn-lg" id="cancel">Cancel</button></div>`;
     K.$('#cancel').onclick = cancelTrip;
+    // Keep the wait honest: time spent, and after a while a faster option if there is one.
+    clearInterval(S.searchTimer);
+    const since = new Date(t.createdAt).getTime() || Date.now();
+    const tick = () => {
+      if (S.view !== 'searching' || !S.trip || S.trip.id !== t.id || !K.$('#elapsed')) { clearInterval(S.searchTimer); return; }
+      const sec = Math.max(0, Math.floor((Date.now() - since) / 1000));
+      K.$('#elapsed').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+      const box = K.$('#slow');
+      if (sec >= 45 && box.classList.contains('hidden')) {
+        const alt = altService(t.service);
+        box.innerHTML = `<b>Taking longer than usual</b><span>Drivers nearby are busy. We’re still asking.</span>${alt ? `<button class="btn btn-sm" id="tryAlt">Try ${K.esc(svcName(alt))} instead</button>` : ''}`;
+        box.classList.remove('hidden');
+        const b = K.$('#tryAlt'); if (b) b.onclick = () => switchService(alt);
+      }
+    };
+    S.searchTimer = setInterval(tick, 1000); tick();
+  }
+
+  // The other everyday ride type, if it's on: boda <-> car.
+  function altService(cur) {
+    const on = (id) => S.config.services.some((x) => x.id === id);
+    if (cur === 'boda' && on('car')) return 'car';
+    if ((cur === 'car' || cur === 'comfort') && on('boda')) return 'boda';
+    return null;
+  }
+  async function switchService(id) {
+    const t = S.trip;
+    try { if (t && t.status === 'requested') await K.api(`/trips/${t.id}/cancel`, { reason: 'switch' }); } catch {}
+    S.trip = null; setService(id);
+    if (t) { S.pickup = S.pickup || { ...t.pickup, manual: true }; S.drop = S.drop || { ...t.drop }; }
+    prepareQuote();
   }
 
   function vNone() {
@@ -760,9 +850,11 @@
       <div class="finding"><div class="illu" style="width:110px;height:110px;margin:6px auto 16px"><span style="width:80px;height:54px;display:block">${K.artFor(S.trip ? S.trip.service : S.service)}</span></div>
       <h2>No ${S.trip ? who(S.trip) : 'driver'}s free right now</h2>
       <p class="muted">Everyone nearby is busy. Try again in a minute or choose another ride type.</p></div>
-      <div class="sheet-foot"><div class="row"><button class="btn fill" id="home">Back</button><button class="btn btn-primary fill" id="again">Try again</button></div></div>`;
+      <div class="sheet-foot">${(() => { const alt = altService(S.trip ? S.trip.service : S.service); return alt ? `<button class="btn btn-outline btn-block btn-lg" id="alt" style="margin-bottom:8px">Try ${K.esc(svcName(alt))}</button>` : ''; })()}
+        <div class="row"><button class="btn fill" id="home">Back</button><button class="btn btn-primary fill" id="again">Try again</button></div></div>`;
     K.$('#home').onclick = reset;
     K.$('#again').onclick = () => prepareQuote();
+    const alt = K.$('#alt'); if (alt) alt.onclick = () => switchService(altService(S.trip ? S.trip.service : S.service));
   }
 
   function tripMins() {
@@ -843,7 +935,8 @@
       const arrived = t.status === 'arrived';
       sheet.innerHTML = `
         <div class="grabber"></div>
-        <h2 style="font-size:1.15rem">${arrived ? `Your ${who(t)} has arrived` : `Your ${who(t)} is on the way`}</h2>
+        ${arrived ? `<div class="arrive-hero" role="status"><small>${K.esc(K.first(d.name))} is here · look for</small><b class="arrive-plate">${K.esc(d.plate || '')}</b><span>${K.esc(d.vehicle || svcName(t.service))}</span></div>`
+          : `<h2 style="font-size:1.15rem">Your ${who(t)} is on the way</h2>`}
         <div class="driver-card" style="margin-top:12px">${photo(d)}
           <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))}</span></span>
           <span style="text-align:right"><span class="plate-chip">${K.esc(d.plate)}</span><span style="display:block;width:70px;height:44px;margin-top:4px">${K.artFor(t.service, d.vehicleType)}</span></span></div>
@@ -854,6 +947,7 @@
         <div class="act-row">${callBtn('act') || '<span></span>'}<button class="act" id="chatBtn">${K.ic('msg')} Message</button></div>
         <div class="pin-box"><span><b>${t.passenger ? `${K.esc(K.first(t.passenger.name))}’s trip PIN` : 'Your trip PIN'}</b><br><span class="small muted">${t.passenger ? 'Send it to them below' : `Tell your ${who(t)} to start`}</span></span>${pinDigits(t.pin)}</div>
         ${extrasHtml(t)}
+        ${t.notes ? `<p class="note-line">${K.ic('msg', 'sm')}<span><small>Your pickup note</small>${K.esc(t.notes)}</span></p>` : ''}
         <div class="stops">
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Drop-off</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
@@ -993,7 +1087,7 @@
   function tripDetails(t) {
     const d = t.driver || {};
     const P = PAY[payOfTrip(t)] || PAY.cash;
-    K.modal(`<h2>Trip details</h2>
+    const dm = K.modal(`<h2>Trip details</h2>
       <p class="small muted">${K.when(t.createdAt)}</p>
       <div class="stops">
         <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b>${K.esc(t.pickup.address)}</b></span></div>
@@ -1009,7 +1103,117 @@
       ${t.discount ? `<div class="kv"><span>${K.esc(t.promoLabel || 'Discount')}</span><b class="pos">−${K.ugx(t.discount)}</b></div>` : ''}
       ${t.tip ? `<div class="kv"><span>Tip (${t.tipMethod === 'wallet' ? 'wallet' : 'cash'})</span><b>${K.ugx(t.tip)}</b></div>` : ''}
       <div class="big-total"><span class="bold">You paid</span><b>${K.ugx(t.payable + (t.tip || 0))}</b></div>
+      <div class="trip-acts">
+        ${t.service !== 'parcel' && ['completed', 'cancelled', 'no_drivers'].includes(t.status) ? `<button class="trip-act" data-again>${K.ic('refresh')}<span>Book again</span></button>` : ''}
+        ${t.status === 'completed' ? `<button class="trip-act" data-receipt>${K.ic('receipt')}<span>Receipt</span></button>` : ''}
+        ${t.driver ? `<button class="trip-act" data-help>${K.ic('help')}<span>Get help</span></button>` : ''}
+      </div>
+      <div data-issues></div>
       <button class="btn btn-block" style="margin-top:14px" data-close>Close</button>`);
+    const box = dm.el, close = dm.close;
+    const again = box.querySelector('[data-again]'); if (again) again.onclick = () => { close(); bookAgain(t); };
+    const rc = box.querySelector('[data-receipt]'); if (rc) rc.onclick = () => receipt(t);
+    const hp = box.querySelector('[data-help]'); if (hp) hp.onclick = () => { close(); tripHelp(t); };
+    // Earlier reports on this trip, with the Flytte team's reply.
+    const ib = box.querySelector('[data-issues]');
+    if (ib && t.driver) K.api(`/trips/${t.id}/help`).then((r) => { ib.innerHTML = issueList(r.issues); }).catch(() => {});
+  }
+
+  const issueList = (list) => (list && list.length ? `<h3 class="set-h" style="margin-top:16px">Your reports</h3>${list.map((i) => `<div class="issue ${i.status}">
+      <div class="row" style="justify-content:space-between;gap:8px"><b>${K.esc(i.label)}</b><span class="badge ${i.status === 'open' ? 'warn' : 'ok'}">${i.status === 'open' ? 'In review' : 'Resolved'}</span></div>
+      <p class="small muted" style="margin:4px 0 0">${K.esc(i.details || '')}</p>
+      ${i.reply ? `<div class="issue-reply"><small>Flytte support</small>${K.esc(i.reply)}</div>` : '<p class="tiny faint" style="margin:6px 0 0">We usually reply within a few hours.</p>'}</div>`).join('')}` : '');
+
+  // Same route, same service, ready to confirm.
+  // A soft two-note chime when the driver arrives (only if the page may play sound).
+  function chime() {
+    try {
+      const c = new (window.AudioContext || window.webkitAudioContext)();
+      [[0, 784], [0.18, 1046]].forEach(([d, f]) => { const o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.value = f; o.connect(g); g.connect(c.destination);
+        g.gain.setValueAtTime(0.0001, c.currentTime + d); g.gain.exponentialRampToValueAtTime(0.18, c.currentTime + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + d + 0.5);
+        o.start(c.currentTime + d); o.stop(c.currentTime + d + 0.55); });
+    } catch {}
+  }
+
+  function bookAgain(t) {
+    if (S.trip && ['requested', 'accepted', 'arrived', 'in_progress'].includes(S.trip.status)) { K.toast('Finish your current trip first'); return; }
+    openTab('home');
+    S.pickup = { lat: t.pickup.lat, lng: t.pickup.lng, address: t.pickup.address, short: shortName(t.pickup.address), manual: true };
+    if (S.config.services.some((x) => x.id === t.service)) setService(t.service);
+    chooseDrop({ lat: t.drop.lat, lng: t.drop.lng, name: t.drop.address });
+  }
+
+  // A clean receipt: share it, or save it as a PDF from the print dialog.
+  function receipt(t) {
+    const d = t.driver || {}, P = PAY[payOfTrip(t)] || PAY.cash;
+    const when = new Date(t.completedAt || t.createdAt);
+    const date = when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    const no = `FLY-${String(t.id).padStart(6, '0')}`;
+    const rows = [['Trip fare', K.ugx(t.fare)], ...(t.discount ? [[t.promoLabel || 'Discount', '−' + K.ugx(t.discount)]] : []), ...(t.tip ? [['Tip', K.ugx(t.tip)]] : [])];
+    const total = K.ugx(t.payable + (t.tip || 0));
+    const text = [`Flytte receipt ${no}`, date, `${svcName(t.service)}: ${t.pickup.address} → ${t.drop.address}`, ...rows.map(([a, b]) => `${a}: ${b}`), `Total: ${total} (${P.name})`, d.name ? `Driver: ${d.name}${d.plate ? ' · ' + d.plate : ''}` : ''].filter(Boolean).join('\n');
+    const mm = K.modal(`<div class="receipt">
+      <div class="rc-head"><b>Flytte</b><span>Receipt</span></div>
+      <p class="rc-no">${no} · ${K.esc(date)}</p>
+      <div class="rc-total"><small>Total</small><b>${total}</b><span>${K.esc(P.name)}${t.paymentStatus === 'paid' || t.paymentMethod === 'cash' ? ' · Paid' : ''}</span></div>
+      <div class="stops"><div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b>${K.esc(t.pickup.address)}</b></span></div>
+        <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b>${K.esc(t.drop.address)}</b></span></div></div>
+      ${rows.map(([a, b]) => `<div class="kv"><span>${K.esc(a)}</span><b>${b}</b></div>`).join('')}
+      <div class="kv"><span>Service</span><b>${svcName(t.service)}${t.distanceKm ? ` · ${Number(t.distanceKm).toFixed(1)} km` : ''}</b></div>
+      ${d.name ? `<div class="kv"><span>Driver</span><b>${K.esc(d.name)}${d.plate ? ' · ' + K.esc(d.plate) : ''}</b></div>` : ''}
+      <div class="row" style="gap:8px;margin-top:16px"><button class="btn fill" data-share>${K.ic('share', 'sm')} Share</button><button class="btn fill" data-pdf>Save as PDF</button></div>
+      <button class="btn btn-ghost btn-block" style="margin-top:6px" data-close>Done</button></div>`);
+    K.$('[data-share]', mm.el).onclick = async () => {
+      if (navigator.share) { try { await navigator.share({ title: `Flytte receipt ${no}`, text }); return; } catch { return; } }
+      try { await navigator.clipboard.writeText(text); K.toast('Receipt copied'); } catch { K.toast('Couldn’t copy the receipt'); }
+    };
+    K.$('[data-pdf]', mm.el).onclick = () => {
+      const w = window.open('', '_blank');
+      if (!w) { K.toast('Allow pop-ups to save the receipt'); return; }
+      const esc = (x) => K.esc(String(x));
+      w.document.write(`<!doctype html><meta charset="utf-8"><title>Flytte receipt ${no}</title><style>body{font:15px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:40px auto;padding:0 20px;color:#111}h1{font-size:22px;margin:0}small{color:#666}.t{font-size:34px;font-weight:800;margin:18px 0 2px}.r{display:flex;justify-content:space-between;border-bottom:1px solid #eee;padding:9px 0}.r span{color:#555}footer{margin-top:28px;color:#888;font-size:12px}</style>
+        <h1>Flytte</h1><small>Receipt ${no} · ${esc(date)}</small><div class="t">${total}</div><small>${esc(P.name)}</small>
+        <div style="margin-top:22px">${[['From', t.pickup.address], ['To', t.drop.address], ['Service', svcName(t.service) + (t.distanceKm ? ' · ' + Number(t.distanceKm).toFixed(1) + ' km' : '')], ...rows, ...(d.name ? [['Driver', d.name + (d.plate ? ' · ' + d.plate : '')]] : [])].map(([a, b]) => `<div class="r"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join('')}</div>
+        <footer>Thank you for riding with Flytte.</footer><script>setTimeout(()=>print(),300)<\/script>`);
+      w.document.close();
+    };
+  }
+
+  // Help with a past trip. Lost items, fares and safety go to the Flytte team with the trip attached.
+  async function tripHelp(t) {
+    let kinds = { lost_item: 'I lost an item', fare: 'I was charged the wrong amount', route: 'The route was longer than it should be', driver: 'Driver behaviour', safety: 'Safety concern', other: 'Something else' };
+    let issues = [];
+    try { const r = await K.api(`/trips/${t.id}/help`); kinds = r.kinds || kinds; issues = r.issues || []; } catch {}
+    const call = S.config.supportPhone ? `<a class="btn btn-ghost btn-block" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}">${K.ic('phone', 'sm')} Call support</a>` : '';
+    const mm = K.modal(`<div class="help-sheet"><h2>Get help</h2>
+      <p class="small muted">${svcName(t.service)} · ${K.when(t.createdAt)} · ${K.esc(shorten(t.drop.address, 30))}</p>
+      <div data-step>
+        <div class="set-card list">${Object.entries(kinds).map(([k, l]) => `<button class="set-row" data-kind="${k}"><span class="grow"><b>${K.esc(l)}</b></span>${K.ic('chev', 'sm')}</button>`).join('')}</div>
+        ${issueList(issues)}
+        ${call}
+      </div></div>`);
+    const step = K.$('[data-step]', mm.el);
+    step.querySelectorAll('[data-kind]').forEach((b) => b.onclick = () => {
+      const kind = b.dataset.kind, lost = kind === 'lost_item', safety = kind === 'safety';
+      step.innerHTML = `<h3 style="margin:6px 0 4px">${K.esc(kinds[kind])}</h3>
+        ${safety ? '<p class="small" style="margin:0 0 8px"><b>In danger right now? Call 999.</b></p>' : ''}
+        <label for="hd">${lost ? 'What did you leave, and where in the vehicle?' : 'What happened?'}</label>
+        <textarea id="hd" rows="4" maxlength="1000" placeholder="${lost ? 'e.g. Black Samsung phone, back seat' : 'Add any details that will help us'}"></textarea>
+        <p class="tiny faint" style="margin:6px 0 0">${lost ? 'We’ll contact your driver and arrange a way to get it back to you.' : 'The Flytte team reviews every report and replies here.'}</p>
+        <p class="error" role="alert"></p>
+        <button class="btn btn-primary btn-block btn-lg" data-send style="margin-top:10px">Send to Flytte</button>`;
+      const ta = K.$('#hd', step), err = K.$('.error', step), send = K.$('[data-send]', step);
+      setTimeout(() => ta.focus(), 200);
+      send.onclick = async () => {
+        err.textContent = ''; send.disabled = true;
+        try {
+          await K.api(`/trips/${t.id}/help`, { kind, details: ta.value.trim() });
+          step.innerHTML = `<div class="help-done">${K.ic('check')}<h3>Report sent</h3><p class="small muted">${lost ? 'We’ll contact your driver and update you here and by notification.' : 'The Flytte team will review it and reply here, usually within a few hours.'}</p>
+            <button class="btn btn-block" data-close>Done</button></div>`;
+          K.$('[data-close]', step).onclick = () => mm.close();
+        } catch (e) { err.textContent = e.message; send.disabled = false; }
+      };
+    });
   }
 
   // ---------- trip events ----------
@@ -1029,7 +1233,8 @@
     else if (t.status === 'cancelled') { if (t.cancelledBy === 'rider') { reset(); return; } S.view = 'none'; K.toast(`Your ${who(t)} cancelled. Try again.`); }
     if (prev !== t.status) {
       if (t.status === 'accepted') { K.toast(`${K.first(t.driver.name)} is on the way`); vibrate(); loadMessages(); }
-      if (t.status === 'arrived') vibrate();
+      if (t.status === 'arrived') { vibrate(); chime(); }
+      if (t.status === 'completed') S.note = '';
     }
     S.pickup = t.pickup; S.drop = t.drop;
     document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());

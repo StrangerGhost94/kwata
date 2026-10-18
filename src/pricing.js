@@ -39,6 +39,7 @@ const DEFAULTS = {
     noShowFee: 2000,        // paid to the driver from the rider's wallet on a no-show (only if the wallet covers it)
     headingHomePerDay: 2,   // how many times a day a driver can switch on "Heading home"
     queueNext: true,        // offer a nearby next trip when the current one is about to finish
+    showDestination: true,  // drivers see where the trip goes before accepting (off: only the distance, address after accepting)
     docReminderDays: 14,    // remind drivers this many days before a document expires
     mismatchPauseReports: 3, // riders (different people, last 30 days) reporting the wrong face or plate before a driver is paused; 0 = never
   },
@@ -130,6 +131,7 @@ async function updateSettings(patch) {
         noShowFee: num(c.noShowFee, 0, 50000, 2000),
         headingHomePerDay: num(c.headingHomePerDay, 0, 10, 2),
         queueNext: c.queueNext !== false && c.queueNext !== 'false',
+        showDestination: c.showDestination !== false && c.showDestination !== 'false',
         docReminderDays: num(c.docReminderDays, 1, 90, 14),
         mismatchPauseReports: num(c.mismatchPauseReports, 0, 20, 3),
       };
@@ -215,6 +217,8 @@ async function quote(pickup, drop, clientKm, clientFreeMin) {
         id, name: v.name, icon: v.icon, seats: v.seats, blurb: v.blurb, vehicle: v.vehicle,
         surge: Math.round(mult * 10) / 10, surgeReasons: mult > 1 ? reasons : [],
         durationMin: mins, fare: calcFare(v, km, mins, mult), regularFare: calcFare(v, km, mins, 1),
+        // How the price is made, for "Why this price?"
+        parts: { base: v.base, distance: Math.round(v.perKm * km), time: Math.round(v.perMin * mins), minFare: v.minFare, km: Math.round(km * 10) / 10, min: mins },
       };
     });
   const car = options.find((o) => surge.CLASS_OF[o.id] === 'car') || options[0];

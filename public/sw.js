@@ -8,7 +8,7 @@
 //   so they're served straight from the phone ("cache first") with no network wait.
 //   A new deploy has new ?v= links, so the new files are fetched once and kept.
 // - Maps, payments and live data are never cached.
-const VERSION = 'flytte-v65';
+const VERSION = 'flytte-v66';
 const ASSETS = 'flytte-assets';        // versioned js/css; kept across releases, trimmed below
 const SHELL = [
   '/offline.html', '/socket.io/socket.io.js',
@@ -90,16 +90,16 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'Flytte', body: e.data ? e.data.text() : '' }; }
-  const offer = d.type === 'offer';
-  e.waitUntil(self.registration.showNotification(d.title || 'Flytte Driver', {
+  const offer = d.type === 'offer', rider = d.app === 'rider';
+  const icon = rider ? '/icons/flytte-icon-192.png' : '/icons/flytte-driver-192.png';
+  e.waitUntil(self.registration.showNotification(d.title || (rider ? 'Flytte' : 'Flytte Driver'), {
     body: d.body || '',
     tag: d.tag || 'flytte',
     renotify: true,
-    requireInteraction: offer,
-    icon: '/icons/flytte-driver-192.png',
-    badge: '/icons/flytte-driver-192.png',
-    vibrate: offer ? [400, 150, 400, 150, 400] : [200],
-    data: { url: '/driver', tripId: d.tripId || null },
+    requireInteraction: offer || (rider && d.type === 'arrived'),
+    icon, badge: icon,
+    vibrate: offer ? [400, 150, 400, 150, 400] : rider && (d.type === 'arrived' || d.type === 'near') ? [300, 120, 300] : [200],
+    data: { url: rider ? '/' : '/driver', tripId: d.tripId || null },
   }));
 });
 
@@ -108,7 +108,8 @@ self.addEventListener('notificationclick', (e) => {
   const url = (e.notification.data && e.notification.data.url) || '/driver';
   e.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const open = all.find((c) => new URL(c.url).pathname.startsWith('/driver'));
+    const want = url === '/' ? (p) => !p.startsWith('/driver') && !p.startsWith('/admin') : (p) => p.startsWith('/driver');
+    const open = all.find((c) => want(new URL(c.url).pathname));
     if (open) { await open.focus(); return; }
     await self.clients.openWindow(url);
   })());

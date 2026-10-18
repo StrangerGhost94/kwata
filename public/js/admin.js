@@ -1,10 +1,10 @@
 // Flytte admin console
 (function () {
   const root = document.getElementById('root');
-  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['checks', 'Photo & plate checks'], ['driverRules', 'Driver rules'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['safety', 'Safety'], ['payouts', 'Payouts']];
+  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['checks', 'Photo & plate checks'], ['driverRules', 'Driver rules'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['help', 'Customer help'], ['safety', 'Safety'], ['payouts', 'Payouts']];
   // Phones: four sections at the bottom, the rest under More.
   const MTABS = [['overview', 'Overview', 'chart'], ['drivers', 'Drivers', 'idcard'], ['checks', 'Checks', 'camera'], ['trips', 'Trips', 'list'], ['more', 'More', 'menu']];
-  const MORE = [['riders', 'Riders', 'person'], ['payouts', 'Driver cash outs', 'cash'], ['safety', 'Safety alerts', 'shield'], ['driverRules', 'Driver rules', 'settings'], ['pricing', 'Pricing', 'tag'], ['promos', 'Promotions', 'gift']];
+  const MORE = [['help', 'Customer help', 'help'], ['riders', 'Riders', 'person'], ['payouts', 'Driver cash outs', 'cash'], ['safety', 'Safety alerts', 'shield'], ['driverRules', 'Driver rules', 'settings'], ['pricing', 'Pricing', 'tag'], ['promos', 'Promotions', 'gift']];
   let fitRaf = 0;
   let tab = location.hash.slice(1) || 'overview';
   let stats = {}, liveMap, liveLayer, liveTimer, sock;
@@ -32,6 +32,7 @@
     sock.on('admin:change', (c) => { K.toast(`${c.name} sent a new ${c.kind === 'photo' ? 'profile photo' : 'vehicle / number plate'} to check`); refreshCounts(); if (tab === 'checks') show(); });
     sock.on('admin:report', (r) => { K.toast(`⚠️ ${r.label}: ${r.driver} (trip #${r.tripId})${r.paused ? ' · driver paused automatically' : ''}`, 10000); beep(); refreshCounts(); if (tab === 'checks') show(); });
     sock.on('admin:trip', () => { if (tab === 'overview') loadLive(); });
+    sock.on('admin:issue', (i) => { K.toast(`New ${i.role} report: ${i.label} (trip #${i.tripId})`, 8000); refreshCounts(); if (tab === 'help') show(); });
     await refreshCounts();
     show();
   }
@@ -39,9 +40,9 @@
   async function refreshCounts() {
     stats = await K.api('/admin/stats');
     const set = (id, n) => { for (const el of [K.$('#c-' + id), K.$('#m-' + id)]) if (el) { el.textContent = n > 99 ? '99+' : n; el.classList.toggle('hidden', !n); } };
-    set('drivers', stats.pendingDrivers); set('safety', stats.openSos); set('payouts', stats.pendingWithdrawals);
+    set('drivers', stats.pendingDrivers); set('safety', stats.openSos); set('help', stats.openIssues); set('payouts', stats.pendingWithdrawals);
     set('checks', (stats.pendingChanges || 0) + (stats.openReports || 0));
-    set('more', (stats.openSos || 0) + (stats.pendingWithdrawals || 0));
+    set('more', (stats.openSos || 0) + (stats.pendingWithdrawals || 0) + (stats.openIssues || 0));
     const sos = K.$('#m-sos'); if (sos) { sos.textContent = `SOS ${stats.openSos}`; sos.classList.toggle('hidden', !stats.openSos); }
   }
 
@@ -53,12 +54,12 @@
     window.scrollTo(0, 0);
     const main = K.$('#main');
     main.innerHTML = K.skeleton('title-list', 5);
-    ({ overview, drivers, checks, driverRules, riders, trips, pricing, promos, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
+    ({ overview, drivers, checks, driverRules, riders, trips, pricing, promos, help, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
   }
 
   // The rest of the sections, as a sheet.
   function moreSheet() {
-    const c = { payouts: stats.pendingWithdrawals, safety: stats.openSos };
+    const c = { payouts: stats.pendingWithdrawals, safety: stats.openSos, help: stats.openIssues };
     const m = K.modal(`<div class="more-sheet"><h2>More</h2>
       ${MORE.map(([id, n, ic]) => `<button class="more-row ${tab === id ? 'on' : ''}" data-go="${id}"><span class="mr-ic">${K.ic(ic)}</span><span class="grow">${n}</span>${c[id] ? `<span class="count ${id === 'safety' ? 'red' : ''}">${c[id]}</span>` : ''}${K.ic('chev')}</button>`).join('')}
       <button class="more-row out" data-go="out"><span class="mr-ic">${K.ic('logout')}</span><span class="grow">Sign out</span></button></div>`);
@@ -226,6 +227,8 @@
           <div><label for="rd">Document reminder (days before)</label><input id="rd" type="number" min="1" max="90" value="${d.docReminderDays}"></div>
           <div><label for="mp">Pause driver after reports of wrong face or plate</label><input id="mp" type="number" min="0" max="20" value="${d.mismatchPauseReports}"></div>
           <div><label><input type="checkbox" id="qn" ${d.queueNext ? 'checked' : ''} style="width:auto"> Line up the next trip near drop-off</label></div>
+          <div><label><input type="checkbox" id="sd" ${d.showDestination !== false ? 'checked' : ''} style="width:auto"> Show the destination before a driver accepts</label>
+            <span class="small muted" style="display:block">Off: drivers see only the trip length until they accept. Fewer drivers skip short or out-of-the-way trips, but some may cancel after accepting.</span></div>
         </div>
         <p class="small muted" style="max-width:720px">Reports count different riders in the last 30 days; 0 means never pause automatically. The no-show fee is taken from the rider’s wallet only when it covers it. Set the cash limit to 0 to never pause cash trips. Set heading home to 0 to switch it off.</p>
         <h2 style="margin-top:26px">Bonuses</h2>
@@ -249,7 +252,7 @@
       K.$('#saveR').onclick = async () => {
         read();
         try {
-          const out = await K.api('/admin/settings', { drivers: { freeWaitMin: +K.$('#fw').value, noShowFee: +K.$('#nf').value, cashDebtLimit: +K.$('#dl').value, headingHomePerDay: +K.$('#hh').value, docReminderDays: +K.$('#rd').value, mismatchPauseReports: +K.$('#mp').value, queueNext: K.$('#qn').checked }, bonuses }, 'PUT');
+          const out = await K.api('/admin/settings', { drivers: { freeWaitMin: +K.$('#fw').value, noShowFee: +K.$('#nf').value, cashDebtLimit: +K.$('#dl').value, headingHomePerDay: +K.$('#hh').value, docReminderDays: +K.$('#rd').value, mismatchPauseReports: +K.$('#mp').value, queueNext: K.$('#qn').checked, showDestination: K.$('#sd').checked }, bonuses }, 'PUT');
           Object.assign(d, out.drivers); bonuses.splice(0, bonuses.length, ...out.bonuses);
           K.toast('Driver rules saved.'); draw();
         } catch (e) { K.toast(e.message); }
@@ -478,6 +481,32 @@
         <td>${a.resolved ? badge('resolved') : `<button class="btn btn-sm btn-primary" data-id="${a.id}">Mark resolved</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No alerts. Good.</td></tr>'}
       </tbody></table></div>`;
     main.querySelectorAll('[data-id]').forEach((b) => b.onclick = async () => { await K.api(`/admin/sos/${b.dataset.id}/resolve`, {}); await refreshCounts(); show(); });
+  }
+
+  // Customer help: reports from a trip (lost items, fares, behaviour). Reply closes it and alerts the customer.
+  async function help(main) {
+    const list = await K.api('/admin/issues');
+    const open = list.filter((i) => i.status === 'open'), done = list.filter((i) => i.status !== 'open');
+    const card = (i) => `<div class="card issue-card ${i.status}" style="margin-bottom:12px">
+      <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${K.esc(i.label)}</b><span class="small muted">${K.when(i.at)} · trip #${i.tripId}</span></div>
+      <p style="margin:6px 0">${K.esc(i.details || '')}</p>
+      <p class="small muted" style="margin:0">From <b>${K.esc(i.from.name)}</b> (${i.role}) · <a href="tel:${K.esc(i.from.phone)}">${K.esc(K.prettyPhone(i.from.phone))}</a></p>
+      <p class="small muted" style="margin:4px 0 0">${K.esc(String(i.trip.pickup).split(',')[0])} → ${K.esc(String(i.trip.drop).split(',')[0])} · ${K.ugx(i.trip.fare)} · ${K.esc(i.trip.paymentMethod)}</p>
+      <p class="small muted" style="margin:4px 0 0">Rider: ${K.esc(i.trip.rider.name || '—')} <a href="tel:${K.esc(i.trip.rider.phone || '')}">${K.esc(K.prettyPhone(i.trip.rider.phone || ''))}</a>
+        ${i.trip.driver ? ` · Driver: ${K.esc(i.trip.driver.name)} (${K.esc(i.trip.driver.plate || '')}) <a href="tel:${K.esc(i.trip.driver.phone)}">${K.esc(K.prettyPhone(i.trip.driver.phone))}</a>` : ''}</p>
+      ${i.status === 'open' ? `<label for="rp${i.id}" style="margin-top:10px">Reply to the ${i.role}</label><textarea id="rp${i.id}" rows="2" maxlength="1000" placeholder="${i.kind === 'lost_item' ? 'e.g. Your driver has the phone and will drop it at the Kampala Road office tomorrow at 10am.' : 'What you found and what happens next'}"></textarea>
+        <button class="btn btn-primary btn-sm" style="margin-top:8px" data-reply="${i.id}">Send reply and close</button>`
+        : `<div class="issue-reply" style="margin-top:8px"><small>Your reply · ${K.when(i.resolvedAt)}</small>${K.esc(i.reply || '')}</div>`}</div>`;
+    main.innerHTML = `<h1>Customer help</h1><p class="muted">Reports riders and drivers send from a trip. Call them if it’s urgent; your reply reaches them in the app and as a notification.</p>
+      <h2>Open (${open.length})</h2>${open.map(card).join('') || '<p class="muted">Nothing waiting.</p>'}
+      ${done.length ? `<h2 style="margin-top:24px">Resolved</h2>${done.slice(0, 40).map(card).join('')}` : ''}`;
+    main.querySelectorAll('[data-reply]').forEach((b) => b.onclick = async () => {
+      const ta = K.$('#rp' + b.dataset.reply, main);
+      if (!ta.value.trim()) { ta.focus(); return; }
+      b.disabled = true;
+      try { await K.api(`/admin/issues/${b.dataset.reply}`, { reply: ta.value.trim() }); K.toast('Reply sent'); await refreshCounts(); show(); }
+      catch (e) { K.toast(e.message); b.disabled = false; }
+    });
   }
 
   async function payouts(main) {

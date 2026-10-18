@@ -91,12 +91,49 @@ function view(t, role) {
   return v;
 }
 
+// ---------- Rider alerts ----------
+// Key moments reach the rider's lock screen when Flytte isn't on screen. Each moment is sent once.
+const riderVisible = new Map();          // userId -> app on screen
+const riderSent = new Map();             // tripId -> Set of moments already pushed
+const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'Your driver';
+function riderAway(userId) {
+  const room = io && io.sockets.adapter.rooms.get(`user:${userId}`);
+  return !room || riderVisible.get(userId) === false;
+}
+function riderAlert(t, moment) {
+  if (moment === 'near' && t.accepted_at && Date.now() - new Date(t.accepted_at).getTime() < 90e3) return; // already close when accepted
+  let sent = riderSent.get(t.id);
+  if (!sent) { sent = new Set(); riderSent.set(t.id, sent); }
+  if (sent.has(moment)) return;
+  sent.add(moment);
+  if (!riderAway(t.rider_id)) return;
+  const who = t.service === 'parcel' ? 'courier' : 'driver';
+  const name = firstName(t.driver_name), plate = t.plate ? ` · ${t.plate}` : '';
+  const msg = {
+    accepted: [`${name} is on the way`, `${[t.vehicle_color, t.vehicle_make].filter(Boolean).join(' ') || 'Your ' + who}${plate}`],
+    near: [`${name} is almost here`, `Head to your pickup point${plate}`],
+    arrived: [`${name} has arrived`, `Meet your ${who} at the pickup${plate}`],
+    completed: [t.service === 'parcel' ? 'Parcel delivered' : 'You’ve arrived', 'Thanks for riding with Flytte. Tap to rate your trip.'],
+    driver_cancelled: [`Your ${who} cancelled`, 'Open Flytte to request again.'],
+    no_drivers: ['No drivers available', 'Open Flytte to try again.'],
+  }[moment];
+  if (!msg) return;
+  dtools.push(t.rider_id, { app: 'rider', type: moment, tag: `trip-${t.id}`, title: msg[0], body: msg[1], tripId: t.id }, { ttl: moment === 'completed' ? 3600 : 600, urgency: 'high' }).catch(() => {});
+}
+
 async function broadcast(tripId) {
   const t = await loadTrip(tripId);
   if (!t) return null;
+  if (t.status === 'accepted') riderAlert(t, 'accepted');
+  else if (t.status === 'arrived') riderAlert(t, 'arrived');
+  else if (t.status === 'completed') riderAlert(t, 'completed');
+  else if (t.status === 'no_drivers') riderAlert(t, 'no_drivers');
+  else if (t.status === 'cancelled' && t.cancelled_by === 'driver') riderAlert(t, 'driver_cancelled');
+  if (['completed', 'cancelled', 'no_drivers'].includes(t.status)) setTimeout(() => riderSent.delete(t.id), 30 * 60e3);
+  else if (t.status === 'requested') riderSent.delete(t.id);   // re-requested after a driver cancelled
   if (['completed', 'cancelled', 'no_drivers'].includes(t.status)) setTimeout(() => chats.delete(t.id), 10 * 60e3);
   const ld = t.driver_id && drivers.get(t.driver_id);
-  if (ld && ld.tripId === t.id) { ld.tripStatus = t.status; ld.drop = { lat: t.drop_lat, lng: t.drop_lng }; }
+  if (ld && ld.tripId === t.id) { ld.tripStatus = t.status; ld.drop = { lat: t.drop_lat, lng: t.drop_lng }; ld.pickup = { lat: t.pickup_lat, lng: t.pickup_lng }; ld.trip = t; }
   io.to(`user:${t.rider_id}`).emit('trip:update', view(t, 'rider'));
   if (t.driver_id) io.to(`user:${t.driver_id}`).emit('trip:update', view(t, 'driver'));
   io.to(`share:${t.id}`).emit('trip:update', view(t, 'public'));
@@ -184,6 +221,8 @@ async function dispatch(tripId, excludeDriverId) {
   const offer = { ...view(full, 'driver'), pickupKm: Math.round(next.km * 10) / 10, expiresIn: secs, queued: next.queued };
   offer.earning = full.fare - Math.round((full.fare * s.commissionPct) / 100);
   delete offer.rider.phone;
+  // Optional: hide where the trip goes until the driver accepts, so trips aren't picked by destination.
+  if (s.drivers && s.drivers.showDestination === false) offer.drop = { hidden: true };
   state.offer = offer; state.expiresAt = Date.now() + secs * 1000;
   notify(next.id, 'trip:offer', offer);
   const d = drivers.get(next.id);
@@ -300,6 +339,11 @@ function init(server) {
     for (const a of actives) socket.join(`trip:${a.id}`);
     const active = actives[0] || null;
 
+    if (u.role === 'rider') {
+      riderVisible.set(u.id, true);
+      socket.on('rider:visible', (v) => { riderVisible.set(u.id, !!v); });
+    }
+
     if (u.role === 'driver') {
       const dv = await db.one('SELECT * FROM drivers WHERE user_id = $1', [u.id]);
       if (!drivers.has(u.id)) {
@@ -343,6 +387,8 @@ function init(server) {
         if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return;
         d.lat = lat; d.lng = lng; d.heading = Number(loc.heading) || null; d.updatedAt = Date.now();
         if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
+        // About a minute away from the pickup: tell the rider to head out.
+        if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId && haversineKm(d, d.pickup) < 0.35) riderAlert(d.trip, 'near');
         if (d.queuedTripId) io.to(`trip:${d.queuedTripId}`).emit('driver:location', { tripId: d.queuedTripId, lat, lng, heading: d.heading });
         if (d.home && haversineKm(d, d.home) < 0.8) { d.home = null; notify(u.id, 'driver:home', { on: false, arrived: true }); }
       });
