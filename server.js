@@ -9,6 +9,17 @@ const auth = require('./src/auth');
 
 const app = express();
 app.set('trust proxy', 1);
+
+// Moving to a new domain: set CANONICAL_HOST (e.g. flytte.co) and page visits on any other address
+// are sent there. Only page loads are redirected (GET, not /api, /socket.io or /.well-known), so apps
+// already open on the old address keep working until they reload.
+const CANONICAL = (process.env.CANONICAL_HOST || '').trim().toLowerCase();
+if (CANONICAL) app.use((req, res, next) => {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim().toLowerCase().replace(/:\d+$/, '');
+  if (!host || host === CANONICAL || host === 'localhost' || host.endsWith('.railway.internal')) return next();
+  if (req.method !== 'GET' || /^\/(api|socket\.io|\.well-known)\b/.test(req.path)) return next();
+  res.redirect(301, `https://${CANONICAL}${req.originalUrl}`);
+});
 app.disable('x-powered-by');
 app.use(express.json({ limit: '3mb' })); // room for compressed document photos
 app.use((req, res, next) => {
