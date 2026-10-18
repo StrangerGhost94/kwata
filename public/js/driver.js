@@ -109,7 +109,7 @@
       try {
         const r = await K.api('/driver/pay-debt', {});
         if (r.link) { location.href = r.link; return; }
-        m.close(); K.toast('Payment received. Thank you!'); await loadEarnings(); loadOverview();
+        m.close(); K.toast('Payment received'); await loadEarnings(); loadOverview();
       } catch (e) { b.disabled = false; b.textContent = 'Try again'; K.$('#perr', m.el).textContent = e.message; }
     };
   }
@@ -207,7 +207,7 @@
     const pay = new URLSearchParams(location.search).get('payment');
     if (pay) {
       history.replaceState(null, '', location.pathname);
-      setTimeout(() => K.toast(pay === 'success' ? 'Commission paid. Thank you!' : pay === 'pending' ? 'Payment is being confirmed. It shows here shortly.' : 'The payment didn’t go through. Try again.', 5000), 800);
+      setTimeout(() => K.toast(pay === 'success' ? 'Commission paid' : pay === 'pending' ? 'Payment is being confirmed. It shows here shortly.' : 'The payment didn’t go through. Try again.', 5000), 800);
     }
 
     startGps();

@@ -721,7 +721,7 @@
     const phoneChip = () => `<div class="phone-chip"><span class="flag" aria-hidden="true">${K.countryOf(draft.e164).flag}</span><span class="num">+${K.countryOf(draft.e164).cc} ${K.esc(K.prettyPhone(draft.e164).replace(/^\+\d+ /, '').replace(/^0/, ''))}</span><button type="button" class="link-btn" data-chg>Change</button></div>`;
     const bindChip = () => { const c = root.querySelector('[data-chg]'); if (c) c.onclick = () => { dir = 'back'; phoneStep(); }; };
     const wrongApp = { driver: 'This number belongs to a driver account. Open the Flytte Driver app to sign in.', rider: 'This number has a rider account. Use a different number to drive with Flytte.', admin: 'This is a staff account.' };
-    const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.innerHTML = on ? '<span class="spin"></span>Please wait…' : btn.dataset.label; };
+    const busy = (form, on) => { const btn = form.querySelector('button[type=submit]'); btn.disabled = on; btn.innerHTML = on ? '<span class="spin" aria-hidden="true"></span><span class="sr-only">Loading</span>' : btn.dataset.label; };
     const finish = async (out) => {
       K.session.set(out);
       if (role === 'rider') await K.askLocation(root);
@@ -733,7 +733,7 @@
 
     function signUp() {
       shell(`<form id="f" novalidate class="auth-body">
-        <h1>Create your account</h1><p class="lead">It takes less than a minute.</p>
+        <h1>Create your account</h1><p class="lead">Add your name to finish setting up.</p>
         ${phoneChip()}
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" placeholder="e.g. Grace Nalubega" value="${K.esc(draft.name || '')}" required>
         ${draft.phoneToken ? '' : `<label for="pw">Password</label>${pwField('pw', 'new-password', 'At least 6 characters')}`}
@@ -762,7 +762,7 @@
 
     function driverForm() {
       shell(`<form id="f" novalidate class="auth-body">
-        <h1>Your details</h1><p class="lead">We’ll check these before your first trip.</p>
+        <h1>Your details</h1><p class="lead">These are verified before your first trip.</p>
         ${phoneChip()}
         <label for="nm">Full name</label><input id="nm" name="name" autocomplete="name" value="${K.esc(draft.name || '')}" required>
         ${draft.phoneToken ? '' : `<label for="pw">Create a password</label>${pwField('pw', 'new-password', 'At least 6 characters')}`}
@@ -804,7 +804,7 @@
         <p class="lead">${driver ? 'Sign in, or apply to drive, with your mobile number.' : 'Sign in or create an account with your mobile number.'}</p>
         <label for="ph" class="sr-only">Mobile number</label>${phoneField('ph', draft.phone)}
         <p class="error" role="alert"></p>
-        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Sign In">Sign In</button>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
         <p class="fine" data-fine>We’ll send a one-time code to verify your number.${driver ? ' New drivers are reviewed before their first trip.' : ''}</p>
         <p class="fine legal">By continuing, you agree to Flytte’s <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
       </form>`, null);
@@ -838,14 +838,14 @@
     const TGI = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.7 4.3 3.4 11a.9.9 0 0 0 0 1.7l4.3 1.4 1.7 5.2c.2.6.9.8 1.4.4l2.4-2 4.3 3.2c.5.4 1.3.1 1.4-.5l3-14.1c.2-.8-.5-1.4-1.2-1Zm-3.2 3.4-7.6 6.8-.3 3.1-1.3-4.1 8.6-5.5c.4-.3.8.1.6-.3Z"/></svg>';
     // Where codes can go, in the order they're offered.
     const CH = {
-      whatsapp: { name: 'WhatsApp', on: 'on WhatsApp', icon: WA, cls: 'ch-wa', sub: 'Fastest, works on Wi-Fi' },
-      telegram: { name: 'Telegram', on: 'in Telegram', icon: TGI, cls: 'ch-tg', sub: 'Arrives in your Telegram app' },
-      sms: { name: 'SMS', on: 'by SMS', icon: SMSI, cls: 'ch-sms', sub: 'A text message to this number' },
+      whatsapp: { name: 'WhatsApp', on: 'on WhatsApp', icon: WA, cls: 'ch-wa', sub: 'Works on Wi-Fi or mobile data' },
+      telegram: { name: 'Telegram', on: 'in Telegram', icon: TGI, cls: 'ch-tg', sub: 'Delivered in the Telegram app' },
+      sms: { name: 'SMS', on: 'by SMS', icon: SMSI, cls: 'ch-sms', sub: 'Standard text message' },
     };
     const pickChannel = (chans) => new Promise((resolve) => {
       let done = false;
-      const m = K.modal(`<div class="ch-sheet"><h2>Where should we send your code?</h2>
-        <p class="muted">We’ll send a 6-digit code to <b>${K.esc(K.prettyPhone(draft.e164))}</b></p>
+      const m = K.modal(`<div class="ch-sheet"><h2>Verify your number</h2>
+        <p class="muted">Choose how to receive your 6-digit code for <b>${K.esc(K.prettyPhone(draft.e164))}</b></p>
         ${Object.keys(CH).filter((k) => chans.includes(k)).map((k) => `<button class="ch-opt ${CH[k].cls}" data-ch="${k}"><span class="ch-ic">${CH[k].icon}</span><span class="grow"><b>${CH[k].name}</b><small>${CH[k].sub}</small></span>${K.ic('chev')}</button>`).join('')}</div>`,
         { onClose: () => { if (!done) resolve(null); } });
       m.el.querySelectorAll('[data-ch]').forEach((b) => b.onclick = () => { done = true; K.haptic(); m.close(); resolve(b.dataset.ch); });
@@ -862,8 +862,8 @@
     }
     function codeStep() {
       shell(`<form id="f" novalidate class="auth-body code-step">
-        <h1>Enter the code</h1>
-        <p class="lead">We sent a 6-digit code ${(CH[channel] || CH.sms).on} to</p>
+        <h1>Enter your code</h1>
+        <p class="lead">Sent ${(CH[channel] || CH.sms).on} to</p>
         ${phoneChip()}
         <label for="otp" class="sr-only">6-digit code</label>
         <div class="otp-wrap"><input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" spellcheck="false">
@@ -880,18 +880,18 @@
       inp.addEventListener('focus', paint); inp.addEventListener('blur', paint);
       setTimeout(() => inp.focus({ preventScroll: true }), 350);
       let tick;
-      const timer = () => { const left = Math.ceil((resendAt - Date.now()) / 1000); rs.disabled = left > 0; rs.textContent = left > 0 ? `Send a new code in ${left}s` : 'Send a new code'; if (left <= 0) clearInterval(tick); };
+      const timer = () => { const left = Math.ceil((resendAt - Date.now()) / 1000); rs.disabled = left > 0; rs.textContent = left > 0 ? `Resend code in 0:${String(left).padStart(2, '0')}` : 'Resend code'; if (left <= 0) clearInterval(tick); };
       tick = setInterval(timer, 1000); timer();
-      rs.onclick = async () => { rs.disabled = true; try { await sendCode(); K.toast('New code sent'); inp.value = ''; paint(); } catch (ex) { err.textContent = ex.message; } clearInterval(tick); tick = setInterval(timer, 1000); timer(); };
+      rs.onclick = async () => { rs.disabled = true; try { await sendCode(); K.toast('Code resent'); inp.value = ''; paint(); } catch (ex) { err.textContent = ex.message; } clearInterval(tick); tick = setInterval(timer, 1000); timer(); };
       // Didn't arrive? Offer the other ways that are switched on.
       const swWrap = f.querySelector('[data-switch-wrap]');
       K.cfg().then((c) => {
         const others = Object.keys(CH).filter((k) => k !== channel && (c.codeChannels || []).includes(k));
         if (!others.length) return;
-        swWrap.innerHTML = `Didn’t get it? ${others.map((k) => `<button type="button" class="link-btn" data-switch="${k}">Send ${CH[k].on}</button>`).join(' · ')}`;
+        swWrap.innerHTML = `Didn’t receive it? ${others.map((k) => `<button type="button" class="link-btn" data-switch="${k}">Use ${CH[k].name}</button>`).join(' · ')}`;
         swWrap.classList.remove('hidden');
         swWrap.querySelectorAll('[data-switch]').forEach((sw) => sw.onclick = async () => {
-          if (Date.now() < resendAt) { err.textContent = `Wait ${Math.ceil((resendAt - Date.now()) / 1000)} seconds, then try again.`; return; }
+          if (Date.now() < resendAt) { err.textContent = `You can request a new code in ${Math.ceil((resendAt - Date.now()) / 1000)}s.`; return; }
           const to = sw.dataset.switch;
           sw.disabled = true; try { await sendCode(to); clearInterval(tick); dir = 'fwd'; codeStep(); K.toast(`Code sent ${CH[to].on}`); } catch (ex) { err.textContent = ex.message; sw.disabled = false; }
         });
@@ -900,7 +900,7 @@
       if ('OTPCredential' in window) { const ac = new AbortController(); f.addEventListener('submit', () => ac.abort(), { once: true }); navigator.credentials.get({ otp: { transport: ['sms'] }, signal: ac.signal }).then((c) => { if (c && c.code) { inp.value = c.code; paint(); f.requestSubmit(); } }).catch(() => {}); }
       f.onsubmit = async (e) => {
         e.preventDefault();
-        if (inp.value.length !== 6) { err.textContent = 'Enter the 6-digit code from the SMS.'; inp.focus(); return; }
+        if (inp.value.length !== 6) { err.textContent = 'Enter all 6 digits.'; inp.focus(); return; }
         busy(f, true);
         try {
           const out = await K.api('/auth/otp/verify', { phone: draft.e164, code: inp.value });
@@ -917,14 +917,14 @@
 
     function passwordStep() {
       shell(`<form id="f" novalidate class="auth-body">
-        <h1>Welcome back</h1><p class="lead">Enter your password to log in.</p>
+        <h1>Welcome back</h1><p class="lead">Enter your password to continue.</p>
         ${phoneChip()}
         <input type="tel" name="username" autocomplete="username" value="${K.esc(draft.e164)}" hidden>
         <label for="pw">Password</label>${pwField('pw', 'current-password')}
         <div class="row" style="justify-content:flex-end;margin-top:8px"><button type="button" class="link-btn" data-forgot>Forgot password?</button></div>
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
-        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Log In">Log In</button>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Sign in">Sign in</button>
       </form>`, phoneStep);
       bindChip();
       const f = root.querySelector('#f');
@@ -960,7 +960,7 @@
         <div class="row" style="justify-content:flex-end;margin-top:8px"><button type="button" class="link-btn" data-forgot>Forgot password?</button></div>
         <p class="error" role="alert"></p>
         <div class="spacer"></div>
-        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Log In">Log In</button>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Sign in">Sign in</button>
       </form>`, null);
       const f = root.querySelector('#f');
       root.querySelector('[data-forgot]').onclick = forgot;

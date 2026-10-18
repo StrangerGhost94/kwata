@@ -89,7 +89,7 @@ const api = async (path, body, token) => {
   const c2 = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const p2 = await c2.newPage(); p2.on('pageerror', (e) => errors.push(e.message));
   await p2.goto(BASE + '/'); await p2.waitForSelector('.phone-first #ph', { timeout: 15000 });
-  ok(!(await p2.$('.onboard, #go, #li')) && /Sign In/.test(await p2.textContent('.phone-first button[type=submit]')), 'a first-time rider opens straight on Sign In (no Get Started / Log In page)');
+  ok(!(await p2.$('.onboard, #go, #li')) && /Continue/.test(await p2.textContent('.phone-first button[type=submit]')), 'a first-time rider opens straight on the phone screen (no Get Started / Log In page)');
   ok(!(await p2.$('[data-google]')) && !(await p2.$('.phone-first #pw')), 'sign-in starts with just the phone number (no Google, no password yet)');
   await p2.fill('#ph', '12345'); await p2.click('button[type=submit]');
   ok(/valid Uganda mobile number/.test(await p2.textContent('.error')), 'phone step checks the number before sending');
@@ -103,8 +103,8 @@ const api = async (path, body, token) => {
   await p2.waitForSelector('#otp', { timeout: 10000 });
   await p2.waitForSelector('[data-switch=sms]', { timeout: 5000 });
   ok(/on WhatsApp/.test(await p2.textContent('.lead')) && !!(await p2.$('[data-switch=telegram]')) && !!(await p2.$('[data-switch=sms]')), 'WhatsApp chosen: the code screen says WhatsApp and offers Telegram or SMS instead');
-  ok(/Enter the code/.test(await p2.textContent('h1')) && (await p2.$$('.otp-boxes i')).length === 6 && await p2.getAttribute('#otp', 'autocomplete') === 'one-time-code', 'a registered number gets the 6-box SMS code screen with code autofill');
-  ok(/Send a new code in \d+s/.test(await p2.textContent('[data-resend]')), 'resend waits with a countdown');
+  ok(/Enter your code/.test(await p2.textContent('h1')) && (await p2.$$('.otp-boxes i')).length === 6 && await p2.getAttribute('#otp', 'autocomplete') === 'one-time-code', 'a registered number gets the 6-box SMS code screen with code autofill');
+  ok(/Resend code in 0:\d\d/.test(await p2.textContent('[data-resend]')), 'resend waits with a countdown');
   await p2.waitForFunction(() => true); for (let i = 0; i < 20 && !lastCode; i++) await p2.waitForTimeout(100);
   await p2.fill('#otp', lastCode);
   await p2.waitForFunction(() => !!localStorage.getItem('flytte_rider'), null, { timeout: 10000 });

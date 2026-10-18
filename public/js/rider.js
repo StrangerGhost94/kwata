@@ -618,7 +618,7 @@
         const q = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, promoCode: code });
         const ok = q.options.some((o) => o.promoCode === code);
         if (!ok) { K.$('#err', m.el).textContent = q.promoError || 'That code doesn’t apply to this trip.'; btn.disabled = false; return; }
-        S.promoCode = code; q.at = Date.now(); q._shown = true; S.quote = q; m.close(); render(); K.toast('Promo applied 🎉');
+        S.promoCode = code; q.at = Date.now(); q._shown = true; S.quote = q; m.close(); render(); K.toast('Promo applied');
       } catch (e) { K.$('#err', m.el).textContent = e.message; btn.disabled = false; }
     };
     const rm = K.$('#rm', m.el); if (rm) rm.onclick = () => { S.promoCode = null; m.close(); refreshQuote(); };
@@ -809,7 +809,7 @@
         try {
           await K.api(`/trips/${t.id}/tip`, { amount, method: x.dataset.m });
           if (x.dataset.m === 'wallet') S.user.walletBalance -= amount;
-          S.trip.tip = amount; S.trip.tipMethod = x.dataset.m; m.close(); K.toast('💛 Thank you for the tip!'); render();
+          S.trip.tip = amount; S.trip.tipMethod = x.dataset.m; m.close(); K.toast('Tip sent. Thank you.'); render();
         } catch (e) { K.toast(e.message); }
       });
     });
@@ -889,7 +889,7 @@
   function reportMismatch() {
     const t = S.trip, d = t.driver || {};
     let kind = null;
-    const m = K.modal(`<h2>Something doesn’t match?</h2>
+    const m = K.modal(`<h2>Report a mismatch</h2>
       <p class="muted">Your report goes straight to the Flytte safety team. ${t.status === 'completed' ? '' : 'Don’t get on if the driver or vehicle isn’t the one shown in the app.'}</p>
       <button class="lrow" data-k="photo"><span class="ic">${K.ic('user')}</span><span class="grow"><span class="t">The driver isn’t the person in the photo</span></span><span class="tick" aria-hidden="true">${K.ic('check', 'sm')}</span></button>
       <button class="lrow" data-k="plate"><span class="ic">${K.ic('card')}</span><span class="grow"><span class="t">The number plate is different</span><span class="s">The app shows ${K.esc(d.plate || '')}</span></span><span class="tick" aria-hidden="true">${K.ic('check', 'sm')}</span></button>
@@ -909,7 +909,7 @@
         await K.api(`/trips/${t.id}/report`, { kind, note: K.$('#rnote', m.el).value });
         const before = ['accepted', 'arrived'].includes(t.status), during = t.status === 'in_progress';
         m.el.innerHTML = `<div style="text-align:center;padding:6px 0 4px"><div class="check-big" style="margin:0 auto 10px">${K.ic('check')}</div>
-          <h2>Thanks for telling us</h2><p class="muted">The safety team will check this driver. ${before ? 'If it isn’t the right driver or vehicle, don’t get on. You can cancel this ride at no cost.' : during ? 'If you feel unsafe, use SOS or call the police on 999.' : ''}</p></div>
+          <h2>Report received</h2><p class="muted">The safety team will check this driver. ${before ? 'If it isn’t the right driver or vehicle, don’t get on. You can cancel this ride at no cost.' : during ? 'If you feel unsafe, use SOS or call the police on 999.' : ''}</p></div>
           ${before ? '<button class="btn btn-danger btn-block btn-lg" id="rcancel">Cancel this ride</button>' : ''}
           ${during ? `<button class="btn btn-danger btn-block btn-lg" id="rsos">${K.ic('sos', 'sm')} SOS</button>` : ''}
           <button class="btn btn-block" style="margin-top:8px" data-close>Close</button>`;
@@ -932,8 +932,8 @@
       <div class="done-wrap">
         <div class="confetti">${confetti}</div>
         <div class="check-big">${K.ic('check')}</div>
-        <h2>${t.service === 'parcel' ? 'Parcel delivered!' : 'Trip completed!'}</h2>
-        <p class="small muted">${t.service === 'parcel' ? 'Your package has arrived' : 'You have arrived at your destination'}</p>
+        <h2>${t.service === 'parcel' ? 'Parcel delivered' : 'You’ve arrived'}</h2>
+        <p class="small muted">${t.service === 'parcel' ? 'Your package has been handed over' : 'Thanks for riding with Flytte'}</p>
         <div class="fare-card">
           <span class="small muted">${t.paymentMethod === 'cash' ? 'Pay in cash' : needsPay ? 'Amount due' : 'Total paid'}</span>
           <div class="amt">${K.ugx(t.payable)}</div>
@@ -1019,7 +1019,7 @@
     const prev = S.trip && S.trip.status;
     S.trip = t;
     if (t.status === 'scheduled') {
-      K.toast(`🕐 ${svcName(t.service)} scheduled for ${whenLabel(t.scheduledFor)}`, 4500);
+      K.toast(`${svcName(t.service)} scheduled for ${whenLabel(t.scheduledFor)}`, 4500);
       S.trip = null; reset(); loadUpcoming(); return;
     }
     if (t.status === 'requested') S.view = 'searching';
@@ -1235,7 +1235,7 @@
           : '<p class="rw-empty">Points from your trips will appear here.</p>'}</div>`;
       K.$('#redeem', sp.page).onclick = async () => {
         const btn = K.$('#redeem', sp.page); btn.disabled = true;
-        try { const out = await K.api('/rewards/redeem', {}); S.user.walletBalance = out.walletBalance; K.toast(`🎉 ${K.ugx(rw.redeemValue)} added to your wallet`); S.growth = await K.api('/me/growth'); draw(S.growth); }
+        try { const out = await K.api('/rewards/redeem', {}); S.user.walletBalance = out.walletBalance; K.toast(`${K.ugx(rw.redeemValue)} added to your wallet`); S.growth = await K.api('/me/growth'); draw(S.growth); }
         catch (e) { K.toast(e.message); btn.disabled = false; }
       };
     };
