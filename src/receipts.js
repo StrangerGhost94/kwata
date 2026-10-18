@@ -9,7 +9,10 @@ const SVC = { boda: 'Flytte Boda', car: 'Flytte Car', comfort: 'Flytte Comfort',
 const PAY = { cash: 'Cash', wallet: 'Flytte Wallet', momo: 'Mobile Money', card: 'Card' };
 const ugx = (n) => 'UGX ' + Math.round(Number(n) || 0).toLocaleString('en-UG');
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const site = () => process.env.PUBLIC_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : 'https://flytte.co');
+// Links and the logo in emails point at the public site (never a *.railway.app address).
+const site = () => { const u = process.env.EMAIL_SITE_URL || process.env.PUBLIC_URL || ''; return /^https:\/\//.test(u) && !/railway\.app/.test(u) ? u.replace(/\/$/, '') : 'https://flytte.co'; };
+// The real Flytte wordmark (gold F + white "lytte"), for the dark email header.
+const logo = () => `<img src="${site()}/img/email-logo.png?v=1" width="112" height="36" alt="Flytte" style="display:block;border:0;height:36px;width:112px">`;
 
 function build(t) {
   const no = `FLY-${String(t.id).padStart(6, '0')}`;
@@ -27,8 +30,7 @@ function build(t) {
   const html = `<!doctype html><html><body style="margin:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#141414">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:24px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;overflow:hidden">
-<tr><td style="background:#141414;padding:22px 24px"><span style="display:inline-block;background:#FFC400;color:#141414;font-weight:800;font-size:18px;border-radius:10px;padding:6px 11px;letter-spacing:-.02em">F</span>
-<span style="color:#ffffff;font-size:20px;font-weight:700;vertical-align:middle;margin-left:10px;letter-spacing:-.02em">Flytte</span></td></tr>
+<tr><td style="background:#141414;padding:20px 24px">${logo()}</td></tr>
 <tr><td style="padding:26px 24px 8px">
 <p style="margin:0 0 4px;font-size:15px;color:#6b6b70">Thanks for riding, ${esc(first)}</p>
 <p style="margin:0;font-size:34px;font-weight:800;letter-spacing:-.03em">${ugx(total)}</p>
@@ -74,4 +76,4 @@ function start() {
   return setInterval(tick, Number(process.env.RECEIPT_TICK_MS || 60e3));
 }
 
-module.exports = { build, sendDue, start };
+module.exports = { logo, site, build, sendDue, start };

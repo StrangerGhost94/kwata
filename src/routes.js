@@ -152,7 +152,7 @@ r.post('/auth/register', limit(10, 10 * 60e3), wrap(async (req, res) => {
     out.user.referral_code = await growth.ensureReferralCode(out.user);
   }
   if (role === 'driver') rt.io.to('admin').emit('admin:new_driver', { id: out.user.id, name: out.user.name });
-  res.json({ token: auth.sign(out.user), user: auth.publicUser(out.user) });
+  res.json({ token: auth.issue(req, res, out.user), user: auth.publicUser(out.user) });
 }));
 
 // ---------- Driver documents ----------
@@ -312,7 +312,7 @@ r.post('/me/email', auth.requireAuth('rider'), limit(10, 10 * 60e3), wrap(async 
   try {
     await mailer.send({ to: addr, tag: 'verify', subject: `${code} is your Flytte email code`,
       text: `Hi ${first},\n\nYour Flytte code is ${code}. Enter it in the app to confirm your email. It expires in 15 minutes.\n\nIf you didn’t ask for this, you can ignore this email.`,
-      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:440px;margin:0 auto;padding:28px 20px;color:#141414"><div style="font-size:20px;font-weight:800;margin-bottom:18px"><span style="background:#FFC400;border-radius:8px;padding:3px 9px;margin-right:8px">F</span>Flytte</div><p style="font-size:15px;margin:0 0 14px">Hi ${first.replace(/[<>&"]/g, '')}, enter this code in the app to confirm your email:</p><p style="font-size:34px;font-weight:800;letter-spacing:.18em;margin:0 0 14px">${code}</p><p style="font-size:13px;color:#6b6b70;margin:0">It expires in 15 minutes. If you didn’t ask for this, you can ignore this email.</p></div>` });
+      html: `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:440px;margin:0 auto;padding:28px 20px;color:#141414"><div style="background:#141414;border-radius:14px;padding:18px 20px;margin-bottom:22px">${require('./receipts').logo()}</div><p style="font-size:15px;margin:0 0 14px">Hi ${first.replace(/[<>&"]/g, '')}, enter this code in the app to confirm your email:</p><p style="font-size:34px;font-weight:800;letter-spacing:.18em;margin:0 0 14px">${code}</p><p style="font-size:13px;color:#6b6b70;margin:0">It expires in 15 minutes. If you didn’t ask for this, you can ignore this email.</p></div>` });
   } catch (e) {
     await db.query('DELETE FROM email_codes WHERE user_id = $1', [req.user.id]);
     return bad(res, 'We couldn’t send the email. Check the address and try again.', 502);
@@ -429,7 +429,7 @@ r.post('/auth/otp/verify', limit(20, 10 * 60e3), wrap(async (req, res) => {
   const u = await db.one('SELECT * FROM users WHERE phone = $1', [p]);
   if (u) {
     if (u.blocked) return bad(res, 'This account is suspended. Contact support.', 403);
-    return res.json({ token: auth.sign(u), user: auth.publicUser(u) });
+    return res.json({ token: auth.issue(req, res, u), user: auth.publicUser(u) });
   }
   res.json({ verified: true, phoneToken: auth.signPhone(p) });
 }));
@@ -440,7 +440,24 @@ r.post('/auth/login', limit(15, 10 * 60e3), wrap(async (req, res) => {
   const u = p && await db.one('SELECT * FROM users WHERE phone = $1', [p]);
   if (!u || !(await bcrypt.compare(String(password || ''), u.password_hash))) return bad(res, 'Wrong phone number or password.', 401);
   if (u.blocked) return bad(res, 'This account is suspended. Contact support.', 403);
-  res.json({ token: auth.sign(u), user: auth.publicUser(u) });
+  res.json({ token: auth.issue(req, res, u), user: auth.publicUser(u) });
+}));
+
+// Sign back in from the cookie copy when the app's saved sign-in is gone (e.g. iOS cleared it).
+r.post('/auth/resume', limit(30, 10 * 60e3), wrap(async (req, res) => {
+  const app = String((req.body || {}).app || 'rider');
+  const tok = auth.readCookie(req, auth.cookieName(app));
+  const p = tok && auth.verify(tok);
+  const u = p && !p.purpose && await db.one('SELECT * FROM users WHERE id = $1', [p.id]);
+  const roleOk = u && (app === 'rider' ? u.role === 'rider' : app === 'driver' ? u.role === 'driver' : u.role === 'admin');
+  if (!u || u.deleted_at || u.blocked || !roleOk) { if (tok) auth.clearSessionCookie(req, res, app); return res.json({ session: null }); }
+  res.json({ session: { token: auth.issue(req, res, u), user: auth.publicUser(u) } });
+}));
+
+// Log out: forget the cookie copy too, so the app doesn't sign back in by itself.
+r.post('/auth/logout', wrap(async (req, res) => {
+  auth.clearSessionCookie(req, res, String((req.body || {}).app || 'rider'));
+  res.json({ ok: true });
 }));
 
 r.get('/me', auth.requireAuth(), wrap(async (req, res) => {

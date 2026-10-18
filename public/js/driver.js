@@ -5,8 +5,7 @@
   const S = { user: null, driver: null, online: false, offer: null, trip: null, next: null, ov: null, loc: null, manual: false, earnings: null, rating: 0, config: null, messages: [], unread: 0, chatOpen: false, tab: 'home', hasPhoto: false };
   let map, sock, sheet, me, targetMarker, routeLayer, watchId, offerTimer, waitTimer, wakeLock, lastSent = 0, routedFor = null;
 
-  if (!K.token()) K.authScreen(root, { role: 'driver', onDone: start });
-  else start();
+  K.boot(start, () => K.authScreen(root, { role: 'driver', onDone: start }));
 
   const prettyPhone = (p) => K.prettyPhone(p);
   const photoUrl = () => (S.hasPhoto && S.photoData) || null;   // own photo, loaded privately (works while pending approval)
@@ -266,7 +265,7 @@
       <button class="btn btn-link btn-block" id="out" style="color:var(--stop)">Log out</button></div>`;
     const c = K.$('#check'); if (c) c.onclick = () => location.reload();
     K.$('#docs').onclick = () => K.verifyDocs(root, { onDone: renderPending, back: renderPending });
-    K.$('#out').onclick = () => { K.session.clear(); location.reload(); };
+    K.$('#out').onclick = () => K.logout();
   }
 
   // ---------- GPS ----------
@@ -950,7 +949,7 @@
       autonav: () => { try { localStorage.setItem('flytte_auto_nav', autoNav() ? 'off' : 'on'); } catch {} K.haptic && K.haptic(); drawProfile(el); },
       manual: () => { if (S.manual) { S.manual = false; startGps(); } else { S.manual = true; navigator.geolocation && navigator.geolocation.clearWatch(watchId); K.toast('Tap the map to move your position.'); } openTab('home'); },
       settings: () => K.openSettings({ role: 'driver', onBack: () => drawProfile(el) }),
-      out: () => { if (S.online) setOnline(false); K.session.clear(); location.reload(); },
+      out: () => { if (S.online) setOnline(false); K.logout(); },
     })[b.dataset.a]());
   }
 

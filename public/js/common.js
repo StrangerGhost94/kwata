@@ -175,15 +175,37 @@
   // ---------- session ----------
   K.session = {
     get() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch { return null; } },
-    set(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch {} },
+    set(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); localStorage.removeItem(KEY + '_out'); } catch {} },
     clear() { try { localStorage.removeItem(KEY); localStorage.removeItem(KEY + '_cache'); } catch {} },
   };
   K.token = () => (K.session.get() || {}).token;
+  // Signed-in stays signed-in: if the phone cleared the app's saved sign-in, get it back from the
+  // server's cookie copy. Skipped after the person logged out on this phone.
+  K.resume = async function () {
+    try { if (localStorage.getItem(KEY + '_out')) return false; } catch {}
+    try {
+      const r = await fetch('/api/auth/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: APP }) });
+      const j = await r.json();
+      if (j && j.session && j.session.token) { K.session.set(j.session); return true; }
+    } catch {}
+    return false;
+  };
+  // Log out only when the person chooses to.
+  K.logout = async function () {
+    try { localStorage.setItem(KEY + '_out', '1'); } catch {}
+    try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: APP }) }); } catch {}
+    K.session.clear(); location.reload();
+  };
+  // Start the app: signed in → start(); otherwise try to resume, then show sign-in.
+  K.boot = function (start, showAuth) {
+    if (K.token()) return start();
+    K.resume().then((ok) => (ok ? start() : showAuth()));
+  };
 
   // Last-known data (profile, settings, trips) so the app can draw instantly on open,
   // then refresh from the server. Tied to the signed-in account; cleared on log out.
   K.cache = {
-    all() { try { const c = JSON.parse(localStorage.getItem(KEY + '_cache')); return c && c.t === K.token() ? c : { t: K.token(), d: {} }; } catch { return { t: K.token(), d: {} }; } },
+    all() { const id = ((K.session.get() || {}).user || {}).id || null; try { const c = JSON.parse(localStorage.getItem(KEY + '_cache')); return c && c.u === id ? c : { u: id, d: {} }; } catch { return { u: id, d: {} }; } },
     get(name) { return this.all().d[name]; },
     set(name, value) { try { const c = this.all(); c.d[name] = value; localStorage.setItem(KEY + '_cache', JSON.stringify(c)); } catch {} },
   };
@@ -206,7 +228,11 @@
       throw new Error(d.error || 'Something went wrong on our side. Please try again in a moment.');
     }
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401 && t) { K.session.clear(); location.reload(); }
+    // A renewed sign-in from the server (sessions slide forward while the app is used).
+    const nt = res.headers.get('X-Session-Token');
+    if (nt && t) { const s = K.session.get(); if (s && s.token === t) { s.token = nt; K.session.set(s); } }
+    // Sign out only when the server says the sign-in itself is no longer valid, never for a wrong code etc.
+    if (res.status === 401 && t && data.code === 'SESSION') { K.session.clear(); location.reload(); }
     if (!res.ok) throw Object.assign(new Error(data.error || 'Something went wrong.'), { code: data.code, status: res.status });
     return data;
   };
@@ -1315,7 +1341,9 @@
       go.disabled = true; go.innerHTML = '<span class="spin"></span>Deleting…'; err.textContent = '';
       try {
         await K.api('/me/delete', { forfeit: !!forfeit });
-        K.session.clear(); try { localStorage.removeItem('flytte_onboarded'); } catch {}
+        try { localStorage.removeItem('flytte_onboarded'); localStorage.setItem(KEY + '_out', '1'); } catch {}
+        try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: APP }) }); } catch {}
+        K.session.clear();
         m.close(); K.toast('Your account has been deleted.'); setTimeout(() => location.reload(), 900);
       } catch (e) {
         go.disabled = false; go.textContent = 'Delete account';

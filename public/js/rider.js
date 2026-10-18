@@ -18,8 +18,7 @@
     setTimeout(() => K.toast(pm === 'success' ? 'Payment received ✅' : pm === 'pending' ? 'We’re still confirming your payment. It will update here automatically.' : 'Payment was not completed. Try again from your trip, or pay with cash.', 5000), 600);
   }
 
-  if (!K.token()) K.authScreen(root, { role: 'rider', onDone: start });
-  else start();
+  K.boot(start, () => K.authScreen(root, { role: 'rider', onDone: start }));
 
   // ---------- payment preference ----------
   const PAY = {
@@ -1546,7 +1545,7 @@
       else if (a === 'safety') openEmergency(redraw);
       else if (a === 'email') openEmail(redraw);
       else if (a === 'settings') K.openSettings({ role: 'rider', onBack: redraw });
-      else if (a === 'out') { K.session.clear(); location.reload(); }
+      else if (a === 'out') K.logout();
     });
   }
 

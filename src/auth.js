@@ -11,9 +11,28 @@ if (LIVE && SECRET === DEV_SECRET) {
 }
 if (LIVE && SECRET.length < 24) console.warn('⚠️  JWT_SECRET is short. Use 32+ random characters.');
 
+// Sessions stay signed in until the person logs out: a token lasts 180 days and is renewed
+// (sliding) whenever the app is used, so an active rider or driver is never signed out.
+const SESSION_DAYS = 180;
 function sign(user) {
-  return jwt.sign({ id: user.id, role: user.role }, SECRET, { expiresIn: '30d' });
+  return jwt.sign({ id: user.id, role: user.role }, SECRET, { expiresIn: SESSION_DAYS + 'd' });
 }
+// A copy of the session in an HttpOnly cookie, so the app can sign back in by itself if the
+// phone clears the app's saved data (iOS does this to web apps). One per app role.
+const cookieName = (role) => 'fs_' + (['rider', 'driver', 'admin'].includes(role) ? role : 'rider');
+function readCookie(req, name) {
+  const m = String(req.headers.cookie || '').split(/;\s*/).find((c) => c.startsWith(name + '='));
+  return m ? decodeURIComponent(m.slice(name.length + 1)) : null;
+}
+function setSessionCookie(req, res, user, token) {
+  const secure = (req.headers['x-forwarded-proto'] || req.protocol) === 'https';
+  res.append('Set-Cookie', `${cookieName(user.role)}=${encodeURIComponent(token)}; Path=/api/auth; Max-Age=${SESSION_DAYS * 86400}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`);
+}
+function clearSessionCookie(req, res, role) {
+  res.append('Set-Cookie', `${cookieName(role)}=; Path=/api/auth; Max-Age=0; HttpOnly; SameSite=Lax`);
+}
+// Issue a session: the token for the app, plus the cookie copy.
+function issue(req, res, user) { const token = sign(user); setSessionCookie(req, res, user, token); return token; }
 
 // Short-lived proof that someone entered the SMS code for this phone (used to finish signing up).
 function signPhone(phone) { return jwt.sign({ phone, purpose: 'phone' }, SECRET, { expiresIn: '30m' }); }
@@ -56,9 +75,16 @@ function requireAuth(...roles) {
   return async (req, res, next) => {
     const h = req.headers.authorization || '';
     const payload = verify(h.startsWith('Bearer ') ? h.slice(7) : '');
-    if (!payload) return res.status(401).json({ error: 'Please sign in again.' });
+    // code SESSION tells the app the sign-in itself is no longer valid (only then does it sign out).
+    if (!payload || payload.purpose) return res.status(401).json({ error: 'Please sign in again.', code: 'SESSION' });
     const user = await db.one('SELECT * FROM users WHERE id = $1', [payload.id]);
-    if (!user || user.deleted_at) return res.status(401).json({ error: 'Account not found.' });
+    if (!user || user.deleted_at) return res.status(401).json({ error: 'Account not found.', code: 'SESSION' });
+    // Renew a session that's more than a day old, so it never runs out while the app is in use.
+    if (payload.iat && Date.now() / 1000 - payload.iat > 86400) {
+      const token = sign(user);
+      res.set('X-Session-Token', token);
+      setSessionCookie(req, res, user, token);
+    }
     if (user.blocked) return res.status(403).json({ error: 'This account is suspended. Contact support.' });
     if (roles.length && !roles.includes(user.role)) return res.status(403).json({ error: 'Not allowed.' });
     req.user = user;
@@ -80,4 +106,4 @@ function publicUser(u) {
   };
 }
 
-module.exports = { sign, verify, requireAuth, normalizePhone, ccOf, COUNTRIES, publicUser, signPhone, verifyPhone, hashCode, signWalletPass, verifyWalletPass };
+module.exports = { sign, issue, readCookie, cookieName, clearSessionCookie, verify, requireAuth, normalizePhone, ccOf, COUNTRIES, publicUser, signPhone, verifyPhone, hashCode, signWalletPass, verifyWalletPass };

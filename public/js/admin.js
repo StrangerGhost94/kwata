@@ -9,8 +9,7 @@
   let tab = location.hash.slice(1) || 'overview';
   let stats = {}, liveMap, liveLayer, liveTimer, sock;
 
-  if (!K.token()) K.authScreen(root, { role: 'admin', title: 'Flytte Admin', onDone: start });
-  else start();
+  K.boot(start, () => K.authScreen(root, { role: 'admin', title: 'Flytte Admin', onDone: start }));
 
   async function start() {
     root.innerHTML = `<div class="shell"><nav class="side" aria-label="Admin sections">
@@ -24,7 +23,7 @@
     root.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tab = b.dataset.t; location.hash = tab; show(); });
     root.querySelectorAll('[data-mt]').forEach((b) => b.onclick = () => { K.haptic && K.haptic(); if (b.dataset.mt === 'more') return moreSheet(); tab = b.dataset.mt; location.hash = tab; show(); });
     new MutationObserver(() => { cancelAnimationFrame(fitRaf); fitRaf = requestAnimationFrame(() => fitPhone(K.$('#main'))); }).observe(K.$('#main'), { childList: true, subtree: true });
-    K.$('#out').onclick = () => { K.session.clear(); location.reload(); };
+    K.$('#out').onclick = () => K.logout();
     sock = K.socket(K.token());
     sock.on('admin:sos', (a) => { K.toast(`🚨 SOS from ${a.user} on trip #${a.tripId}`, 10000); beep(); refreshCounts(); if (tab === 'safety' || tab === 'overview') show(); });
     sock.on('admin:new_driver', (d) => { K.toast(`New driver signed up: ${d.name}`); refreshCounts(); });
@@ -65,7 +64,7 @@
       <button class="more-row out" data-go="out"><span class="mr-ic">${K.ic('logout')}</span><span class="grow">Sign out</span></button></div>`);
     m.el.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => {
       m.close();
-      if (b.dataset.go === 'out') { K.session.clear(); location.reload(); return; }
+      if (b.dataset.go === 'out') { K.logout(); return; }
       tab = b.dataset.go; location.hash = tab; show();
     });
   }
