@@ -1609,38 +1609,42 @@ html.launch-dark .splash { background: #07090E; }
 html.launch-dark .splash .sp-center, html.launch-dark .splash .sp-load { display: none; }
 html.launch-dark .sp-photo { display: block; position: absolute; inset: 0; overflow: hidden;
   background: #07090E url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAXABgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDl9IgkeYQ3ioYiM72I4qxCLKW5SE4BaUoCpyAOxNVYbW+MHlyRbFAOWxgisyQssjjzNwTBOBg+1Zxq3uos1dNJJtHoVjptms6wm4jfIz14orAtYna0WVblTMU3EUVySU5PSZ1JpLYw31ZjkLGOe7Esf1rOVhuLNyfSiiu5QjHY4XJvc27G6PlmPoCoXPoKKKKwqNqWh0w1Wp//2Q==") 50% 42% / cover no-repeat; }
-html.launch-dark .sp-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 42%; transform: scale(1.02); }
+html.launch-dark .sp-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 42%; transform: scale(1.02); animation: spZoom 2.2s cubic-bezier(.33,0,.2,1) both; }
+@keyframes spZoom { from { transform: scale(1.09); } to { transform: scale(1.02); } }
+html.launch-dark .splash.quick .sp-photo img { animation-duration: 1.4s; }
 html.launch-dark .sp-photo .auth-shade, .auth2.intro .auth-shade { background: linear-gradient(180deg, rgba(4,8,16,.62) 0%, rgba(4,8,16,.38) 45%, rgba(4,8,16,.7) 100%); }
 html.launch-dark .sp-mark { display: grid; place-items: center; position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); font-size: 56px; color: #fff; }
 html.launch-dark .sp-mark .wm-tag { font-size: .2em; }
-html.launch-dark .splash.out { transform: none; filter: none; transition: opacity .18s linear, visibility .18s; }
+html.launch-dark .splash.out { transform: none; filter: none; transition: opacity .22s linear, visibility .22s; }
 /* the sign-in page's photo shows its blurred preview until the sharp photo arrives */
 .auth-hero { background: #07090E url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAXABgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDl9IgkeYQ3ioYiM72I4qxCLKW5SE4BaUoCpyAOxNVYbW+MHlyRbFAOWxgisyQssjjzNwTBOBg+1Zxq3uos1dNJJtHoVjptms6wm4jfIz14orAtYna0WVblTMU3EUVySU5PSZ1JpLYw31ZjkLGOe7Esf1rOVhuLNyfSiiu5QjHY4XJvc27G6PlmPoCoXPoKKKKwqNqWh0w1Wp//2Q==") 50% 42% / cover no-repeat; }
 
 .auth2.intro { height: 100vh; height: 100dvh; overflow: hidden; }
-.auth2.intro .auth-hero { height: 100vh; height: 100dvh; max-height: none; }
+.auth2.intro .auth-hero { height: 100vh; height: 100dvh; max-height: 100vh; max-height: 100dvh; }
 .auth2.intro .auth-hero img { animation: none; transform: scale(1.02); }
 .auth2.intro .auth-logo { top: 50%; transform: translateY(-50%) scale(1.217); }
 .auth2.intro .auth-card { transform: none; }
 .auth2.intro .auth-body > *, .auth2.intro .glass-back { opacity: 0; transform: translateY(16px); }
-.auth2.settle .auth-hero { transition: height .9s cubic-bezier(.22,1,.36,1); }
-.auth2.settle .auth-shade { transition: background .9s ease; }
-.auth2.settle .auth-logo { transition: top .9s cubic-bezier(.22,1,.36,1), transform .9s cubic-bezier(.22,1,.36,1); }
-.auth2.settle .auth-card { transition: transform .9s cubic-bezier(.22,1,.36,1) .03s; }
-.auth2.settle .auth-body > *, .auth2.settle .glass-back { transition: opacity .42s ease, transform .6s var(--ease-out, cubic-bezier(.16,1,.3,1)); transition-delay: calc(.3s + var(--i, 0) * .05s); }
+.auth2.settle .auth-hero { transition: height 1.15s cubic-bezier(.65,0,.35,1), max-height 1.15s cubic-bezier(.65,0,.35,1); will-change: height; }
+.auth2.settle .auth-shade { transition: background 1.15s ease; }
+.auth2.settle .auth-logo { transition: top 1.15s cubic-bezier(.65,0,.35,1), transform 1.15s cubic-bezier(.65,0,.35,1); will-change: top, transform; }
+.auth2.settle .auth-card { transition: none; }
+.auth2.settle .auth-body > *, .auth2.settle .glass-back { transition: opacity .55s ease, transform .75s cubic-bezier(.22,1,.36,1); transition-delay: calc(.62s + var(--i, 0) * .07s); }
 @media (max-height: 720px) { .auth2.intro .auth-logo { transform: translateY(-50%) scale(1.474); } }
 @media (prefers-reduced-motion: reduce) {
+  html.launch-dark .sp-photo img, html.launch-dark .sp-mark .wm { animation: none; }
   .auth2.settle .auth-hero, .auth2.settle .auth-logo, .auth2.settle .auth-card, .auth2.settle .auth-shade { transition: none; }
   .auth2.settle .auth-body > *, .auth2.settle .glass-back { transition: opacity .25s ease; transition-delay: 0s; transform: none; }
 }
 /* the splash wordmark looks exactly like the sign-in one (white on the photo) and simply fades in */
-html.launch-dark .sp-mark .wm { color: #fff; animation: fadeIn .5s ease both; }
+html.launch-dark .sp-mark .wm { color: #fff; animation: spMarkIn .8s cubic-bezier(.22,1,.36,1) .12s both; }
+@keyframes spMarkIn { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
 html.launch-dark .sp-mark .wm-t { color: #fff; }
 html.launch-dark .sp-mark .wm-sub { color: var(--brand); }
 html.launch-dark .sp-mark .wm-tag { color: #E9E9EE; }
 html.launch-dark .sp-mark .wm-k { filter: none; }
 html.launch-dark .sp-mark .wm *, html.launch-dark .sp-mark .wm-k * { animation: none !important; }
-html.launch-dark .splash.quick .sp-mark .wm { animation: none; }
+html.launch-dark .splash.quick .sp-mark .wm { animation-duration: .6s; animation-delay: 0s; }
 .ch-tg .ch-ic { background: #2AABEE; color: #fff; }
 .ch-switch { line-height: 1.6; }
 .ch-switch .link-btn { white-space: nowrap; }

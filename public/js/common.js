@@ -520,7 +520,9 @@
   function settleIntoSignIn(sp, quick) {
     const img = sp.querySelector('.sp-photo img');
     const photoReady = img && !img.complete ? Promise.race([img.decode().catch(() => {}), new Promise((r) => setTimeout(r, 1500))]) : Promise.resolve();
-    const hold = new Promise((r) => setTimeout(r, Math.max(0, (quick ? 450 : 1000) - (performance.now() - T0))));
+    // Hold the launch photo for a moment from the instant the app opened (not from when the script ran),
+    // so the eye settles on it before it moves, even when the installed app loads slowly.
+    const hold = new Promise((r) => setTimeout(r, Math.max(350, (quick ? 1200 : 1700) - performance.now())));
     const pageReady = new Promise((r) => { const t0 = performance.now(); (function look() { const a = document.querySelector('.auth2'); if (a || performance.now() - t0 > 4000) r(a); else requestAnimationFrame(look); })(); });
     Promise.all([pageReady, photoReady, hold]).then(([auth]) => {
       if (!auth) { sp.classList.add('out'); setTimeout(() => sp.remove(), 300); return; }
@@ -532,8 +534,8 @@
         sp.remove();
         auth.classList.add('settle');
         requestAnimationFrame(() => auth.classList.remove('intro'));
-        setTimeout(() => { auth.classList.remove('settle'); auth.querySelectorAll('.auth-body > *').forEach((el) => el.style.removeProperty('--i')); }, 1400);
-      }, 170);
+        setTimeout(() => { auth.classList.remove('settle'); auth.querySelectorAll('.auth-body > *').forEach((el) => el.style.removeProperty('--i')); }, 2000);
+      }, 200);
     });
   }
 
