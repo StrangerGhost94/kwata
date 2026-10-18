@@ -1900,3 +1900,8 @@ html.theme-dark .unlock-ic { color: var(--brand); background: rgba(255,214,10,.1
 .ic-lock { width: 34px; height: 34px; border-radius: 10px; flex: none; display: grid; place-items: center; background: var(--brand-soft); color: var(--accent-ink, #8A6400); margin-right: 2px; }
 html.theme-dark .ic-lock { color: var(--brand); background: rgba(255,214,10,.14); }
 #lockRow { display: flex; align-items: center; gap: 12px; text-align: left; }
+
+/* Rider launch tile matches the rider app icon: gold tile, black F (the driver keeps the dark tile). */
+.sp-icon.sp-gold { background: linear-gradient(160deg, #FFD84A 0%, #FFC400 60%, #F2B600 100%); box-shadow: 0 14px 34px rgba(242,182,0,.28), 0 2px 6px rgba(20,20,22,.12), inset 0 1px 0 rgba(255,255,255,.35); }
+.sp-icon.sp-gold svg g { fill: #141414; }
+html.theme-dark:not(.launch-dark) .sp-icon.sp-gold { background: linear-gradient(160deg, #FFD84A 0%, #FFC400 60%, #F2B600 100%); box-shadow: 0 14px 34px rgba(0,0,0,.5); }

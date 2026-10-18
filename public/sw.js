@@ -8,13 +8,13 @@
 //   so they're served straight from the phone ("cache first") with no network wait.
 //   A new deploy has new ?v= links, so the new files are fetched once and kept.
 // - Maps, payments and live data are never cached.
-const VERSION = 'flytte-v69';
+const VERSION = 'flytte-v70';
 const ASSETS = 'flytte-assets';        // versioned js/css; kept across releases, trimmed below
 const SHELL = [
   '/offline.html', '/socket.io/socket.io.js',
   '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
   '/vendor/maplibre/maplibre-gl.js', '/vendor/maplibre/maplibre-gl.css', '/vendor/maplibre-leaflet/leaflet-maplibre-gl.js',
-  '/icons/flytte-icon-192.png', '/icons/flytte-driver-192.png', '/img/welcome.jpg', '/img/vehicles/boda.svg', '/img/vehicles/car.svg', '/img/vehicles/comfort.svg', '/img/vehicles/parcel.svg', '/img/vehicles/airport.svg', '/manifest.json', '/manifest-driver.json',
+  '/icons/flytte-icon-192.png?v=2', '/icons/flytte-driver-192.png?v=2', '/img/welcome.jpg', '/img/vehicles/boda.svg', '/img/vehicles/car.svg', '/img/vehicles/comfort.svg', '/img/vehicles/parcel.svg', '/img/vehicles/airport.svg', '/manifest.json', '/manifest-driver.json',
 ];
 
 self.addEventListener('install', (e) => {
@@ -91,7 +91,7 @@ self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'Flytte', body: e.data ? e.data.text() : '' }; }
   const offer = d.type === 'offer', rider = d.app === 'rider';
-  const icon = rider ? '/icons/flytte-icon-192.png' : '/icons/flytte-driver-192.png';
+  const icon = rider ? '/icons/flytte-icon-192.png?v=2' : '/icons/flytte-driver-192.png?v=2';
   e.waitUntil(self.registration.showNotification(d.title || (rider ? 'Flytte' : 'Flytte Driver'), {
     body: d.body || '',
     tag: d.tag || 'flytte',
