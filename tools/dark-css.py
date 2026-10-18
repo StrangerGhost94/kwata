@@ -19,17 +19,25 @@ BG = {
 }
 # Areas that are dark on purpose, or brand-coloured, keep their colours.
 SKIP = re.compile(r'splash|\.sp-|auth-hero|auth-shade|\.req\b|\.wm|btn-primary|btn-danger|badge|\.hero|onboard|trip-banner|sos|\.dark|glass-back|toast|plate-chip|\.veh\b|leaflet|maplibre|pin-|map-label|cam|::selection|set-swatch|sw-|ch-wa|ch-tg|admin|qr', re.I)
-PROPS = ('background', 'background-color', 'background-image', 'border', 'border-color', 'border-top', 'border-bottom', 'border-left', 'border-right', 'box-shadow', 'outline-color')
+# Text colours: only greys and the dark brand gold (made for white) are lifted; black text is left
+# alone because it often sits on brand yellow.
+FG = {
+  '#6e6e73': '#AEAEB2', '#707076': '#AEAEB2', '#8e8e93': '#AEAEB2', '#86868b': '#AEAEB2', '#7a7a80': '#AEAEB2',
+  '#636366': '#AEAEB2', '#555': '#AEAEB2', '#666': '#AEAEB2', '#999': '#8E8E93', '#c7c7cc': '#636366',
+  '#8a6400': '#FFD54A', '#a27c00': '#FFD54A', '#8a5200': '#FFB340', '#6b4f00': '#FFD54A',
+}
+PROPS = ('color', 'fill', 'stroke', 'background', 'background-color', 'background-image', 'border', 'border-color', 'border-top', 'border-bottom', 'border-left', 'border-right', 'box-shadow', 'outline-color')
 
 hexre = re.compile(r'#[0-9a-fA-F]{3,6}\b|\bwhite\b')
 rgbare = re.compile(r'rgba\(\s*255\s*,\s*255\s*,\s*255\s*,\s*([\d.]+)\s*\)')
 
 def darken(value, prop):
     changed = False
+    table = FG if prop in ('color', 'fill', 'stroke') else BG
     def h(m):
         nonlocal changed
         k = m.group(0).lower()
-        if k in BG: changed = True; return BG[k]
+        if k in table: changed = True; return table[k]
         return m.group(0)
     v = hexre.sub(h, value)
     if prop.startswith('background') or prop.startswith('border'):

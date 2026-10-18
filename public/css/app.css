@@ -1758,3 +1758,5 @@ html.theme-dark .svc-t.on .tile, html.theme-dark .svc-t[aria-pressed="true"] .ti
 .rw-delta { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 .rw-delta.plus { color: var(--go); }
 .rw-empty { margin: 0; padding: 16px 0; color: var(--ink-2); font-size: .9rem; text-align: center; }
+html.theme-dark .tabbar button[aria-current="page"] { color: var(--brand); }
+html.theme-dark .tabbar button[aria-current="page"] svg { color: var(--brand); }
