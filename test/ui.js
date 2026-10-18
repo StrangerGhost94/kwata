@@ -42,7 +42,7 @@ const api = async (path, body, token) => {
 
   // "Where to?" starts on the destination; a destination picked first is kept while we ask for the pickup
   await p.click('#whereBtn');
-  await p.waitForSelector('#qDrop'); await p.waitForTimeout(400);
+  await p.waitForSelector('#qDrop'); await p.waitForTimeout(900);  // focus comes after the slide-in (Android keyboard)
   ok(await p.evaluate(() => document.activeElement && document.activeElement.id === 'qDrop'), '“Where to?” opens on the destination field');
   const destName = await p.locator('#res .lrow[data-i] .t').nth(2).textContent();
   await p.locator('#res .lrow[data-i]').nth(2).click();

@@ -480,7 +480,11 @@
     }
     showDefault();
     if (opts.query) { qDrop.value = opts.query; onInput(qDrop); }
-    setTimeout(() => (target === 'pick' && qPick ? qPick : qDrop).focus(), 60);
+    // Focus the box without the browser jumping to it. On Android the keyboard resizes the page, so
+    // wait until the slide-in has finished; iOS only opens the keyboard close to the tap, so focus early.
+    const focusBox = () => { if (page.isConnected) (target === 'pick' && qPick ? qPick : qDrop).focus({ preventScroll: true }); };
+    if (/iPhone|iPad|iPod/.test(navigator.userAgent) || matchMedia('(prefers-reduced-motion: reduce)').matches) setTimeout(focusBox, 60);
+    else { let done = false; const go = () => { if (done) return; done = true; focusBox(); }; page.addEventListener('animationend', go, { once: true }); setTimeout(go, 650); }
   }
 
   function chooseDrop(p) {
@@ -685,7 +689,7 @@
       <div class="chip-row" style="flex-wrap:wrap;margin-top:8px">${ideas.map((x) => `<button class="pill-opt" data-idea="${K.esc(x)}">${K.esc(x)}</button>`).join('')}</div>
       <div class="row" style="gap:8px;margin-top:14px">${S.note ? '<button class="btn fill" id="clr">Remove</button>' : ''}<button class="btn btn-primary fill" id="sv">Save note</button></div>`);
     const ta = K.$('#nt', m.el);
-    setTimeout(() => ta.focus(), 250);
+    setTimeout(() => ta.focus({ preventScroll: true }), 580);
     m.el.querySelectorAll('[data-idea]').forEach((b) => b.onclick = () => { ta.value = ta.value.trim() ? `${ta.value.trim()}. ${b.dataset.idea}` : b.dataset.idea; ta.focus(); });
     K.$('#sv', m.el).onclick = () => { S.note = ta.value.trim().slice(0, 200); m.close(); render(); };
     const c = K.$('#clr', m.el); if (c) c.onclick = () => { S.note = ''; m.close(); render(); };
@@ -1203,7 +1207,7 @@
         <p class="error" role="alert"></p>
         <button class="btn btn-primary btn-block btn-lg" data-send style="margin-top:10px">Send to Flytte</button>`;
       const ta = K.$('#hd', step), err = K.$('.error', step), send = K.$('[data-send]', step);
-      setTimeout(() => ta.focus(), 200);
+      setTimeout(() => ta.focus({ preventScroll: true }), 580);
       send.onclick = async () => {
         err.textContent = ''; send.disabled = true;
         try {
