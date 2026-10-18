@@ -290,6 +290,32 @@ r.post('/auth/check', limit(20, 10 * 60e3), wrap(async (req, res) => {
   res.json({ exists: !!u, role: u ? u.role : null });
 }));
 
+// ---------- Wallet lock (fingerprint / face) ----------
+const walletlock = require('./walletlock');
+const wl = (fn) => wrap(async (req, res) => { try { res.json(await fn(req, res)); } catch (e) { if (e.status) return bad(res, e.message, e.status); throw e; } });
+r.get('/wallet/lock', auth.requireAuth('rider'), wl((req) => walletlock.status(req.user.id)));
+r.post('/wallet/lock/options', auth.requireAuth('rider'), limit(20, 10 * 60e3), wl(async (req) => {
+  // Adding a phone to a lock that's already on needs proof first (fingerprint on another phone, or a code).
+  if (walletlock.needsPass(req.user, (req.body || {}).pass)) throw Object.assign(new Error('Confirm it’s you first.'), { status: 403 });
+  return walletlock.registrationOptions(req);
+}));
+r.post('/wallet/lock/register', auth.requireAuth('rider'), limit(20, 10 * 60e3), wl((req) => walletlock.register(req)));
+r.post('/wallet/unlock/options', auth.requireAuth('rider'), limit(30, 10 * 60e3), wl((req) => walletlock.authOptions(req)));
+r.post('/wallet/unlock', auth.requireAuth('rider'), limit(30, 10 * 60e3), wl((req) => walletlock.authenticate(req)));
+r.post('/wallet/unlock/code', auth.requireAuth('rider'), limit(10, 10 * 60e3), wl(async (req) => {
+  const code = String((req.body || {}).code || '').replace(/\D/g, '');
+  if (code.length !== 6) throw Object.assign(new Error('Enter the 6-digit code.'), { status: 400 });
+  const wrong = await checkCode(req.user.phone, code);
+  if (wrong) throw Object.assign(new Error(wrong), { status: 400 });
+  return { ok: true, pass: auth.signWalletPass(req.user.id) };
+}));
+r.post('/wallet/lock/off', auth.requireAuth('rider'), wl(async (req) => {
+  if (walletlock.needsPass(req.user, (req.body || {}).pass)) throw Object.assign(new Error('Confirm it’s you first.'), { status: 403 });
+  await walletlock.turnOff(req.user.id);
+  return { ok: true };
+}));
+const walletLocked = (res) => res.status(403).json({ error: 'Confirm it’s you to pay from your wallet.', code: 'WALLET_LOCK' });
+
 // ---------- Sign in with an SMS code ----------
 const OTP_TTL = 5 * 60e3, OTP_RESEND = 30e3, OTP_PER_HOUR = 5, OTP_TRIES = 5;
 r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
@@ -321,21 +347,27 @@ r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
   const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
   res.json({ ok: true, exists: !!u, role: u ? u.role : null, channel, resendIn: OTP_RESEND / 1000, ...(CH[channel][0].demo() ? { demoCode: code } : {}) });
 }));
+// Checks a one-time code for a phone. Returns an error message, or null when it's right (and uses it up).
+async function checkCode(p, code) {
+  const row = await db.one('SELECT * FROM otp_codes WHERE phone = $1', [p]);
+  if (!row || Date.now() > Number(row.expires_at)) return 'That code has expired. Ask for a new one.';
+  if (row.attempts >= OTP_TRIES) return 'Too many wrong tries. Ask for a new code.';
+  const a = Buffer.from(auth.hashCode(p, code)), b = Buffer.from(row.code_hash);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    await db.query('UPDATE otp_codes SET attempts = attempts + 1 WHERE phone = $1', [p]);
+    return row.attempts + 1 >= OTP_TRIES ? 'Too many wrong tries. Ask for a new code.' : 'That code isn’t right. Check the message and try again.';
+  }
+  // Keep the row (with an expired code) so the resend limits still count.
+  await db.query('UPDATE otp_codes SET expires_at = 0 WHERE phone = $1', [p]);
+  return null;
+}
 r.post('/auth/otp/verify', limit(20, 10 * 60e3), wrap(async (req, res) => {
   const p = auth.normalizePhone((req.body || {}).phone);
   const code = String((req.body || {}).code || '').replace(/\D/g, '');
   if (!p) return bad(res, 'Enter a valid mobile number.');
   if (code.length !== 6) return bad(res, 'Enter the 6-digit code.');
-  const row = await db.one('SELECT * FROM otp_codes WHERE phone = $1', [p]);
-  if (!row || Date.now() > Number(row.expires_at)) return bad(res, 'That code has expired. Ask for a new one.');
-  if (row.attempts >= OTP_TRIES) return bad(res, 'Too many wrong tries. Ask for a new code.');
-  const a = Buffer.from(auth.hashCode(p, code)), b = Buffer.from(row.code_hash);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    await db.query('UPDATE otp_codes SET attempts = attempts + 1 WHERE phone = $1', [p]);
-    return bad(res, row.attempts + 1 >= OTP_TRIES ? 'Too many wrong tries. Ask for a new code.' : 'That code isn’t right. Check the SMS and try again.');
-  }
-  // Keep the row (with an expired code) so the resend limits still count.
-  await db.query('UPDATE otp_codes SET expires_at = 0 WHERE phone = $1', [p]);
+  const wrong = await checkCode(p, code);
+  if (wrong) return bad(res, wrong);
   const u = await db.one('SELECT * FROM users WHERE phone = $1', [p]);
   if (u) {
     if (u.blocked) return bad(res, 'This account is suspended. Contact support.', 403);
@@ -537,6 +569,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   }
   const promo = await growth.discountFor(req.user.id, service, fare, req.body.promoCode || (locked && locked.promoCode));
   const discount = promo.discount || 0;
+  if (paymentMethod === 'wallet' && walletlock.needsPass(req.user, req.body.walletPass)) return walletLocked(res);
   if (paymentMethod === 'wallet' && req.user.wallet_balance < fare - discount) {
     return bad(res, `Your wallet has UGX ${req.user.wallet_balance.toLocaleString()}. Top up or choose another payment method.`);
   }
@@ -840,6 +873,7 @@ r.post('/trips/:id/tip', auth.requireAuth('rider'), wrap(async (req, res) => {
   const amount = Math.round(Number(req.body.amount));
   const method = req.body.method === 'wallet' ? 'wallet' : 'cash';
   if (!(amount >= 500 && amount <= 50000)) return bad(res, 'Tips are between UGX 500 and 50,000.');
+  if (method === 'wallet' && walletlock.needsPass(req.user, req.body.walletPass)) return walletLocked(res);
   let out;
   await db.tx(async (tx) => { out = await ledger.tipDriver(tx, t, amount, method); });
   if (out.error) return bad(res, out.error);

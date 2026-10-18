@@ -51,6 +51,7 @@
     chevDown: '<path d="m6 9 6 6 6-6"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     locate: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/>',
+    lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
     refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
@@ -205,7 +206,7 @@
     }
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 && t) { K.session.clear(); location.reload(); }
-    if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+    if (!res.ok) throw Object.assign(new Error(data.error || 'Something went wrong.'), { code: data.code, status: res.status });
     return data;
   };
 
@@ -1084,6 +1085,99 @@
       if (sub) { await K.api('/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
     }
     return { supported, enable, disable, current, iosBrowser };
+  })();
+
+  // ---------- Wallet lock: fingerprint / face (passkeys) ----------
+  // Money leaves a locked wallet only after the phone's own fingerprint or face unlock (checked by
+  // the server), or a one-time code as the fallback. Returns a short-lived "pass" for the request.
+  K.walletLock = (() => {
+    const toBuf = (s) => { const t = String(s).replace(/-/g, '+').replace(/_/g, '/'); const raw = atob(t + '='.repeat((4 - (t.length % 4)) % 4)); return Uint8Array.from(raw, (c) => c.charCodeAt(0)).buffer; };
+    const b64u = (b) => { let x = ''; new Uint8Array(b).forEach((c) => { x += String.fromCharCode(c); }); return btoa(x).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+    let avail = null;
+    async function supported() {
+      if (avail != null) return avail;
+      try { avail = !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch { avail = false; }
+      return avail;
+    }
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const bioName = () => (isIOS ? 'Face ID or Touch ID' : 'fingerprint or face unlock');
+    const device = () => (isIOS ? 'iPhone' : /Android/.test(navigator.userAgent) ? 'Android phone' : 'This device');
+    // Registration options are fetched ahead of the tap, so the browser sees the tap as the trigger.
+    let regOpts = null;
+    async function prepare(pass) { try { regOpts = await K.api('/wallet/lock/options', pass ? { pass } : {}); } catch (e) { regOpts = null; throw e; } return regOpts; }
+    async function create(opts) {
+      const o = opts || regOpts; regOpts = null;
+      if (!o) throw new Error('Try again.');
+      const publicKey = { ...o, challenge: toBuf(o.challenge), user: { ...o.user, id: toBuf(o.user.id) }, excludeCredentials: (o.excludeCredentials || []).map((c) => ({ ...c, id: toBuf(c.id) })) };
+      const c = await navigator.credentials.create({ publicKey });
+      const credential = { id: c.id, rawId: b64u(c.rawId), type: c.type, authenticatorAttachment: c.authenticatorAttachment,
+        response: { clientDataJSON: b64u(c.response.clientDataJSON), attestationObject: b64u(c.response.attestationObject), transports: c.response.getTransports ? c.response.getTransports() : [] },
+        clientExtensionResults: c.getClientExtensionResults ? c.getClientExtensionResults() : {} };
+      return K.api('/wallet/lock/register', { credential, device: device() });
+    }
+    async function assert(o) {
+      const publicKey = { ...o, challenge: toBuf(o.challenge), allowCredentials: (o.allowCredentials || []).map((c) => ({ ...c, id: toBuf(c.id) })) };
+      const c = await navigator.credentials.get({ publicKey });
+      const credential = { id: c.id, rawId: b64u(c.rawId), type: c.type, authenticatorAttachment: c.authenticatorAttachment,
+        response: { clientDataJSON: b64u(c.response.clientDataJSON), authenticatorData: b64u(c.response.authenticatorData), signature: b64u(c.response.signature), userHandle: c.response.userHandle ? b64u(c.response.userHandle) : undefined },
+        clientExtensionResults: c.getClientExtensionResults ? c.getClientExtensionResults() : {} };
+      return (await K.api('/wallet/unlock', { credential })).pass;
+    }
+    // The confirm sheet: fingerprint/face first, a one-time code as the fallback. Resolves to a pass or null.
+    function unlock({ amount, title } = {}) {
+      return new Promise((resolve) => {
+        let done = false, opts = null;
+        const finish = (v) => { if (done) return; done = true; m.close(); resolve(v); };
+        const m = K.modal(`<div class="unlock">
+          <div class="unlock-ic">${K.ic('lock')}</div>
+          <h2>${K.esc(title || 'Confirm it’s you')}</h2>
+          <p class="muted">${amount ? `Pay <b>${K.ugx(amount)}</b> from your Flytte Wallet.` : 'Your Flytte Wallet is locked.'}</p>
+          <p class="error" role="alert"></p>
+          <div data-step>
+            <button class="btn btn-primary btn-block btn-lg" data-bio disabled>Use ${bioName()}</button>
+            <button class="btn btn-ghost btn-block" data-code>Use a code instead</button>
+          </div></div>`, { onClose: () => { if (!done) { done = true; resolve(null); } } });
+        const err = K.$('.error', m.el), bio = K.$('[data-bio]', m.el);
+        supported().then((ok) => ok ? K.api('/wallet/unlock/options', {}) : null).then((o) => {
+          if (o && !o.none) { opts = o; bio.disabled = false; } else { bio.hidden = true; }
+        }).catch(() => { bio.hidden = true; });
+        bio.onclick = async () => {
+          if (!opts) return;
+          err.textContent = ''; bio.disabled = true;
+          const o = opts; opts = null;
+          try { finish(await assert(o)); }
+          catch (e) {
+            err.textContent = e.name === 'NotAllowedError' ? 'Not confirmed. Try again, or use a code.' : e.message;
+            try { opts = await K.api('/wallet/unlock/options', {}); bio.disabled = !opts || !!opts.none; } catch {}
+          }
+        };
+        K.$('[data-code]', m.el).onclick = async () => {
+          const step = K.$('[data-step]', m.el);
+          const u = K.session.get && K.session.get();
+          const phone = u && u.user && u.user.phone;
+          err.textContent = '';
+          step.innerHTML = '<p class="small muted" style="margin:0 0 10px">Sending a code to your phone…</p>';
+          let channel = 'sms';
+          try { const c = await K.cfg(); if (c.codeChannels && c.codeChannels.length) channel = c.codeChannels.includes('sms') ? 'sms' : c.codeChannels[0]; } catch {}
+          try {
+            const out = await K.api('/auth/otp/send', { phone, channel });
+            if (out.demoCode) K.toast(`Test mode: your code is ${out.demoCode}`, 8000);
+          } catch (e) { step.innerHTML = ''; err.textContent = e.message; return; }
+          step.innerHTML = `<label for="wc">Enter the 6-digit code we sent to ${K.esc(K.prettyPhone ? K.prettyPhone(phone) : phone)}</label>
+            <input id="wc" class="pin-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">
+            <button class="btn btn-primary btn-block btn-lg" data-ok style="margin-top:12px">Confirm</button>`;
+          const inp = K.$('#wc', m.el); setTimeout(() => inp.focus({ preventScroll: true }), 300);
+          const go = async () => {
+            err.textContent = '';
+            try { finish((await K.api('/wallet/unlock/code', { code: inp.value })).pass); }
+            catch (e) { err.textContent = e.message; }
+          };
+          K.$('[data-ok]', m.el).onclick = go;
+          inp.oninput = () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 6); if (inp.value.length === 6) go(); };
+        };
+      });
+    }
+    return { supported, prepare, create, unlock, bioName };
   })();
 
   K.openSettings = function ({ role = APP, onBack } = {}) {

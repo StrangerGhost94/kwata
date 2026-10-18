@@ -1887,3 +1887,16 @@ html.theme-dark .wait-note .i { color: var(--brand); }
 html.theme-dark .receipt .btn, html.theme-dark .trip-act { background: #2C2C2E; color: #F5F5F7; }
 /* While navigating, messages appear above the bottom bar so the next turn stays visible. */
 body.nav-on #toast { top: auto !important; bottom: calc(96px + env(safe-area-inset-bottom)) !important; }
+
+/* Wallet lock */
+.unlock { text-align: center; }
+.unlock-ic { width: 64px; height: 64px; border-radius: 20px; margin: 4px auto 12px; display: grid; place-items: center; background: var(--brand-soft); color: var(--accent-ink, #8A6400); }
+html.theme-dark .unlock-ic { color: var(--brand); background: rgba(255,214,10,.14); }
+.unlock-ic .i { width: 30px; height: 30px; }
+.unlock h2 { margin: 0 0 4px; }
+.unlock > p.muted { margin: 0 0 14px; }
+.unlock label { text-align: left; }
+.unlock [data-step] .btn + .btn { margin-top: 6px; }
+.ic-lock { width: 34px; height: 34px; border-radius: 10px; flex: none; display: grid; place-items: center; background: var(--brand-soft); color: var(--accent-ink, #8A6400); margin-right: 2px; }
+html.theme-dark .ic-lock { color: var(--brand); background: rgba(255,214,10,.14); }
+#lockRow { display: flex; align-items: center; gap: 12px; text-align: left; }

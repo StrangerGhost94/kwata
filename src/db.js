@@ -267,6 +267,19 @@ async function migrate() {
     decided_at TIMESTAMPTZ
   );
   CREATE INDEX IF NOT EXISTS driver_changes_idx ON driver_changes(status, driver_id);
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_lock BOOLEAN NOT NULL DEFAULT FALSE;
+  CREATE TABLE IF NOT EXISTS passkeys (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cred_id TEXT NOT NULL UNIQUE,
+    public_key TEXT NOT NULL,
+    counter BIGINT NOT NULL DEFAULT 0,
+    transports TEXT,
+    device TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ
+  );
+  CREATE INDEX IF NOT EXISTS passkeys_user_idx ON passkeys(user_id);
   CREATE TABLE IF NOT EXISTS trip_issues (
     id SERIAL PRIMARY KEY,
     trip_id INTEGER NOT NULL,

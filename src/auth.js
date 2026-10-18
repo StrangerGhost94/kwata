@@ -19,6 +19,9 @@ function sign(user) {
 function signPhone(phone) { return jwt.sign({ phone, purpose: 'phone' }, SECRET, { expiresIn: '30m' }); }
 function verifyPhone(token, phone) { try { const p = jwt.verify(String(token || ''), SECRET); return p.purpose === 'phone' && p.phone === phone; } catch { return false; } }
 // Codes are stored only as a keyed hash.
+// Wallet pass: proof the rider unlocked the wallet (fingerprint, face, or a code) in the last 2 minutes.
+function signWalletPass(userId) { return jwt.sign({ id: userId, purpose: 'wallet' }, SECRET, { expiresIn: '2m' }); }
+function verifyWalletPass(token, userId) { try { const p = jwt.verify(String(token || ''), SECRET); return p.purpose === 'wallet' && p.id === userId; } catch { return false; } }
 function hashCode(phone, code) { return require('crypto').createHmac('sha256', SECRET).update(phone + ':' + code).digest('hex'); }
 
 function verify(token) {
@@ -72,7 +75,8 @@ function publicUser(u) {
     emergencyContact: u.emergency_contact,
     savedPlaces: (() => { try { return JSON.parse(u.saved_places || '{}'); } catch { return {}; } })(),
     payPref: u.pay_pref || 'cash', payPhone: u.pay_phone || u.phone,
+    walletLock: !!u.wallet_lock,
   };
 }
 
-module.exports = { sign, verify, requireAuth, normalizePhone, ccOf, COUNTRIES, publicUser, signPhone, verifyPhone, hashCode };
+module.exports = { sign, verify, requireAuth, normalizePhone, ccOf, COUNTRIES, publicUser, signPhone, verifyPhone, hashCode, signWalletPass, verifyWalletPass };
