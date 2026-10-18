@@ -953,12 +953,14 @@
         ${needsPay ? `<p class="error" id="err" role="alert" style="margin:0 0 6px;min-height:0">${S.config.paymentsAvailable ? '' : `${P.name} isn’t available yet. Pay your ${who(t)} ${K.ugx(t.payable)} in cash.`}</p>
           ${S.config.paymentsAvailable ? `<button class="btn btn-primary btn-block btn-lg" id="pay">Pay ${K.ugx(t.payable)}</button>` : ''}
           <button class="btn ${S.config.paymentsAvailable ? 'btn-outline' : 'btn-primary'} btn-block btn-lg" id="cashPaid">I paid in cash</button>` : ''}
-        ${!t.riderRated ? `<button class="btn ${needsPay ? '' : 'btn-primary'} btn-block btn-lg" id="rate" ${S.rating ? '' : 'disabled'}>Rate ${who(t)}</button>` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}
+        ${!t.riderRated ? `<button class="btn ${needsPay ? '' : 'btn-primary'} btn-block btn-lg" id="rate" ${S.rating || !needsPay ? '' : 'disabled'}>${S.rating || needsPay ? `Rate ${who(t)}` : 'Done'}</button>
+          ${needsPay ? '' : `<p class="small muted" id="rateHint" style="text-align:center;margin:6px 0 0">${S.rating ? '' : 'Rating is optional'}</p>`}` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}
       </div>`;
     sheet.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => {
       S.rating = +b.dataset.n;
       sheet.querySelectorAll('[data-n]').forEach((x) => { x.classList.toggle('on', +x.dataset.n <= S.rating); x.setAttribute('aria-checked', String(+x.dataset.n === S.rating)); });
-      K.$('#rate').disabled = false;
+      const rb = K.$('#rate'); rb.disabled = false; rb.textContent = `Rate ${who(t)}`;
+      const h = K.$('#rateHint'); if (h) h.textContent = '';
     });
     const pay = K.$('#pay');
     if (pay) pay.onclick = async () => {
@@ -977,7 +979,8 @@
     const rate = K.$('#rate');
     if (rate) rate.onclick = async () => {
       rate.disabled = true;
-      try { await K.api(`/trips/${t.id}/rate`, { stars: S.rating }); }
+      // No stars chosen = "not now": the server records it so this screen doesn't come back.
+      try { await K.api(`/trips/${t.id}/rate`, S.rating ? { stars: S.rating } : { skip: true }); }
       catch (e) { rate.disabled = false; K.toast(`Rating not saved: ${e.message}`, 4500); return; }
       S.trip.riderRated = true; S.rating = 0;
       if (needsPay) render(); else { K.toast('Thanks for riding with Flytte'); reset(); }

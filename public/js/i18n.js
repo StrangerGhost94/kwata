@@ -10,6 +10,8 @@
 
   const SW = {
     // sign in
+    'You’ve reached the pickup': 'Umefika mahali pa kuchukua', 'You’ve reached the destination': 'Umefika unakoenda', 'You’ve reached the drop-off': 'Umefika mahali pa kukabidhi', 'Navigate': 'Ongoza njia',
+    'Rating is optional': 'Kukadiria si lazima', 'Done': 'Imekamilika',
     'Welcome to Flytte': 'Karibu Flytte',
     'Drive with Flytte': 'Endesha na Flytte',
     'Sign in or create an account with your mobile number.': 'Ingia au fungua akaunti kwa namba yako ya simu.',

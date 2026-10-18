@@ -1760,3 +1760,36 @@ html.theme-dark .svc-t.on .tile, html.theme-dark .svc-t[aria-pressed="true"] .ti
 .rw-empty { margin: 0; padding: 16px 0; color: var(--ink-2); font-size: .9rem; text-align: center; }
 html.theme-dark .tabbar button[aria-current="page"] { color: var(--brand); }
 html.theme-dark .tabbar button[aria-current="page"] svg { color: var(--brand); }
+
+/* Dark mode: status pills and rating badge need their own tones (the pale light-mode fills read as
+   white smudges), and the vehicle art is dark, so its tile goes light enough to show it. */
+html.theme-dark .badge { background: #2C2C2E; color: #EBEBF5; }
+html.theme-dark .badge.ok, html.theme-dark .verified { background: rgba(48, 209, 88, .18); color: #4CE07A; }
+html.theme-dark .badge.warn { background: rgba(255, 214, 10, .16); color: #FFD60A; }
+html.theme-dark .badge.bad { background: rgba(255, 69, 58, .18); color: #FF6961; }
+html.theme-dark .trip-card .ic { background: #D8D8DD; }
+
+/* In-app navigation (driver) */
+body.nav-on #sheet, body.nav-on #topbar, body.nav-on #tabs { display: none !important; }
+.nav-ui { position: fixed; inset: 0; z-index: 700; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+.nav-ui > * { pointer-events: auto; }
+.nav-top { margin: calc(10px + env(safe-area-inset-top)) 10px 0; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.28); animation: navIn .32s var(--ease-out, ease-out); }
+.nav-man { display: flex; align-items: center; gap: 14px; background: #0B6E3A; color: #fff; padding: 14px 16px; }
+.nav-arrow { width: 52px; height: 52px; flex: none; display: grid; place-items: center; }
+.nav-arrow svg { width: 50px; height: 50px; fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.nav-dist { display: block; font-size: 1.75rem; line-height: 1.05; font-weight: 800; letter-spacing: -.01em; }
+.nav-instr { display: block; font-size: 1.02rem; font-weight: 600; line-height: 1.25; opacity: .95; margin-top: 2px; }
+.nav-then { display: flex; align-items: center; gap: 8px; background: #08552C; color: #fff; padding: 7px 18px; font-weight: 700; font-size: .9rem; }
+.nav-then svg { width: 22px; height: 22px; fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.nav-recenter { align-self: center; margin-top: auto; margin-bottom: 12px; display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 999px; padding: 10px 16px; background: var(--card, #fff); color: var(--ink, #111); font-weight: 700; box-shadow: 0 6px 20px rgba(0,0,0,.22); }
+.nav-bot { display: flex; align-items: center; gap: 10px; margin: 0 10px calc(10px + var(--sab, env(safe-area-inset-bottom))); background: var(--card, #fff); color: var(--ink, #111); border-radius: 20px; padding: 10px 10px 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.22); animation: navUp .32s var(--ease-out, ease-out); }
+.nav-eta b { display: block; font-size: 1.35rem; font-weight: 800; color: #0B8043; line-height: 1.1; }
+.nav-eta small { display: block; font-size: .85rem; color: var(--ink-2, #555); }
+.nav-btn { width: 46px; height: 46px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--surface, #F2F2F7); color: var(--ink, #111); }
+.nav-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.nav-exit { border: 0; border-radius: 999px; min-height: 46px; padding: 0 20px; background: #E5352B; color: #fff; font-weight: 800; font-size: 1rem; }
+html.theme-dark .nav-eta b { color: #4CE07A; }
+html.theme-dark .nav-btn { background: #2C2C2E; }
+@keyframes navIn { from { transform: translateY(-14px); opacity: 0; } }
+@keyframes navUp { from { transform: translateY(14px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .nav-top, .nav-bot { animation: none; } }

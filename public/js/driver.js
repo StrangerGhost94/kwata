@@ -287,6 +287,7 @@
     const now = Date.now();
     if (sock && (now - lastSent > 2500 || S.manual)) { sock.emit('driver:location', S.loc); lastSent = now; }
     updateBanner();
+    if (K.Nav.active()) K.Nav.update(S.loc);
   }
 
   // ---------- online ----------
@@ -327,6 +328,7 @@
     if (S.trip) (S.trip.status === 'completed' ? vDone : vTrip)();
     else vHome();
     if (S.offer) vOffer(); else { const r = K.$('#req'); if (r) r.remove(); }
+    syncNav();
   }
 
   // Screen 17: home
@@ -496,7 +498,35 @@
     const head = t.status === 'in_progress' ? (t.service === 'parcel' ? 'Delivering' : 'On trip') : t.status === 'arrived' ? 'Waiting at pickup' : 'Head to pickup';
     nb.innerHTML = `<span class="round" aria-hidden="true">${K.ic('nav')}</span>
       <span class="grow"><b>${head}${km != null && t.status !== 'arrived' ? ` · ${fmtKm(km)}` : ''}</b><small class="ellipsis" style="display:block">${K.esc(String(target.address).split(',')[0])}${km != null && t.status !== 'arrived' ? ` · ${K.etaMin(S.loc, target)} min` : ''}</small></span>
-      <a class="btn btn-primary btn-sm" href="${navLink(target)}" target="_blank" rel="noopener">Navigate</a>`;
+      <button class="btn btn-primary btn-sm" data-nav>Navigate</button>`;
+    nb.querySelector('[data-nav]').onclick = startNav;
+  }
+
+  // In-app turn-by-turn (nav.js). S.navOn stays set across pickup so directions to the drop-off
+  // start by themselves once the trip begins; Exit turns it off.
+  function startNav() {
+    const t = S.trip;
+    if (!t || t.status === 'completed') return;
+    if (!S.loc) { K.toast('Waiting for your location…'); return; }
+    const toDrop = t.status === 'in_progress';
+    if (t.status === 'arrived') return;
+    const target = toDrop ? t.drop : t.pickup;
+    S.navOn = true;
+    if (routeLayer) { routeLayer.remove(); routeLayer = null; }
+    K.Nav.start({
+      map, loc: S.loc, target, externalUrl: navLink(target),
+      arriveLabel: toDrop ? (t.service === 'parcel' ? 'You’ve reached the drop-off' : 'You’ve reached the destination') : 'You’ve reached the pickup',
+      onArrive: () => { K.Nav.stop(true); routedFor = null; render(); },
+      onExit: () => { S.navOn = false; routedFor = null; render(); },
+    });
+  }
+  function syncNav() {
+    const t = S.trip;
+    if (!t || t.status === 'completed' || t.status === 'arrived') { if (K.Nav.active()) { K.Nav.stop(true); routedFor = null; } if (!t || t.status === 'completed') S.navOn = false; return; }
+    const target = t.status === 'in_progress' ? t.drop : t.pickup;
+    const cur = K.Nav.target();
+    if (cur && (cur.lat !== target.lat || cur.lng !== target.lng)) { K.Nav.stop(true); routedFor = null; }
+    if (S.navOn && !K.Nav.active() && t.status === 'in_progress') startNav();
   }
 
   // Screen 19: active trip
@@ -662,7 +692,7 @@
     targetMarker = L.marker([p.lat, p.lng], { icon: K.divIcon(kind === 'drop' ? '<div class="pin-sq"></div>' : '<div class="pin-ci"></div>', [18, 18]) }).addTo(map);
     if (!S.loc) return;
     const r = await K.route(S.loc, p);
-    if (routedFor !== key) return;
+    if (routedFor !== key || K.Nav.active()) return;   // navigation draws its own line and follows the driver
     routeLayer = K.drawRoute(map, r.coords);
     const pad = window.innerWidth >= 760 ? { paddingTopLeft: [460, 120], paddingBottomRight: [60, 60] } : { paddingTopLeft: [40, 110], paddingBottomRight: [40, sheet.offsetHeight + 30] };
     map.fitBounds(routeLayer.bounds(), { ...pad, maxZoom: 17 });

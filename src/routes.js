@@ -634,13 +634,16 @@ r.post('/trips/:id/rate', auth.requireAuth('rider', 'driver'), wrap(async (req, 
   const role = req.user.role;
   const t = await ownTrip(req, res, role);
   if (!t) return;
-  const stars = Math.round(Number(req.body.stars));
+  // { skip: true } records "not now" as 0 so the done screen stops coming back; 0 never counts
+  // toward anyone's average.
+  const skip = !!(req.body || {}).skip;
+  const stars = skip ? 0 : Math.round(Number(req.body.stars));
   if (t.status !== 'completed') return bad(res, 'You can rate after the trip.');
-  if (!(stars >= 1 && stars <= 5)) return bad(res, 'Choose 1 to 5 stars.');
+  if (!skip && !(stars >= 1 && stars <= 5)) return bad(res, 'Choose 1 to 5 stars.');
   const field = role === 'rider' ? 'rider_rating' : 'driver_rating';
   const target = role === 'rider' ? t.driver_id : t.rider_id;
   const ok = await db.one(`UPDATE trips SET ${field} = $1 WHERE id = $2 AND ${field} IS NULL RETURNING id`, [stars, t.id]);
-  if (ok) await db.query('UPDATE users SET rating_sum = rating_sum + $1, rating_count = rating_count + 1 WHERE id = $2', [stars, target]);
+  if (ok && stars) await db.query('UPDATE users SET rating_sum = rating_sum + $1, rating_count = rating_count + 1 WHERE id = $2', [stars, target]);
   res.json({ ok: true });
 }));
 
