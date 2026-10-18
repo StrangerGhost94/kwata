@@ -2,6 +2,10 @@
 (function () {
   const root = document.getElementById('root');
   const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['checks', 'Photo & plate checks'], ['driverRules', 'Driver rules'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['safety', 'Safety'], ['payouts', 'Payouts']];
+  // Phones: four sections at the bottom, the rest under More.
+  const MTABS = [['overview', 'Overview', 'chart'], ['drivers', 'Drivers', 'idcard'], ['checks', 'Checks', 'camera'], ['trips', 'Trips', 'list'], ['more', 'More', 'menu']];
+  const MORE = [['riders', 'Riders', 'person'], ['payouts', 'Driver cash outs', 'cash'], ['safety', 'Safety alerts', 'shield'], ['driverRules', 'Driver rules', 'settings'], ['pricing', 'Pricing', 'tag'], ['promos', 'Promotions', 'gift']];
+  let fitRaf = 0;
   let tab = location.hash.slice(1) || 'overview';
   let stats = {}, liveMap, liveLayer, liveTimer, sock;
 
@@ -12,8 +16,14 @@
     root.innerHTML = `<div class="shell"><nav class="side" aria-label="Admin sections">
       <div class="logo" style="display:flex;align-items:center;gap:8px"><svg width="34" height="24" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg><span>Flytte</span></div>
       ${TABS.map(([id, n]) => `<button data-t="${id}">${n}<span class="count hidden" id="c-${id}"></span></button>`).join('')}
-      <button id="out" style="margin-top:20px">Sign out</button></nav><main id="main"></main></div>`;
+      <button id="out" style="margin-top:20px">Sign out</button></nav>
+      <header class="m-top"><svg width="30" height="22" viewBox="0 0 140 100" aria-hidden="true"><g fill="#FFC400"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg>
+        <b>Flytte <span>Admin</span></b><a class="m-sos hidden" id="m-sos" href="#safety">SOS</a></header>
+      <main id="main"></main>
+      <nav class="m-tabs" aria-label="Admin sections">${MTABS.map(([id, n, ic]) => `<button data-mt="${id}"><span class="m-ic">${K.ic(ic)}<i class="m-count hidden" id="m-${id}"></i></span><span>${n}</span></button>`).join('')}</nav></div>`;
     root.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tab = b.dataset.t; location.hash = tab; show(); });
+    root.querySelectorAll('[data-mt]').forEach((b) => b.onclick = () => { K.haptic && K.haptic(); if (b.dataset.mt === 'more') return moreSheet(); tab = b.dataset.mt; location.hash = tab; show(); });
+    new MutationObserver(() => { cancelAnimationFrame(fitRaf); fitRaf = requestAnimationFrame(() => fitPhone(K.$('#main'))); }).observe(K.$('#main'), { childList: true, subtree: true });
     K.$('#out').onclick = () => { K.session.clear(); location.reload(); };
     sock = K.socket(K.token());
     sock.on('admin:sos', (a) => { K.toast(`🚨 SOS from ${a.user} on trip #${a.tripId}`, 10000); beep(); refreshCounts(); if (tab === 'safety' || tab === 'overview') show(); });
@@ -28,17 +38,63 @@
 
   async function refreshCounts() {
     stats = await K.api('/admin/stats');
-    const set = (id, n) => { const el = K.$('#c-' + id); el.textContent = n; el.classList.toggle('hidden', !n); };
+    const set = (id, n) => { for (const el of [K.$('#c-' + id), K.$('#m-' + id)]) if (el) { el.textContent = n > 99 ? '99+' : n; el.classList.toggle('hidden', !n); } };
     set('drivers', stats.pendingDrivers); set('safety', stats.openSos); set('payouts', stats.pendingWithdrawals);
     set('checks', (stats.pendingChanges || 0) + (stats.openReports || 0));
+    set('more', (stats.openSos || 0) + (stats.pendingWithdrawals || 0));
+    const sos = K.$('#m-sos'); if (sos) { sos.textContent = `SOS ${stats.openSos}`; sos.classList.toggle('hidden', !stats.openSos); }
   }
 
   function show() {
     clearInterval(liveTimer);
     root.querySelectorAll('[data-t]').forEach((b) => b.setAttribute('aria-current', b.dataset.t === tab ? 'page' : 'false'));
+    const inMore = MORE.some(([id]) => id === tab);
+    root.querySelectorAll('[data-mt]').forEach((b) => b.setAttribute('aria-current', (b.dataset.mt === tab || (inMore && b.dataset.mt === 'more')) ? 'page' : 'false'));
+    window.scrollTo(0, 0);
     const main = K.$('#main');
     main.innerHTML = K.skeleton('title-list', 5);
     ({ overview, drivers, checks, driverRules, riders, trips, pricing, promos, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
+  }
+
+  // The rest of the sections, as a sheet.
+  function moreSheet() {
+    const c = { payouts: stats.pendingWithdrawals, safety: stats.openSos };
+    const m = K.modal(`<div class="more-sheet"><h2>More</h2>
+      ${MORE.map(([id, n, ic]) => `<button class="more-row ${tab === id ? 'on' : ''}" data-go="${id}"><span class="mr-ic">${K.ic(ic)}</span><span class="grow">${n}</span>${c[id] ? `<span class="count ${id === 'safety' ? 'red' : ''}">${c[id]}</span>` : ''}${K.ic('chev')}</button>`).join('')}
+      <button class="more-row out" data-go="out"><span class="mr-ic">${K.ic('logout')}</span><span class="grow">Sign out</span></button></div>`);
+    m.el.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => {
+      m.close();
+      if (b.dataset.go === 'out') { K.session.clear(); location.reload(); return; }
+      tab = b.dataset.go; location.hash = tab; show();
+    });
+  }
+
+  // Phones: tables become cards (each value labelled with its column), and long notes fold to two lines.
+  function fitPhone(main) {
+    if (!main) return;
+    main.querySelectorAll('table:not(.fitted)').forEach((t) => {
+      t.classList.add('fitted', 'cards');
+      const heads = [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+      t.querySelectorAll('tbody tr').forEach((tr) => {
+        const tds = [...tr.children];
+        if (tds.length === 1) { tds[0].classList.add('c-empty'); return; }
+        tds.forEach((td, i) => {
+          td.dataset.label = heads[i] || '';
+          if (i === 0) td.classList.add('c-head');
+          else if (!heads[i] && td.querySelector('button, a.btn')) td.classList.add('c-actions');
+          else if (td.querySelector('input[type=text], input:not([type])') || td.textContent.trim().length > 34) td.classList.add('c-wide');
+        });
+      });
+    });
+    main.querySelectorAll('p.muted:not(.folded)').forEach((p) => {
+      p.classList.add('folded');
+      if (p.textContent.trim().length < 110 || p.closest('.card, table, .kpi')) return;
+      p.classList.add('fold');
+      const more = document.createElement('button'); more.type = 'button'; more.className = 'fold-btn'; more.textContent = 'More';
+      more.onclick = () => { const open = p.classList.toggle('open'); more.textContent = open ? 'Less' : 'More'; };
+      p.after(more);
+    });
+    ['save', 'saveR', 'saveG'].forEach((id) => { const b = main.querySelector('#' + id); if (b) b.classList.add('save-sticky'); });
   }
 
   const badge = (s) => `<span class="badge ${({ approved: 'ok', completed: 'ok', paid: 'ok', pending: 'warn', requested: 'warn', accepted: 'warn', arrived: 'warn', in_progress: 'warn', suspended: 'bad', rejected: 'bad', cancelled: 'bad', no_drivers: 'bad' })[s] || ''}">${K.esc(String(s).replace('_', ' '))}</span>`;
@@ -88,7 +144,7 @@
         <p class="muted" style="margin:6px 0 0">Drivers apply in the Driver app and upload their documents. Check them here before approving, or add a driver you’ve met in person.</p></div>
         <button class="btn btn-primary" id="addDriver" style="flex:none">${K.ic('plus')} Add driver</button></div>
       <div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>Driver</th><th>Vehicle</th><th>Permit</th><th>Trips</th><th>Rating</th><th title="Last 30 days: requests accepted · trips cancelled by the driver">Accept · cancel</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>
-      ${list.map((d) => `<tr><td><b>${K.esc(d.name)}</b><br><span class="small muted">${K.esc(d.phone)}</span></td>
+      ${list.map((d) => `<tr><td><b>${K.esc(d.name)}</b><br><span class="small muted">${K.esc(K.prettyPhone(d.phone))}</span></td>
         <td>${K.vehicleEmoji(d.vehicleType)} <span class="plate-tag">${K.esc(d.plate)}</span><br><span class="small muted">${K.esc(d.vehicle)}</span></td>
         <td>${K.esc(d.licenseNo)}${expiryTag(d.nextExpiry)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td>
         <td>${d.acceptanceRate == null ? '<span class="muted">—</span>' : `${d.acceptanceRate}% / ${d.cancellationRate ?? 0}%`}</td>
@@ -269,7 +325,7 @@
   async function riders(main) {
     const list = await K.api('/admin/riders');
     main.innerHTML = `<h1>Riders</h1><div class="table-wrap"><table><thead><tr><th>Rider</th><th>Joined</th><th>Trips</th><th>Wallet</th><th></th></tr></thead><tbody>
-      ${list.map((u) => `<tr><td><b>${K.esc(u.name)}</b><br><span class="small muted">${K.esc(u.phone)}</span></td><td>${K.when(u.created_at)}</td><td>${u.trips}</td><td>${K.ugx(u.wallet_balance)}</td>
+      ${list.map((u) => `<tr><td><b>${K.esc(u.name)}</b><br><span class="small muted">${K.esc(K.prettyPhone(u.phone))}</span></td><td>${K.when(u.created_at)}</td><td>${u.trips}</td><td>${K.ugx(u.wallet_balance)}</td>
         <td style="white-space:nowrap"><button class="btn btn-sm ${u.blocked ? '' : 'btn-ghost'}" data-id="${u.id}" data-b="${!u.blocked}">${u.blocked ? 'Unblock' : 'Block'}</button>
         <button class="btn btn-ghost btn-sm" data-pw="${u.id}" data-name="${K.esc(u.name)}">Reset password</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">No riders yet.</td></tr>'}
       </tbody></table></div>`;
@@ -282,11 +338,11 @@
 
   async function trips(main) {
     const list = await K.api('/admin/trips');
-    main.innerHTML = `<h1>Trips</h1><div class="table-wrap"><table><thead><tr><th>#</th><th>When</th><th>Type</th><th>Route</th><th>Rider</th><th>Driver</th><th>Fare</th><th>Paid</th><th>Status</th></tr></thead><tbody>
-      ${list.map((t) => `<tr><td>${t.id}</td><td class="small">${K.when(t.createdAt)}</td><td>${K.SERVICE_LABEL[t.service]}</td>
-        <td class="small">${K.esc(t.pickup.address)}<br>→ ${K.esc(t.drop.address)}<br><span class="muted">${t.distanceKm.toFixed(1)} km</span></td>
-        <td class="small">${K.esc(t.rider.name)}<br>${K.esc(t.rider.phone)}</td><td class="small">${t.driver ? K.esc(t.driver.name) + '<br>' + K.esc(t.driver.plate) : '—'}</td>
-        <td><b>${K.ugx(t.fare)}</b><br><span class="small muted">cut ${K.ugx(t.commission)}</span></td><td class="small">${K.PAY_LABEL[t.paymentMethod]}<br>${badge(t.paymentStatus)}</td><td>${badge(t.status)}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No trips yet.</td></tr>'}
+    main.innerHTML = `<h1>Trips</h1><div class="table-wrap"><table><thead><tr><th>Trip</th><th>Route</th><th>Rider</th><th>Driver</th><th>Fare</th><th>Paid</th></tr></thead><tbody>
+      ${list.map((t) => `<tr><td><span class="trip-id"><b>#${t.id}</b> · ${K.SERVICE_LABEL[t.service]}</span> ${badge(t.status)}<br><span class="small muted">${K.when(t.createdAt)}</span></td>
+        <td class="small">${K.esc(t.pickup.address)} → ${K.esc(t.drop.address)}<br><span class="muted">${t.distanceKm.toFixed(1)} km</span></td>
+        <td class="small">${K.esc(t.rider.name)}<br><span class="muted">${K.esc(K.prettyPhone(t.rider.phone))}</span></td><td class="small">${t.driver ? K.esc(t.driver.name) + '<br><span class="plate-tag">' + K.esc(t.driver.plate) + '</span>' : '—'}</td>
+        <td><b>${K.ugx(t.fare)}</b><br><span class="small muted">Flytte ${K.ugx(t.commission)}</span></td><td class="small">${K.PAY_LABEL[t.paymentMethod]}<br>${badge(t.paymentStatus)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No trips yet.</td></tr>'}
       </tbody></table></div>`;
   }
 
@@ -416,7 +472,7 @@
     main.innerHTML = `<h1>Safety alerts</h1><p class="muted">Call the person first. If you can't reach them, call their emergency contact and the police (999).</p>
       <div class="table-wrap"><table><thead><tr><th>When</th><th>From</th><th>Trip</th><th>Location</th><th>Emergency contact</th><th></th></tr></thead><tbody>
       ${list.map((a) => `<tr style="${a.resolved ? '' : 'background:rgba(200,50,43,.08)'}"><td class="small">${K.when(a.created_at)}</td>
-        <td><b>${K.esc(a.name)}</b> (${a.role})<br><a href="tel:${K.esc(a.phone)}">${K.esc(a.phone)}</a></td><td>#${a.trip_id}</td>
+        <td><b>${K.esc(a.name)}</b> (${a.role})<br><a href="tel:${K.esc(a.phone)}">${K.esc(K.prettyPhone(a.phone))}</a></td><td>#${a.trip_id}</td>
         <td>${a.lat ? `<a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${a.lat},${a.lng}">Open map</a>` : '—'}</td>
         <td>${a.emergency_contact ? `<a href="tel:${K.esc(a.emergency_contact)}">${K.esc(a.emergency_contact)}</a>` : '—'}</td>
         <td>${a.resolved ? badge('resolved') : `<button class="btn btn-sm btn-primary" data-id="${a.id}">Mark resolved</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No alerts. Good.</td></tr>'}
@@ -428,7 +484,7 @@
     const list = await K.api('/admin/withdrawals');
     main.innerHTML = `<h1>Driver cash outs</h1><p class="muted">Send the money by Mobile Money, then mark it paid. Rejecting returns the amount to the driver's balance.</p>
       <div class="table-wrap"><table><thead><tr><th>When</th><th>Driver</th><th>Send to</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>
-      ${list.map((w) => `<tr><td class="small">${K.when(w.created_at)}</td><td><b>${K.esc(w.name)}</b><br><span class="small muted">${K.esc(w.phone)}</span></td><td>${K.esc(w.momo_number)}</td><td><b>${K.ugx(w.amount)}</b></td><td>${badge(w.status)}</td>
+      ${list.map((w) => `<tr><td class="small">${K.when(w.created_at)}</td><td><b>${K.esc(w.name)}</b><br><span class="small muted">${K.esc(K.prettyPhone(w.phone))}</span></td><td>${K.esc(K.prettyPhone(w.momo_number))}</td><td><b>${K.ugx(w.amount)}</b></td><td>${badge(w.status)}</td>
         <td style="white-space:nowrap">${w.status === 'pending' ? `<button class="btn btn-primary btn-sm" data-id="${w.id}" data-s="paid">Mark paid</button> <button class="btn btn-ghost btn-sm" data-id="${w.id}" data-s="rejected">Reject</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No cash-out requests.</td></tr>'}
       </tbody></table></div>`;
     main.querySelectorAll('[data-s]').forEach((b) => b.onclick = async () => { await K.api(`/admin/withdrawals/${b.dataset.id}`, { status: b.dataset.s }); await refreshCounts(); show(); });
