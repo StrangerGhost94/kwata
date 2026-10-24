@@ -20,6 +20,8 @@ if (CANONICAL) app.use((req, res, next) => {
   if (req.method !== 'GET' || /^\/(api|socket\.io|\.well-known)\b/.test(req.path)) return next();
   res.redirect(301, `https://${CANONICAL}${req.originalUrl}`);
 });
+// Safety net: a stray failed promise is logged instead of stopping the server (and every live trip).
+process.on('unhandledRejection', (e) => console.error('Unhandled promise rejection:', e));
 app.disable('x-powered-by');
 app.use(express.json({ limit: '3mb' })); // room for compressed document photos
 app.use((req, res, next) => {

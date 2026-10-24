@@ -285,24 +285,39 @@ function setDriverFree(driverId, tripId) {
 }
 
 // ---------- Socket server ----------
+// Socket handlers run on input from any client. An error in one (a malformed message, a database
+// hiccup) is logged and answered with ok:false; it must never take the whole server down.
+function guard(name, fn) {
+  return async (...args) => {
+    try { return await fn(...args); } catch (e) {
+      console.error(`socket ${name}:`, e.message);
+      const cb = args[args.length - 1];
+      if (typeof cb === 'function') cb({ ok: false, error: 'Something went wrong. Try again.' });
+    }
+  };
+}
+
 function init(server) {
   io = new Server(server, { cors: { origin: true } });
 
   io.use(async (socket, next) => {
-    const token = socket.handshake.auth && socket.handshake.auth.token;
-    if (!token) { socket.data.user = null; return next(); } // public trackers
-    const p = auth.verify(token);
-    if (!p) return next(new Error('unauthorized'));
-    const u = await db.one('SELECT id, role, name, blocked FROM users WHERE id = $1', [p.id]);
-    if (!u || u.blocked) return next(new Error('unauthorized'));
-    socket.data.user = u;
-    next();
+    try {
+      const token = socket.handshake.auth && socket.handshake.auth.token;
+      if (!token) { socket.data.user = null; return next(); } // public trackers
+      const p = auth.verify(token);
+      if (!p) return next(new Error('unauthorized'));
+      const u = await db.one('SELECT id, role, name, blocked FROM users WHERE id = $1', [p.id]);
+      if (!u || u.blocked) return next(new Error('unauthorized'));
+      socket.data.user = u;
+      next();
+    } catch (e) { console.error('socket auth:', e.message); next(new Error('unavailable')); }
   });
 
-  io.on('connection', async (socket) => {
+  io.on('connection', guard('connection', async (socket) => {
     const u = socket.data.user;
+    const handle = (event, fn) => socket.on(event, guard(event, fn));
 
-    socket.on('track:join', async ({ token } = {}, cb) => {
+    handle('track:join', async ({ token } = {}, cb) => {
       const t = await db.one('SELECT id FROM trips WHERE share_token = $1', [String(token || '')]);
       if (!t) return cb && cb({ ok: false });
       socket.join(`share:${t.id}`);
@@ -314,7 +329,7 @@ function init(server) {
     socket.join(`user:${u.id}`);
 
     // In-trip chat between rider and driver
-    socket.on('chat:send', async ({ tripId, text } = {}, cb) => {
+    handle('chat:send', async ({ tripId, text } = {}, cb) => {
       const msg = String(text || '').trim().slice(0, 500);
       if (!msg) return cb && cb({ ok: false });
       const t = await db.one('SELECT id, rider_id, driver_id, status FROM trips WHERE id = $1', [Number(tripId)]);
@@ -341,7 +356,7 @@ function init(server) {
 
     if (u.role === 'rider') {
       riderVisible.set(u.id, true);
-      socket.on('rider:visible', (v) => { riderVisible.set(u.id, !!v); });
+      handle('rider:visible', (v) => { riderVisible.set(u.id, !!v); });
     }
 
     if (u.role === 'driver') {
@@ -361,9 +376,9 @@ function init(server) {
           socket.emit('trip:offer', { ...st.offer, expiresIn: Math.floor((st.expiresAt - Date.now()) / 1000) });
         }
       }
-      socket.on('driver:visible', (v) => { d.visible = !!v; });
+      handle('driver:visible', (v) => { d.visible = !!v; });
 
-      socket.on('driver:online', async (on, cb) => {
+      handle('driver:online', async (on, cb) => {
         const fresh = await db.one('SELECT status FROM drivers WHERE user_id = $1', [u.id]);
         if (on && (!fresh || fresh.status !== 'approved')) {
           return cb && cb({ ok: false, error: 'Your account is waiting for approval by the Flytte team.' });
@@ -382,7 +397,7 @@ function init(server) {
         }
       });
 
-      socket.on('driver:location', (loc = {}) => {
+      handle('driver:location', (loc = {}) => {
         const lat = Number(loc.lat), lng = Number(loc.lng);
         if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return;
         d.lat = lat; d.lng = lng; d.heading = Number(loc.heading) || null; d.updatedAt = Date.now();
@@ -393,7 +408,7 @@ function init(server) {
         if (d.home && haversineKm(d, d.home) < 0.8) { d.home = null; notify(u.id, 'driver:home', { on: false, arrived: true }); }
       });
 
-      socket.on('trip:respond', async ({ tripId, accept } = {}, cb) => {
+      handle('trip:respond', async ({ tripId, accept } = {}, cb) => {
         try {
           const r = await respond(u.id, Number(tripId), !!accept);
           if (r.ok && accept) socket.join(`trip:${tripId}`);
@@ -401,7 +416,7 @@ function init(server) {
         } catch (e) { console.error(e); cb && cb({ ok: false, error: 'Something went wrong.' }); }
       });
 
-      socket.on('disconnect', async () => {
+      handle('disconnect', async () => {
         const still = io.sockets.adapter.rooms.get(`user:${u.id}`);
         if (still) return;
         if (d.online && d.push) {
@@ -416,7 +431,7 @@ function init(server) {
         } else d.online = false; // all tabs closed and no ride alerts
       });
     }
-  });
+  }));
 
   return io;
 }
