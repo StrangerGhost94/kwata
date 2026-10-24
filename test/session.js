@@ -4,7 +4,7 @@ const { chromium } = require('playwright-core');
 const jwt = require('jsonwebtoken');
 const BASE = process.env.BASE || 'http://localhost:3000';
 const SECRET = process.env.JWT_SECRET || 'dev-only-secret-change-me';
-const EXE = process.env.CHROME || ['/opt/google/chrome/chrome', '/opt/pw-browsers/chromium'].find((p) => { try { return require('fs').statSync(p).isFile(); } catch { return false; } });
+const EXE = process.env.CHROME || ['/opt/google/chrome/chrome', '/opt/pw-browsers/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((p) => { try { return require('fs').statSync(p).isFile(); } catch { return false; } });
 const rnd = () => String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 async function call(path, body, { token, cookie, method } = {}) {
   const r = await fetch(BASE + '/api' + path, { method: method || (body ? 'POST' : 'GET'), headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });

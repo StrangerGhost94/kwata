@@ -19,12 +19,13 @@
   <section class="sheet" id="sheet" aria-live="polite"><div class="grabber"></div><i class="sk" style="width:60%;height:24px"></i><i class="sk" style="width:85%;height:12px;margin-top:12px"></i><i class="sk" style="width:100%;height:56px;margin-top:16px"></i></section>
 </div>
 <script src="/vendor/leaflet/leaflet.js"></script>
-<script src="/vendor/maplibre/maplibre-gl.js"></script>
-<script src="/vendor/maplibre-leaflet/leaflet-maplibre-gl.js"></script>
-<script src="/socket.io/socket.io.js"></script>
-<script src="/js/common.js"></script>
+<script type="module" src="/js/maplibre.js"></script>
+<script defer src="/vendor/maplibre-leaflet/leaflet-maplibre-gl.js"></script>
+<script defer src="/socket.io/socket.io.js"></script>
+<script defer src="/js/common.js"></script>
 <script>
-(function () {
+// Runs once the deferred scripts above have loaded.
+document.addEventListener('DOMContentLoaded', function () {
   const token = location.pathname.split('/').pop();
   const sheet = K.$('#sheet');
   const map = K.map('map');
@@ -67,7 +68,7 @@
     if (!car) car = K.vehicle(map, p, trip.driver.vehicleType === 'car' ? 'car' : 'boda', p.heading || 0);
     else car.moveTo(p.lat, p.lng, p.heading);
   }
-})();
+});
 </script>
 </body>
 </html>

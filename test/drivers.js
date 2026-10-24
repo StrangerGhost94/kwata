@@ -113,6 +113,8 @@ const day = (n) => new Date(Date.now() + 3 * 3600e3 + n * 86400e3).toISOString()
   const t4 = await book(rider, 'cash');
   assert(!(await op), 'no cash trip is offered while the driver owes more than the limit');
   await api(`/trips/${t4.id}/cancel`, {}, rider.token);
+  // Fares move with traffic, rain and surge, so make sure the wallet covers this one whenever the test runs.
+  await api('/wallet/topup', { amount: 20000, method: 'momo' }, rider.token);
   op = offerFor();
   const t5 = await book(rider, 'wallet');
   offer = await op;
@@ -189,7 +191,13 @@ const day = (n) => new Date(Date.now() + 3 * 3600e3 + n * 86400e3).toISOString()
   assert(me && me.nextExpiry === day(-2) && me.acceptanceRate !== null, 'admin sees the next expiry and acceptance rate');
 
   ds.close();
-  await api('/admin/settings', { drivers: { freeWaitMin: 5, noShowFee: 2000, cashDebtLimit: 30000, headingHomePerDay: 2 }, bonuses: [], minWithdrawal: 5000 }, admin.token, 'PUT');
+  await restoreSettings();
   console.log(failed ? `${failed} FAILED` : 'All driver tool checks passed');
   process.exit(failed ? 1 : 0);
-})().catch((e) => { console.error(e); process.exit(1); });
+})().catch(async (e) => { console.error(e); await restoreSettings().catch(() => {}); process.exit(1); });
+
+// Put the driver rules back to their defaults, also after a failed run, so the test bonus and fees don't leak into other tests.
+async function restoreSettings() {
+  const admin = await api('/auth/login', { phone: '0700000000', password: 'admin123' });
+  await api('/admin/settings', { drivers: { freeWaitMin: 5, noShowFee: 2000, cashDebtLimit: 30000, headingHomePerDay: 2 }, bonuses: [], minWithdrawal: 5000 }, admin.token, 'PUT');
+}
