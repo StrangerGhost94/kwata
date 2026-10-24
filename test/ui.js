@@ -7,7 +7,7 @@
 //   BASE=http://localhost:3101 PAYMENTS_OFF=1 node test/ui.js   (server started with PAYMENTS_DEMO=false)
 const { chromium } = require('playwright-core');
 const BASE = process.env.BASE || 'http://localhost:3000';
-const EXE = process.env.CHROME || ['/opt/google/chrome/chrome', '/opt/pw-browsers/chromium'].find((p) => { try { return require('fs').statSync(p).isFile(); } catch { return false; } });
+const EXE = process.env.CHROME || ['/opt/google/chrome/chrome', '/opt/pw-browsers/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((p) => { try { return require('fs').statSync(p).isFile(); } catch { return false; } });
 let failed = 0;
 const ok = (cond, msg) => { console.log(`${cond ? '✓' : '✗'} ${msg}`); if (!cond) failed++; };
 const api = async (path, body, token) => {

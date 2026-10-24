@@ -37,7 +37,10 @@ function route(body, res) {
   return { pickup, drop };
 }
 
-// Tiny in-memory rate limiter for login / register
+// Tiny in-memory rate limiter for login / register.
+// A local test server allows 20x more, so a full `npm test` run doesn't hit the sign-up limit.
+const LIVE = !!process.env.DATABASE_URL || process.env.NODE_ENV === 'production';
+const LIMIT_SCALE = LIVE ? 1 : 20;
 const hits = new Map();
 setInterval(() => { const now = Date.now(); for (const [k, arr] of hits) if (!arr.length || now - arr[arr.length - 1] > 30 * 60e3) hits.delete(k); }, 10 * 60e3).unref();
 function limit(max, windowMs) {
@@ -46,7 +49,7 @@ function limit(max, windowMs) {
     const now = Date.now();
     const arr = (hits.get(key) || []).filter((t) => now - t < windowMs);
     arr.push(now); hits.set(key, arr);
-    if (arr.length > max) return bad(res, 'Too many attempts. Wait a few minutes.', 429);
+    if (arr.length > max * LIMIT_SCALE) return bad(res, 'Too many attempts. Wait a few minutes.', 429);
     next();
   };
 }
@@ -275,20 +278,12 @@ r.post('/me/password', auth.requireAuth(), wrap(async (req, res) => {
 }));
 
 // Phone-first sign in: tells the app whether to ask for a password or show sign-up.
+// Only says whether the number is registered and as what; never a name or anything else.
 r.post('/auth/check', limit(30, 10 * 60e3), wrap(async (req, res) => {
   const p = auth.normalizePhone((req.body || {}).phone);
   if (!p) return bad(res, 'Enter a valid mobile number, e.g. 0772 123456.');
   const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
   res.json({ phone: p, exists: !!u, role: u ? u.role : null });
-}));
-
-// Phone-first sign in: tells the app whether to ask for a password or start a new account.
-// Only says whether the number is registered and as what; never a name or anything else.
-r.post('/auth/check', limit(20, 10 * 60e3), wrap(async (req, res) => {
-  const p = auth.normalizePhone((req.body || {}).phone);
-  if (!p) return bad(res, 'Enter a valid mobile number, e.g. 0772 123456.');
-  const u = await db.one('SELECT role FROM users WHERE phone = $1', [p]);
-  res.json({ exists: !!u, role: u ? u.role : null });
 }));
 
 // ---------- Email for receipts (verified with a 6-digit code) ----------

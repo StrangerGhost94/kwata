@@ -3,7 +3,7 @@
 const { chromium } = require('playwright-core');
 const { io } = require('socket.io-client');
 const BASE = process.env.BASE || 'http://localhost:3000';
-const EXE = process.env.CHROME || ['/opt/google/chrome/chrome', '/opt/pw-browsers/chromium'].find((p) => { try { return require('fs').statSync(p).isFile(); } catch { return false; } });
+const EXE = process.env.CHROME || ['/opt/google/chrome/chrome', '/opt/pw-browsers/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((p) => { try { return require('fs').statSync(p).isFile(); } catch { return false; } });
 const rnd = () => String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function call(path, body, token, method) {
