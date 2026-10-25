@@ -493,7 +493,7 @@
 
   // Customer help: reports from a trip (lost items, fares, behaviour). Reply closes it and alerts the customer.
   async function help(main) {
-    const list = await K.api('/admin/issues');
+    const [list, fb] = await Promise.all([K.api('/admin/issues'), K.api('/admin/feedback').catch(() => null)]);
     const open = list.filter((i) => i.status === 'open'), done = list.filter((i) => i.status !== 'open');
     const card = (i) => `<div class="card issue-card ${i.status}" style="margin-bottom:12px">
       <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${K.esc(i.label)}</b><span class="small muted">${K.when(i.at)} · trip #${i.tripId}</span></div>
@@ -507,7 +507,8 @@
         : `<div class="issue-reply" style="margin-top:8px"><small>Your reply · ${K.when(i.resolvedAt)}</small>${K.esc(i.reply || '')}</div>`}</div>`;
     main.innerHTML = `<h1>Customer help</h1><p class="muted">Reports riders and drivers send from a trip. Call them if it’s urgent; your reply reaches them in the app and as a notification.</p>
       <h2>Open (${open.length})</h2>${open.map(card).join('') || '<p class="muted">Nothing waiting.</p>'}
-      ${done.length ? `<h2 style="margin-top:24px">Resolved</h2>${done.slice(0, 40).map(card).join('')}` : ''}`;
+      ${done.length ? `<h2 style="margin-top:24px">Resolved</h2>${done.slice(0, 40).map(card).join('')}` : ''}
+      ${fb && fb.count ? `<h2 style="margin-top:24px">App ratings · ★ ${fb.average} from ${fb.count}</h2>${fb.items.slice(0, 30).map((f) => `<div class="card" style="margin-bottom:8px"><b>${'★'.repeat(f.stars)}${'☆'.repeat(5 - f.stars)}</b> <span class="small muted">${K.esc(f.name)} · ${K.when(f.at)}</span>${f.note ? `<p style="margin:6px 0 0">${K.esc(f.note)}</p>` : ''}</div>`).join('')}` : ''}`;
     main.querySelectorAll('[data-reply]').forEach((b) => b.onclick = async () => {
       const ta = K.$('#rp' + b.dataset.reply, main);
       if (!ta.value.trim()) { ta.focus(); return; }

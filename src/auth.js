@@ -14,8 +14,15 @@ if (LIVE && SECRET.length < 24) console.warn('⚠️  JWT_SECRET is short. Use 3
 // Sessions stay signed in until the person logs out: a token lasts 180 days and is renewed
 // (sliding) whenever the app is used, so an active rider or driver is never signed out.
 const SESSION_DAYS = 180;
-function sign(user) {
-  return jwt.sign({ id: user.id, role: user.role }, SECRET, { expiresIn: SESSION_DAYS + 'd' });
+// `sid` names the session (one per signed-in phone), so the rider can see and sign out their devices.
+function sign(user, sid) {
+  return jwt.sign({ id: user.id, role: user.role, ...(sid ? { sid } : {}) }, SECRET, { expiresIn: SESSION_DAYS + 'd' });
+}
+// "Android phone · Chrome", "iPhone · Safari": enough to recognise a device, nothing more.
+function deviceName(ua = '') {
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android phone' : /Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows computer' : /Linux/.test(ua) ? 'Linux computer' : 'Device';
+  const br = /EdgA?\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /OPR\/|Opera/.test(ua) ? 'Opera' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
+  return br ? `${os} · ${br}` : os;
 }
 // A copy of the session in an HttpOnly cookie, so the app can sign back in by itself if the
 // phone clears the app's saved data (iOS does this to web apps). One per app role.
@@ -32,7 +39,11 @@ function clearSessionCookie(req, res, role) {
   res.append('Set-Cookie', `${cookieName(role)}=; Path=/api/auth; Max-Age=0; HttpOnly; SameSite=Lax`);
 }
 // Issue a session: the token for the app, plus the cookie copy.
-function issue(req, res, user) { const token = sign(user); setSessionCookie(req, res, user, token); return token; }
+function issue(req, res, user) {
+  const sid = require('crypto').randomBytes(12).toString('base64url');
+  db.query('INSERT INTO sessions(id, user_id, device) VALUES ($1,$2,$3)', [sid, user.id, deviceName(String(req.headers['user-agent'] || ''))]).catch(() => {});
+  const token = sign(user, sid); setSessionCookie(req, res, user, token); return token;
+}
 
 // Short-lived proof that someone entered the SMS code for this phone (used to finish signing up).
 function signPhone(phone) { return jwt.sign({ phone, purpose: 'phone' }, SECRET, { expiresIn: '30m' }); }
@@ -79,9 +90,20 @@ function requireAuth(...roles) {
     if (!payload || payload.purpose) return res.status(401).json({ error: 'Please sign in again.', code: 'SESSION' });
     const user = await db.one('SELECT * FROM users WHERE id = $1', [payload.id]);
     if (!user || user.deleted_at) return res.status(401).json({ error: 'Account not found.', code: 'SESSION' });
+    // Signed out from another device: a revoked session, or an older sign-in without a session id.
+    if (payload.sid) {
+      const s = await db.one('SELECT revoked, last_seen, device FROM sessions WHERE id = $1', [payload.sid]);
+      if (s && s.revoked) return res.status(401).json({ error: 'You were signed out on this phone. Sign in again.', code: 'SESSION' });
+      if (s && Date.now() - new Date(s.last_seen).getTime() > 10 * 60e3) db.query('UPDATE sessions SET last_seen = NOW() WHERE id = $1', [payload.sid]).catch(() => {});
+      // Signed in where the device couldn't be told (e.g. a restored session): name it once it's known.
+      if (s && s.device === 'Device') { const dn = deviceName(String(req.headers['user-agent'] || '')); if (dn !== 'Device') db.query('UPDATE sessions SET device = $1 WHERE id = $2', [dn, payload.sid]).catch(() => {}); }
+    } else if (user.signed_out_before && payload.iat * 1000 < new Date(user.signed_out_before).getTime()) {
+      return res.status(401).json({ error: 'You were signed out on this phone. Sign in again.', code: 'SESSION' });
+    }
+    req.sid = payload.sid || null;
     // Renew a session that's more than a day old, so it never runs out while the app is in use.
     if (payload.iat && Date.now() / 1000 - payload.iat > 86400) {
-      const token = sign(user);
+      const token = sign(user, payload.sid);
       res.set('X-Session-Token', token);
       setSessionCookie(req, res, user, token);
     }
@@ -103,7 +125,11 @@ function publicUser(u) {
     payPref: u.pay_pref || 'cash', payPhone: u.pay_phone || u.phone,
     walletLock: !!u.wallet_lock,
     emailVerified: !!u.email_verified, emailReceipts: u.email_receipts !== false,
+    photo: u.photo || null,
+    ridePrefs: (() => { try { return JSON.parse(u.ride_prefs || '{}'); } catch { return {}; } })(),
+    nightShare: (() => { try { return JSON.parse(u.night_share || 'null') || { on: false, from: '21:00' }; } catch { return { on: false, from: '21:00' }; } })(),
+    memberSince: u.created_at,
   };
 }
 
-module.exports = { sign, issue, readCookie, cookieName, clearSessionCookie, verify, requireAuth, normalizePhone, ccOf, COUNTRIES, publicUser, signPhone, verifyPhone, hashCode, signWalletPass, verifyWalletPass };
+module.exports = { deviceName, sign, issue, readCookie, cookieName, clearSessionCookie, verify, requireAuth, normalizePhone, ccOf, COUNTRIES, publicUser, signPhone, verifyPhone, hashCode, signWalletPass, verifyWalletPass };

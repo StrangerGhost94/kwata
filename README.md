@@ -143,6 +143,14 @@ Fares are upfront and calibrated to Kampala (about 8–10% below Bolt's publishe
 - **Multiple stops.** Up to 2 stops per ride (not parcels). The fare covers the distance through every stop plus a per-stop fee (Admin → Pricing), and drivers tap "Done at stop" to go on.
 - **Split the fare.** Riders send a link and friends pay their share by Mobile Money without an account. The money lands in the rider's Flytte Wallet, and Mobile Money/card trips can be paid from the wallet at the end.
 
+## Account page
+
+- **Header and stats.** Tap the header to edit: photo (only the rider sees it), name, and phone number. The new number is confirmed with a code sent to it. Below it: trips, rating, rider since, Rewards level. Flytte Wallet and Rewards are cards at the top.
+- **Saved places.** Home, Work, and up to 10 places with the rider's own names. They show on Home and at the top of search.
+- **Ride preferences.** Usual ride type, always ask for a woman driver, and a default pickup note. They're applied to every new booking.
+- **Share night trips.** From a chosen time until 5 am, the emergency contact gets an SMS with the driver, plate and live link when a trip starts. It needs SMS set up (EgoSMS).
+- **Monthly summary** with a CSV statement. **Signed-in devices** with sign out (sessions table, `sid` in the token). **Help centre** with answers, reports from all trips and contact options. **Rate Flytte** (Admin → Customer help shows ratings), **Share Flytte**, and the real app version.
+
 ## Place search
 
 Riders search through Flytte's server (`/api/places/search`, `src/places.js`), which lists:

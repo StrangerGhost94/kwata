@@ -87,6 +87,7 @@
 
   function boot(me, config, active, hist) {
     S.user = me.user; S.config = config;
+    applyPrefs();
     loadGrowth(); loadUpcoming();
     S.history = hist; buildRecent(hist);   // null if unknown: Activity then loads it (with Retry on failure), never a false 'No trips'
     sock = K.socket(K.token());
@@ -290,6 +291,7 @@
     // Saved places first, then recent destinations; "Add home/work" goes last once there are recents.
     const set = (k) => !!sp[k];
     const saved = ['home', 'work'].filter(set).map((k) => chip(`data-place="${k}"`, k, k === 'home' ? 'Home' : 'Work', shortName(sp[k].address)));
+    saved.push(...ownPlaces().map(([k, v]) => chip(`data-place="${k}"`, 'pin', shorten(v.label, 18), shortName(v.address))));
     const recent = S.recent.slice(0, 3).map((r, i) => chip(`data-recent="${i}"`, 'clock', shorten(shortName(r.name), 22), ''));
     const add = ['home', 'work'].filter((k) => !set(k)).map((k) => chip(`data-place="${k}"`, k, k === 'home' ? 'Home' : 'Work', 'Add', recent.length ? ' add' : ''));
     return [...saved, ...(recent.length ? [...recent, ...add] : [...add])].join('');
@@ -297,7 +299,7 @@
   function bindQuick() {
     sheet.querySelectorAll('[data-place]').forEach((b) => b.onclick = () => {
       const key = b.dataset.place, p = (S.user.savedPlaces || {})[key];
-      if (p) chooseDrop({ name: key === 'home' ? 'Home' : 'Work', address: p.address, lat: p.lat, lng: p.lng });
+      if (p) chooseDrop({ name: p.label || (key === 'home' ? 'Home' : 'Work'), address: p.address, lat: p.lat, lng: p.lng });
       else openSearch({ saveAs: key });
     });
     sheet.querySelectorAll('[data-recent]').forEach((b) => b.onclick = () => chooseDrop(S.recent[+b.dataset.recent]));
@@ -414,7 +416,7 @@
     page.style.zIndex = 870;
     page.innerHTML = `<div class="page-inner">
       <div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Close">${K.ic('back')}</button>
-        <h2>${saveAs ? 'Set ' + saveAs + ' address' : addStop ? 'Add a stop' : pickFirst ? 'Set your pickup point' : S.service === 'parcel' ? 'Where should it go?' : 'Where are you going?'}</h2></div>
+        <h2>${saveAs ? 'Set ' + K.esc(opts.label || saveAs) + ' address' : addStop ? 'Add a stop' : pickFirst ? 'Set your pickup point' : S.service === 'parcel' ? 'Where should it go?' : 'Where are you going?'}</h2></div>
       ${single ? '' : `<div class="route-box" style="margin-bottom:6px">
         <div class="rb-line" style="grid-row:span 2"><span class="rb-dot"></span><span class="rb-bar"></span><span class="rb-sq"></span></div>
         <input id="qPick" placeholder="Set your pickup point" value="${K.esc(S.pickup && !opts.pickFirst ? (S.pickup.short || S.pickup.address) : '')}" autocomplete="off" aria-label="Pickup point">
@@ -440,6 +442,7 @@
       const saved = [];
       if (!saveAs && sp.home) saved.push({ name: 'Home', address: sp.home.address, lat: sp.home.lat, lng: sp.home.lng, _ic: 'home' });
       if (!saveAs && sp.work) saved.push({ name: 'Work', address: sp.work.address, lat: sp.work.lat, lng: sp.work.lng, _ic: 'work' });
+      if (!saveAs) ownPlaces().forEach(([, v]) => saved.push({ name: v.label, address: v.address, lat: v.lat, lng: v.lng, _ic: 'pin' }));
       const recent = saveAs ? [] : S.recent.map((r) => ({ ...r, _ic: 'clock' }));
       const extra = target === 'pick' && S.gps ? [{ name: 'Current location', address: 'Use GPS', lat: S.gps.lat, lng: S.gps.lng, _ic: 'locate' }] : [];
       current = [...extra, ...saved, ...recent, ...K.PLACES.map((p) => ({ ...p, _ic: p.icon || 'pin' }))];
@@ -491,8 +494,8 @@
       }
       if (saveAs) {
         try {
-          const out = await K.api('/me', { savedPlaces: { [saveAs]: { lat: p.lat, lng: p.lng, address: p.name } } }, 'PATCH');
-          S.user = out.user; K.toast(`${saveAs === 'home' ? 'Home' : 'Work'} saved`); close();
+          const out = await K.api('/me', { savedPlaces: { [saveAs]: { lat: p.lat, lng: p.lng, address: p.name, label: opts.label } } }, 'PATCH');
+          saveUser(out.user); K.toast(`${opts.label || (saveAs === 'home' ? 'Home' : 'Work')} saved`); close();
           if (opts.onSaved) opts.onSaved(); else if (S.view === 'home') render();
         } catch (e) { K.toast(e.message); }
         return;
@@ -1543,6 +1546,7 @@
     const hadTrip = !!S.trip;
     S.view = 'home'; S.drop = null; S.quote = null; S.route = null; S.trip = null; S.rating = 0; S.parcel = null; S.allOpts = false;
     S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false; S.womanDriver = false; S.stops = [];
+    S.summary = null; applyPrefs();
     loadGrowth();
     S.messages = []; S.unread = 0; routedPhase = null; phaseKm = null;
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
@@ -1692,24 +1696,58 @@
     const f = K.$('#first', el); if (f) f.onclick = () => { openTab('home'); if (filter === 'parcel') setService('parcel'); openSearch(); };
   }
 
+  // ---------- Account ----------
+  // Header (tap to edit) with stats, Wallet and Rewards up top, then short sections.
+  const monthYear = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '');
+  const avatar = (u, cls = 'acct-photo') => `<span class="${cls}">${u.photo ? `<img src="${K.esc(u.photo)}" alt="">` : K.initials(u.name)}</span>`;
+  const row = (a, ic, title, sub, extra = '') => `<button class="set-row" data-a="${a}"><span class="row-ic">${K.ic(ic, 'sm')}</span><span class="grow"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</span>${extra || K.ic('chev', 'sm')}</button>`;
   function drawAccount(el) {
-    const u = S.user, P = PAY[pref()];
+    const u = S.user, P = PAY[pref()], g = S.growth, sm = S.summary;
+    const places = Object.keys(u.savedPlaces || {}).length;
+    const ns = u.nightShare || {};
+    const tier = g && g.tier, pts = g ? g.lifetimePoints || 0 : 0;
+    const pct = tier && tier.next ? Math.min(100, Math.round((pts / tier.at) * 100)) : 100;
     el.innerHTML = `
       <div class="page-title">Account</div>
-      <div class="profile-head"><span class="photo">${K.initials(u.name)}</span>
-        <span class="grow"><b style="font-size:1.2rem;display:block">${K.esc(u.name)}</b><span class="small muted">${K.esc(prettyPhone(u.phone))}</span><br>
-          <span class="verified">★ ${u.rating || 'New'} rider rating</span></span></div>
-      <button class="menu-item" data-a="invite"><span class="ic" style="background:var(--brand-soft)">🎁</span><span class="grow">Invite friends<br><span class="small muted">Get ${K.ugx((S.config.growth || { referral: {} }).referral.referrer || 0)} for each friend</span></span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="rewards"><span class="ic" style="background:var(--brand-soft)">★</span><span class="grow">Flytte Rewards<br><span class="small muted">${S.growth ? `${S.growth.points} points · ${S.growth.tier.name}` : 'Earn points on every trip'}</span></span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="pay"><span class="ic">${K.ic('card')}</span><span class="grow">Payment methods<br><span class="small muted">${P.name}</span></span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="places"><span class="ic">${K.ic('pin')}</span><span class="grow">Saved places</span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="wallet"><span class="ic">${K.ic('wallet')}</span><span class="grow">Flytte Wallet<br><span class="small muted">${K.ugx(u.walletBalance)}</span></span>${K.ic('chev', 'sm')}</button>
-      ${S.config.emailReceipts || u.email ? `<button class="menu-item" data-a="email"><span class="ic">${K.ic('mail')}</span><span class="grow">Email<br><span class="small muted">${u.email && u.emailVerified ? `${K.esc(u.email)}` : 'Add your email'}</span></span>${K.ic('chev', 'sm')}</button>` : ''}
-      <button class="menu-item" data-a="safety"><span class="ic">${K.ic('shield')}</span><span class="grow">Safety<br><span class="small muted">${u.emergencyContact ? 'Emergency contact ' + K.esc(prettyPhone(u.emergencyContact)) : 'Add an emergency contact'}</span></span>${K.ic('chev', 'sm')}</button>
-      ${S.config.supportPhone ? `<a class="menu-item" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="ic">${K.ic('help')}</span><span class="grow">Help & Support<br><span class="small muted">Call ${K.esc(S.config.supportPhone)}</span></span>${K.ic('chev', 'sm')}</a>` : ''}
-      <button class="menu-item" data-a="settings"><span class="ic">${K.ic('settings')}</span><span class="grow">Settings<br><span class="small muted">Appearance, language, privacy</span></span>${K.ic('chev', 'sm')}</button>
-      <button class="menu-item" data-a="out" style="color:var(--stop)"><span class="ic" style="background:var(--stop-soft);color:var(--stop)">${K.ic('logout')}</span><span class="grow">Log out</span></button>
-      <p class="tiny faint" style="text-align:center;margin-top:18px">Flytte 1.0</p>`;
+      <button class="acct-head" data-a="profile" aria-label="Edit your profile">${avatar(u)}
+        <span class="grow"><b>${K.esc(u.name)}</b><span class="small muted">${K.esc(prettyPhone(u.phone))}</span>
+          <span class="acct-badges"><span>${K.ic('check', 'sm')}Phone</span>${u.email && u.emailVerified ? `<span>${K.ic('check', 'sm')}Email</span>` : ''}</span></span>
+        <span class="small muted">Edit</span></button>
+      <div class="acct-stats">
+        <div><b>${sm ? sm.allTime.trips : '–'}</b><span>trips</span></div>
+        <div><b>★ ${u.rating || 'New'}</b><span>rating</span></div>
+        <div><b>${monthYear(u.memberSince) || '–'}</b><span>rider since</span></div>
+        <div><b>${tier ? K.esc(tier.name) : '–'}</b><span>Rewards</span></div>
+      </div>
+      <div class="acct-cards">
+        <button class="acct-card" data-a="wallet"><small>Flytte Wallet</small><b>${K.ugx(u.walletBalance)}</b><span class="acct-pill">${S.config.paymentsAvailable ? 'Top up' : 'View'}</span></button>
+        <button class="acct-card rewards" data-a="rewards"><small>Flytte Rewards</small><b>${g ? `${g.points} points` : 'Rewards'}</b>
+          <span class="acct-meter" aria-hidden="true"><i style="width:${pct}%"></i></span><span class="tiny muted">${tier && tier.next ? `${Math.max(0, tier.at - pts)} to ${K.esc(tier.next)}` : tier ? 'Top level' : ''}</span></button>
+      </div>
+      <h3 class="set-h">Payments</h3><div class="set-card list">
+        ${row('pay', 'card', 'Payment methods', K.esc(P.name))}
+        ${row('summary', 'chart', 'Monthly summary', sm ? `${sm.totals.trips} trip${sm.totals.trips === 1 ? '' : 's'} · ${K.ugx(sm.totals.spent)} this month` : 'Trips, spending and statements')}
+        ${S.config.emailReceipts || u.email ? row('email', 'mail', 'Email receipts', u.email && u.emailVerified ? K.esc(u.email) : 'Add your email') : ''}
+      </div>
+      <h3 class="set-h">Places & safety</h3><div class="set-card list">
+        ${row('places', 'pin', 'Saved places', places ? `${places} saved` : 'Home, work and your own places')}
+        ${row('prefs', 'settings', 'Ride preferences', [u.ridePrefs && u.ridePrefs.service ? svcName(u.ridePrefs.service) : '', u.ridePrefs && u.ridePrefs.womanDriver ? 'Woman driver' : ''].filter(Boolean).join(' · ') || 'Default ride, driver and pickup note')}
+        ${row('safety', 'shield', 'Emergency contact', u.emergencyContact ? K.esc(prettyPhone(u.emergencyContact)) : 'Add someone we can alert')}
+        ${row('night', 'clock', 'Share night trips', ns.on ? `On from ${K.esc(ns.from)} · sent to your emergency contact` : 'Off', `<span class="set-switch${ns.on ? ' on' : ''}" aria-hidden="true"><i></i></span>`)}
+      </div>
+      <h3 class="set-h">Account</h3><div class="set-card list">
+        ${row('profile', 'user', 'Profile and sign-in', 'Name, photo, phone number, password')}
+        ${row('devices', 'lock', 'Signed-in devices', 'See where you’re signed in')}
+        ${row('invite', 'gift', 'Invite friends', `Get ${K.ugx((S.config.growth || { referral: {} }).referral.referrer || 0)} for each friend`)}
+        ${row('settings', 'settings', 'Settings', 'Appearance, language, privacy')}
+      </div>
+      <h3 class="set-h">Help</h3><div class="set-card list">
+        ${row('help', 'help', 'Help centre', 'Answers, your reports, contact us')}
+        ${row('rate', 'star', 'Rate Flytte', 'Tell us how we’re doing')}
+        ${row('share', 'share', 'Share Flytte', 'Send friends your invite link')}
+      </div>
+      <div class="set-card list" style="margin-top:22px">${row('out', 'logout', 'Log out', '', '')}</div>
+      <p class="tiny faint" style="text-align:center;margin-top:18px">Flytte ${K.esc(S.config.version || '')}</p>`;
     const redraw = () => drawAccount(el);
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => {
       const a = b.dataset.a;
@@ -1721,8 +1759,255 @@
       else if (a === 'safety') openEmergency(redraw);
       else if (a === 'email') openEmail(redraw);
       else if (a === 'settings') K.openSettings({ role: 'rider', onBack: redraw });
+      else if (a === 'profile') openProfile(redraw);
+      else if (a === 'prefs') openPrefs(redraw);
+      else if (a === 'night') toggleNight(redraw);
+      else if (a === 'summary') openSummary(redraw);
+      else if (a === 'devices') openDevices(redraw);
+      else if (a === 'help') openHelp(redraw);
+      else if (a === 'rate') openRate();
+      else if (a === 'share') shareFlytte();
       else if (a === 'out') K.logout();
     });
+    el.querySelector('[data-a="out"]').classList.add('danger');
+    // Stats and this month's numbers load quietly; the page redraws once when they arrive.
+    if (!S.summary) K.api('/me/summary').then((x) => { S.summary = x; if (el.isConnected) redraw(); }).catch(() => {});
+    if (!S.growth) K.api('/me/growth').then((x) => { S.growth = x; if (el.isConnected) redraw(); }).catch(() => {});
+  }
+  const saveUser = (u) => { S.user = u; const sess = K.session.get(); if (sess) { sess.user = { ...sess.user, ...u }; K.session.set(sess); } };
+
+  // Profile and sign-in: photo, name, phone number (confirmed by a code), email, password.
+  function openProfile(onBack) {
+    const sp = subPage('Profile', onBack);
+    const draw = () => {
+      const u = S.user;
+      sp.body.innerHTML = `
+        <div class="prof-photo"><button class="prof-pic" id="pic" aria-label="Change photo">${avatar(u, 'acct-photo big')}<span class="prof-cam">${K.ic('camera', 'sm')}</span></button>
+          <input type="file" id="picIn" accept="image/*" hidden>
+          ${u.photo ? '<button class="link-btn small" id="picDel">Remove photo</button>' : '<p class="tiny muted">Only you see your photo.</p>'}</div>
+        <h3 class="set-h">Name</h3><div class="set-card"><form id="nf" class="row" style="gap:8px"><input id="nm" class="fill" value="${K.esc(u.name)}" autocomplete="name" aria-label="Full name" style="margin:0"><button class="btn btn-primary" type="submit">Save</button></form></div>
+        <h3 class="set-h">Sign-in</h3><div class="set-card list">
+          ${row('phone', 'phone', 'Phone number', `${K.esc(prettyPhone(u.phone))} · confirmed`, '<span class="small muted">Change</span>')}
+          ${S.config.emailReceipts || u.email ? row('email', 'mail', 'Email', u.email ? `${K.esc(u.email)}${u.emailVerified ? ' · confirmed' : ' · not confirmed'}` : 'Not added') : ''}
+          ${!S.config.smsLogin ? row('pw', 'lock', 'Password', 'Change your password') : ''}
+        </div>`;
+      const inp = K.$('#picIn', sp.body);
+      K.$('#pic', sp.body).onclick = () => inp.click();
+      inp.onchange = async () => {
+        const f = inp.files && inp.files[0]; if (!f) return;
+        try { const photo = await shrinkPhoto(f); saveUser((await K.api('/me', { photo }, 'PATCH')).user); K.toast('Photo updated'); draw(); }
+        catch (e) { K.toast(e.message || 'Couldn’t use that photo. Try another.'); }
+      };
+      const del = K.$('#picDel', sp.body); if (del) del.onclick = async () => { try { saveUser((await K.api('/me', { photo: null }, 'PATCH')).user); draw(); } catch (e) { K.toast(e.message); } };
+      K.$('#nf', sp.body).onsubmit = async (e) => {
+        e.preventDefault();
+        try { saveUser((await K.api('/me', { name: K.$('#nm', sp.body).value }, 'PATCH')).user); K.toast('Name saved'); } catch (x) { K.toast(x.message); }
+      };
+      sp.body.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => {
+        if (b.dataset.a === 'phone') changePhone(draw);
+        else if (b.dataset.a === 'email') openEmail(draw);
+        else if (b.dataset.a === 'pw') changePassword();
+      });
+    };
+    draw();
+  }
+  // A square, small JPEG (320 px) so the photo stays light on data.
+  function shrinkPhoto(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        const n = Math.min(img.width, img.height), c = document.createElement('canvas'); c.width = c.height = 320;
+        c.getContext('2d').drawImage(img, (img.width - n) / 2, (img.height - n) / 2, n, n, 0, 0, 320, 320);
+        URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.8));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Couldn’t read that photo. Try another.')); };
+      img.src = url;
+    });
+  }
+  // New phone number: a code goes to the new number, then the change is confirmed with it.
+  function changePhone(after) {
+    const m = K.modal(`<h2>Change phone number</h2><p class="small muted">We’ll send a code to your new number. Your trips, wallet and rewards stay with you.</p>
+      <form id="pf"><label for="np">New mobile number</label><input id="np" type="tel" inputmode="tel" placeholder="0772 123456" autocomplete="tel">
+        <div id="codeBox" hidden><label for="cd">6-digit code</label><input id="cd" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+        <p class="error" id="err" role="alert"></p><button class="btn btn-primary btn-block btn-lg" type="submit" id="go">Send code</button></form>`);
+    let sentTo = null;
+    K.$('#pf', m.el).onsubmit = async (e) => {
+      e.preventDefault();
+      const err = K.$('#err', m.el), go = K.$('#go', m.el), phone = K.$('#np', m.el).value;
+      err.textContent = ''; go.disabled = true;
+      try {
+        if (!sentTo || sentTo !== phone) {
+          const ch = (S.config.codeChannels || [])[0] || 'sms';
+          const out = await K.api('/auth/otp/send', { phone, channel: ch });
+          sentTo = phone; K.$('#codeBox', m.el).hidden = false; go.textContent = 'Confirm new number'; K.$('#cd', m.el).focus();
+          if (out.demoCode) K.toast(`Test mode: your code is ${out.demoCode}`, 6000);
+        } else {
+          saveUser((await K.api('/me/phone', { phone, code: K.$('#cd', m.el).value })).user);
+          m.close(); K.toast('Phone number changed'); after && after();
+        }
+      } catch (x) { err.textContent = x.message; }
+      go.disabled = false;
+    };
+  }
+  function changePassword() {
+    const m = K.modal(`<h2>Change password</h2><form id="wf"><label for="cur">Current password</label><input id="cur" type="password" autocomplete="current-password">
+      <label for="nw">New password</label><input id="nw" type="password" autocomplete="new-password" minlength="6" placeholder="At least 6 characters">
+      <p class="error" id="err" role="alert"></p><button class="btn btn-primary btn-block btn-lg" type="submit">Change password</button></form>`);
+    K.$('#wf', m.el).onsubmit = async (e) => {
+      e.preventDefault();
+      try { await K.api('/me/password', { current: K.$('#cur', m.el).value, next: K.$('#nw', m.el).value }); m.close(); K.toast('Password changed'); }
+      catch (x) { K.$('#err', m.el).textContent = x.message; }
+    };
+  }
+
+  // Ride preferences: used for every booking until changed on the ride options.
+  function applyPrefs() {
+    const p = (S.user && S.user.ridePrefs) || {};
+    if (p.service && S.config && S.config.services.some((s) => s.id === p.service)) S.service = p.service;
+    S.womanDriver = !!p.womanDriver;
+    if (!S.note && p.note) S.note = p.note;
+  }
+  function openPrefs(onBack) {
+    const sp = subPage('Ride preferences', onBack);
+    const p = { ...(S.user.ridePrefs || {}) };
+    const draw = () => {
+      sp.body.innerHTML = `<p class="small muted" style="margin:0 4px 6px">Used for every booking. You can still change them on the ride options.</p>
+        <h3 class="set-h">Usual ride</h3><div class="set-card list">${S.config.services.filter((s) => s.id !== 'parcel').map((s) => `<button class="set-row" data-svc="${s.id}" role="radio" aria-checked="${p.service === s.id}"><span class="grow"><b>${K.esc(svcName(s.id))}</b></span>${p.service === s.id ? K.ic('check') : ''}</button>`).join('')}</div>
+        <h3 class="set-h">Driver</h3><div class="set-card list"><button class="set-row" id="wd" role="switch" aria-checked="${!!p.womanDriver}"><span class="grow"><b>Always ask for a woman driver</b><small>It can take a little longer to find one</small></span><span class="set-switch${p.womanDriver ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
+        <h3 class="set-h">Pickup note</h3><div class="set-card"><input id="pn" maxlength="120" placeholder="e.g. Call me when you arrive" value="${K.esc(p.note || '')}" aria-label="Default pickup note" style="margin:0"></div>
+        <button class="btn btn-primary btn-block btn-lg" id="sv" style="margin-top:18px">Save preferences</button>`;
+      sp.body.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { p.service = p.service === b.dataset.svc ? null : b.dataset.svc; p.note = K.$('#pn', sp.body).value; draw(); });
+      K.$('#wd', sp.body).onclick = () => { p.womanDriver = !p.womanDriver; p.note = K.$('#pn', sp.body).value; draw(); };
+      K.$('#sv', sp.body).onclick = async () => {
+        p.note = K.$('#pn', sp.body).value;
+        try { saveUser((await K.api('/me', { ridePrefs: p }, 'PATCH')).user); S.note = ''; applyPrefs(); K.toast('Preferences saved'); sp.close(); onBack && onBack(); } catch (e) { K.toast(e.message); }
+      };
+    };
+    draw();
+  }
+
+  // Night trips: the emergency contact gets the live link by SMS for trips that start late.
+  function toggleNight(after) {
+    const u = S.user, ns = u.nightShare || { on: false, from: '21:00' };
+    if (!u.emergencyContact) { K.toast('Add an emergency contact first.'); openEmergency(after); return; }
+    const m = K.modal(`<h2>Share night trips</h2><p class="small muted">When a trip starts late, ${K.esc(prettyPhone(u.emergencyContact))} gets a text with your driver, plate and live link. Only you can turn it off.</p>
+      <div class="set-card list" style="margin:12px 0"><button class="set-row" id="on" role="switch" aria-checked="${ns.on}"><span class="grow"><b>Share automatically</b></span><span class="set-switch${ns.on ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
+      <label for="fr">From</label><select id="fr">${['19:00', '20:00', '21:00', '22:00', '23:00'].map((t) => `<option ${t === ns.from ? 'selected' : ''}>${t}</option>`).join('')}</select>
+      <p class="tiny muted">Until 5 am. Texts go by SMS.</p><button class="btn btn-primary btn-block btn-lg" id="sv">Save</button>`);
+    let on = ns.on;
+    K.$('#on', m.el).onclick = (e) => { on = !on; const b = e.currentTarget; b.setAttribute('aria-checked', on); b.querySelector('.set-switch').classList.toggle('on', on); };
+    K.$('#sv', m.el).onclick = async () => {
+      try { saveUser((await K.api('/me', { nightShare: { on, from: K.$('#fr', m.el).value } }, 'PATCH')).user); m.close(); K.toast(on ? 'Night trips will be shared' : 'Night sharing is off'); after && after(); }
+      catch (e) { K.toast(e.message); }
+    };
+  }
+
+  // Monthly summary with a statement to download.
+  async function openSummary(onBack) {
+    const sp = subPage('Monthly summary', onBack);
+    let month = (S.summary && S.summary.month) || null;
+    const shift = (ym, d) => { const [y, m] = ym.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1 + d, 1)); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`; };
+    const label = (ym) => new Date(ym + '-01T12:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    const load = async () => {
+      sp.body.innerHTML = K.skeleton('list', 3);
+      let s; try { s = await K.api('/me/summary' + (month ? `?month=${month}` : '')); } catch (e) { K.failed(sp.body, e.message, load); return; }
+      month = s.month; if (!S.summary || S.summary.month === s.month) S.summary = s;
+      const cur = shift(new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 7), 0);
+      sp.body.innerHTML = `
+        <div class="month-nav"><button class="btn icon-btn btn-ghost" id="prev" aria-label="Previous month">${K.ic('back')}</button><b>${label(month)}</b><button class="btn icon-btn btn-ghost" id="next" aria-label="Next month" ${month >= cur ? 'disabled' : ''} style="transform:scaleX(-1)">${K.ic('back')}</button></div>
+        <div class="sum-grid"><div><span>Trips</span><b>${s.totals.trips}</b></div><div><span>Spent</span><b>${K.ugx(s.totals.spent)}</b></div><div><span>Saved</span><b class="pos">${K.ugx(s.totals.saved)}</b></div><div><span>Distance</span><b>${s.totals.km} km</b></div></div>
+        ${Object.keys(s.byService).length ? `<h3 class="set-h">By ride type</h3><div class="set-card list">${Object.entries(s.byService).map(([k, n]) => `<div class="set-row" style="cursor:default"><span class="grow"><b>${K.esc(svcName(k))}</b></span><span class="small muted">${n} trip${n > 1 ? 's' : ''}</span></div>`).join('')}</div>` : ''}
+        <h3 class="set-h">Trips</h3><div class="set-card list">${s.trips.length ? s.trips.map((t) => `<div class="set-row" style="cursor:default"><span class="grow"><b>${K.esc(String(t.from).split(',')[0])} → ${K.esc(String(t.to).split(',')[0])}</b><small>${K.when(t.at)} · ${K.esc(svcName(t.service))}</small></span><b>${K.ugx(t.paid + t.tip)}</b></div>`).join('') : '<p class="small muted" style="padding:14px 0;margin:0">No trips this month.</p>'}</div>
+        ${s.trips.length ? '<button class="btn btn-block btn-lg" id="csv" style="margin-top:16px">Download statement (CSV)</button>' : ''}
+        <p class="tiny muted" style="text-align:center;margin-top:12px">All time: ${s.allTime.trips} trips · ${s.allTime.km} km</p>`;
+      K.$('#prev', sp.body).onclick = () => { month = shift(month, -1); load(); };
+      K.$('#next', sp.body).onclick = () => { month = shift(month, 1); load(); };
+      const c = K.$('#csv', sp.body);
+      if (c) c.onclick = () => {
+        const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+        const lines = [['Date', 'Trip', 'Ride', 'From', 'To', 'Km', 'Fare (UGX)', 'Discount', 'Tip', 'Paid', 'Method'].join(',')]
+          .concat(s.trips.map((t) => [new Date(t.at).toISOString().slice(0, 16).replace('T', ' '), t.id, svcName(t.service), t.from, t.to, t.km, t.fare, t.discount, t.tip, t.paid + t.tip, t.method].map(q).join(',')));
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+        a.download = `flytte-statement-${month}.csv`; document.body.appendChild(a); a.click(); a.remove();
+      };
+    };
+    load();
+  }
+
+  // Signed-in devices.
+  async function openDevices(onBack) {
+    const sp = subPage('Signed-in devices', onBack);
+    const load = async () => {
+      sp.body.innerHTML = K.skeleton('list', 2);
+      let d; try { d = await K.api('/me/sessions'); } catch (e) { K.failed(sp.body, e.message, load); return; }
+      const others = d.sessions.filter((x) => !x.current);
+      sp.body.innerHTML = `<div class="set-card list">${d.sessions.map((x) => `<div class="set-row" style="cursor:default"><span class="row-ic">${K.ic(/iPhone|Android|iPad/.test(x.device) ? 'phone' : 'user', 'sm')}</span>
+          <span class="grow"><b>${K.esc(x.device || 'Device')}${x.current ? ' <span class="this-dev">This phone</span>' : ''}</b><small>Signed in ${K.when(x.since)}${x.current ? '' : ` · last used ${K.when(x.lastSeen)}`}</small></span>
+          ${x.current ? '' : `<button class="btn btn-sm" data-out="${K.esc(x.id)}">Sign out</button>`}</div>`).join('') || '<p class="small muted" style="padding:14px 0;margin:0">Only this phone.</p>'}</div>
+        ${d.legacy ? '<p class="tiny muted" style="margin:10px 4px 0">Phones that signed in before this list existed don’t show here. “Sign out other devices” signs them out too.</p>' : ''}
+        <button class="btn btn-block btn-lg" id="all" style="margin-top:16px;color:var(--stop)">Sign out other devices</button>`;
+      sp.body.querySelectorAll('[data-out]').forEach((b) => b.onclick = async () => { try { await K.api(`/me/sessions/${b.dataset.out}/revoke`, {}); K.toast('Signed out'); load(); } catch (e) { K.toast(e.message); } });
+      K.$('#all', sp.body).onclick = async () => {
+        try {
+          const out = await K.api('/me/sessions/revoke-others', {});
+          if (out.token) { const s = K.session.get(); if (s) { s.token = out.token; K.session.set(s); } }
+          K.toast(others.length || d.legacy ? 'Other devices are signed out' : 'No other devices'); load();
+        } catch (e) { K.toast(e.message); }
+      };
+    };
+    load();
+  }
+
+  // Help centre: answers, reports from all trips, and how to reach Flytte.
+  async function openHelp(onBack) {
+    const sp = subPage('Help centre', onBack);
+    const faq = [
+      ['How are prices worked out?', 'Every price is upfront: you pay what you see when you book. It covers the distance, the expected time in traffic, any stops, and busier times. Tap “How it’s priced” on the ride options to see the parts.'],
+      ['Do I pay to cancel?', `Cancelling is free while we look for a driver and for ${(S.config.drivers || {}).cancelGraceMin ?? 2} minutes after one accepts. After that, ${K.ugx((S.config.drivers || {}).cancelFee || 0)} goes to the driver for their time, taken from your Flytte Wallet only if it has enough. It’s free if the driver is very late.`],
+      ['I left something behind', 'Open the trip in Activity, tap Get help, and choose “I lost an item”. We’ll contact the driver and reply in the app.'],
+      ['Paying by Mobile Money or card', 'Choose it before you book and pay at the end of the trip. If the payment doesn’t go through, you can pay the driver in cash instead. Your wallet can also pay at the end.'],
+      ['Staying safe', 'Check the driver’s face and plate before you get on, and give your PIN only to them. The shield on the map has SOS, trip sharing and your emergency contact. You can also share night trips automatically in Account.'],
+      ['Changing my number or details', 'Go to Account → Profile and sign-in. A new phone number is confirmed with a code sent to it.'],
+    ];
+    sp.body.innerHTML = `<div class="set-card list faq">${faq.map(([q, a]) => `<details class="faq-item"><summary><b>${K.esc(q)}</b>${K.ic('chevDown', 'sm')}</summary><p>${K.esc(a)}</p></details>`).join('')}</div>
+      <h3 class="set-h">Your reports</h3><div id="reps">${K.skeleton('list', 1)}</div>
+      <h3 class="set-h">Contact us</h3><div class="set-card list">
+        ${row('trip', 'receipt', 'Problem with a trip', 'Open the trip in Activity and tap Get help')}
+        ${S.config.supportPhone ? `<a class="set-row" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="row-ic">${K.ic('phone', 'sm')}</span><span class="grow"><b>Call support</b><small>${K.esc(S.config.supportPhone)}</small></span>${K.ic('chev', 'sm')}</a>` : ''}
+      </div>`;
+    K.$('[data-a="trip"]', sp.body).onclick = () => { sp.close(); openTab('activity'); };
+    const label = { lost_item: 'Lost item', wrong_charge: 'Charged the wrong amount', long_route: 'Longer route', driver_behaviour: 'Driver behaviour', safety: 'Safety concern', other: 'Something else' };
+    try {
+      const list = await K.api('/me/reports');
+      K.$('#reps', sp.body).innerHTML = list.length ? `<div class="set-card list">${list.map((i) => `<div class="set-row" style="cursor:default;align-items:flex-start"><span class="grow"><b>${K.esc(label[i.kind] || 'Report')} · trip #${i.tripId}</b><small>${K.when(i.at)} · ${i.status === 'open' ? 'In review' : 'Resolved'}</small>${i.reply ? `<span class="rep-reply">${K.esc(i.reply)}</span>` : ''}</span></div>`).join('')}</div>`
+        : '<p class="small muted" style="margin:0 4px">No reports yet.</p>';
+    } catch { K.$('#reps', sp.body).innerHTML = '<p class="small muted" style="margin:0 4px">Couldn’t load your reports.</p>'; }
+  }
+
+  // Rate Flytte: stars and a note for the team. 5 stars also suggests sharing Flytte.
+  function openRate() {
+    let stars = 0;
+    const m = K.modal(`<h2>Rate Flytte</h2><p class="small muted">How is Flytte working for you?</p>
+      <div class="stars" role="radiogroup" aria-label="Rate Flytte">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" role="radio" aria-checked="false" aria-label="${n} star${n > 1 ? 's' : ''}">★</button>`).join('')}</div>
+      <textarea id="nt" rows="3" maxlength="500" placeholder="What should we do better? (optional)"></textarea>
+      <button class="btn btn-primary btn-block btn-lg" id="send" disabled>Send</button>`);
+    m.el.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => {
+      stars = +b.dataset.n; K.$('#send', m.el).disabled = false;
+      m.el.querySelectorAll('[data-n]').forEach((x) => { x.classList.toggle('on', +x.dataset.n <= stars); x.setAttribute('aria-checked', String(+x.dataset.n === stars)); });
+    });
+    K.$('#send', m.el).onclick = async () => {
+      try {
+        await K.api('/feedback', { stars, note: K.$('#nt', m.el).value });
+        m.close(); K.toast(stars >= 4 ? 'Thank you! Tell a friend about Flytte too.' : 'Thank you. The team reads every message.', 4000);
+        if (stars === 5) setTimeout(shareFlytte, 900);
+      } catch (e) { K.toast(e.message); }
+    };
+  }
+  async function shareFlytte() {
+    try { if (!S.growth) S.growth = await K.api('/me/growth'); } catch {}
+    const link = (S.growth && S.growth.link) || location.origin;
+    K.share(link, `I ride with Flytte in Kampala: bodas, cars and deliveries.${S.growth && S.growth.code ? ` Use my code ${S.growth.code} when you sign up.` : ''}`);
   }
 
   // Email for receipts: add/confirm, switch receipts on or off, or remove it.
@@ -1784,17 +2069,35 @@
     draw();
   }
 
+  // Saved places: Home, Work, and up to 10 of the rider's own ("Mum's place", "Gym").
+  const ownPlaces = () => Object.entries(S.user.savedPlaces || {}).filter(([k]) => k.startsWith('c'));
   function openPlaces(onBack) {
     const sp = subPage('Saved places', onBack);
     const draw = () => {
       const p = S.user.savedPlaces || {};
-      sp.body.innerHTML = ['home', 'work'].map((k) => `<div class="menu-item" style="cursor:default"><span class="ic">${K.ic(k === 'home' ? 'home' : 'work')}</span>
-        <span class="grow">${k === 'home' ? 'Home' : 'Work'}<br><span class="small muted">${p[k] ? K.esc(p[k].address) : 'Not set'}</span></span>
-        <button class="btn btn-sm" data-set="${k}">${p[k] ? 'Change' : 'Add'}</button>${p[k] ? `<button class="btn btn-sm btn-ghost" data-del="${k}" aria-label="Remove">${K.ic('x', 'sm')}</button>` : ''}</div>`).join('');
-      sp.body.querySelectorAll('[data-set]').forEach((b) => b.onclick = () => openSearch({ saveAs: b.dataset.set, onSaved: draw }));
+      const line = (k, ic, label, place) => `<div class="set-row" style="cursor:default"><span class="row-ic">${K.ic(ic, 'sm')}</span>
+        <span class="grow"><b>${K.esc(label)}</b><small>${place ? K.esc(place.address) : 'Not set'}</small></span>
+        <button class="btn btn-sm" data-set="${k}" data-label="${K.esc(label)}">${place ? 'Change' : 'Add'}</button>${place ? `<button class="btn btn-sm btn-ghost" data-del="${k}" aria-label="Remove ${K.esc(label)}">${K.ic('x', 'sm')}</button>` : ''}</div>`;
+      const own = ownPlaces();
+      sp.body.innerHTML = `<div class="set-card list">${line('home', 'home', 'Home', p.home)}${line('work', 'work', 'Work', p.work)}</div>
+        <h3 class="set-h">Your places</h3><div class="set-card list">${own.map(([k, v]) => line(k, 'pin', v.label || 'Place', v)).join('')}
+          ${own.length < 10 ? `<button class="set-row" id="addPl"><span class="row-ic">${K.ic('plus', 'sm')}</span><span class="grow"><b>Add a place</b><small>Mum’s place, the gym, church…</small></span>${K.ic('chev', 'sm')}</button>` : ''}</div>
+        <p class="tiny muted" style="margin:10px 4px 0">Your places show on Home and at the top of search.</p>`;
+      sp.body.querySelectorAll('[data-set]').forEach((b) => b.onclick = () => openSearch({ saveAs: b.dataset.set, label: b.dataset.label, onSaved: draw }));
       sp.body.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
-        try { S.user = (await K.api('/me', { savedPlaces: { [b.dataset.del]: null } }, 'PATCH')).user; draw(); } catch (e) { K.toast(e.message); }
+        try { saveUser((await K.api('/me', { savedPlaces: { [b.dataset.del]: null } }, 'PATCH')).user); draw(); } catch (e) { K.toast(e.message); }
       });
+      const add = K.$('#addPl', sp.body);
+      if (add) add.onclick = () => {
+        const m = K.modal(`<h2>Name this place</h2><form id="lf"><input id="lb" maxlength="30" placeholder="e.g. Mum’s place" aria-label="Place name"><p class="error" id="err"></p><button class="btn btn-primary btn-block btn-lg" type="submit">Next: find it</button></form>`);
+        K.$('#lb', m.el).focus();
+        K.$('#lf', m.el).onsubmit = (e) => {
+          e.preventDefault();
+          const label = K.$('#lb', m.el).value.trim();
+          if (label.length < 2) { K.$('#err', m.el).textContent = 'Give it a name, e.g. Mum’s place.'; return; }
+          m.close(); openSearch({ saveAs: 'c' + Date.now().toString(36).slice(-6), label, onSaved: draw });
+        };
+      };
     };
     draw();
   }
