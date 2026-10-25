@@ -59,6 +59,7 @@ function view(t, role) {
     id: t.id, service: t.service, status: t.status,
     pickup: { lat: t.pickup_lat, lng: t.pickup_lng, address: t.pickup_address },
     drop: { lat: t.drop_lat, lng: t.drop_lng, address: t.drop_address },
+    stops: t.stops ? JSON.parse(t.stops) : [],
     distanceKm: t.distance_km, durationMin: t.duration_min,
     fare: t.fare, paymentMethod: t.payment_method, paymentStatus: t.payment_status,
     parcel: t.parcel ? JSON.parse(t.parcel) : null, notes: t.notes,

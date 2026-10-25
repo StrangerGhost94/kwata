@@ -32,7 +32,7 @@
     'Thanks for riding with Flytte': 'Webale okutambulira ku Flytte', 'Promo applied': 'Promo essiddwako', 'Tip sent. Thank you.': 'Akasiimo kasindikiddwa. Webale.', 'Payment received': 'Ssente zifuniddwa', 'Commission paid': 'Komisoni esasuddwa',
     'You’ve reached the pickup': 'Otuuse w’okukimira omusaabaze', 'You’ve reached the destination': 'Otuuse gy’ogenda', 'You’ve reached the drop-off': 'Otuuse w’okukwasa', 'Navigate': 'Laga ekkubo',
     'Rating is optional': 'Okuwa obubonero si kya buwaze', 'Done': 'Kiwedde',
-    'Cancellation fee': 'Ssente z’okusazaamu',
+    'Cancellation fee': 'Ssente z’okusazaamu', 'Add a stop': 'Yongerako ekiyimiriro', 'Search for your stop': 'Noonya ekiyimiriro kyo',
     'Woman driver': 'Omuvuzi omukazi', 'Only women drivers get your request': 'Abavuzi abakazi bokka be bafuna okusaba kwo', 'Ask only women drivers': 'Saba bavuzi bakazi bokka', 'No women drivers free right now': 'Tewali bavuzi bakazi ba bwereere kati', 'Try any driver': 'Gezaako omuvuzi yenna',
     'The women drivers nearby are busy. Try again in a minute, or ask any driver.': 'Abavuzi abakazi abali okumpi balina emirimu. Ddamu ogezeeko mu ddakiika emu, oba saba omuvuzi yenna.',
     'We’ll only ask women drivers. It can take a little longer.': 'Tujja kubuuza bavuzi bakazi bokka. Kiyinza okutwala akaseera katono.',
@@ -129,6 +129,10 @@
     [/^(\d+) points? for every UGX 1,000 you pay$/, (m) => `Pointi ${m[1]} ku buli UGX 1,000 z’osasula`],
     [/^(\d+) points = (UGX [\d,]+), spent on your next trips$/, (m) => `Pointi ${m[1]} = ${m[2]}, ku ngendo zo eziddako`],
     [/^([\d,]+) more points for (UGX [\d,]+)$/, (m) => `Pointi ${m[1]} endala ofune ${m[2]}`],
+    [/^Stop (\d)$/, (m) => `Ekiyimiriro ${m[1]}`],
+    [/^Stop (\d) · done$/, (m) => `Ekiyimiriro ${m[1]} · kiwedde`],
+    [/^Done at stop (\d) · continue$/, (m) => `Mmaze ku kiyimiriro ${m[1]} · weyongereyo`],
+    [/^UGX ([\d,]+) per stop, plus the extra distance$/, (m) => `UGX ${m[1]} ku buli kiyimiriro, n’olugendo olwongezeddwako`],
   ];
 
 
@@ -140,7 +144,7 @@
     'Report a mismatch': 'Ripoti tofauti', 'Report received': 'Ripoti imepokelewa', 'Parcel delivered': 'Kifurushi kimefikishwa', 'You’ve arrived': 'Umefika', 'Your package has been handed over': 'Kifurushi chako kimekabidhiwa', 'Thanks for riding with Flytte': 'Asante kwa kusafiri na Flytte', 'Promo applied': 'Ofa imetumika', 'Tip sent. Thank you.': 'Bakshishi imetumwa. Asante.', 'Payment received': 'Malipo yamepokelewa', 'Commission paid': 'Kamisheni imelipwa',
     'You’ve reached the pickup': 'Umefika mahali pa kuchukua', 'You’ve reached the destination': 'Umefika unakoenda', 'You’ve reached the drop-off': 'Umefika mahali pa kukabidhi', 'Navigate': 'Ongoza njia',
     'Rating is optional': 'Kukadiria si lazima', 'Done': 'Imekamilika',
-    'Cancellation fee': 'Ada ya kughairi',
+    'Cancellation fee': 'Ada ya kughairi', 'Add a stop': 'Ongeza kituo', 'Search for your stop': 'Tafuta kituo chako',
     'Woman driver': 'Dereva mwanamke', 'Only women drivers get your request': 'Madereva wanawake pekee watapata ombi lako', 'Ask only women drivers': 'Omba madereva wanawake pekee', 'No women drivers free right now': 'Hakuna madereva wanawake walio huru sasa', 'Try any driver': 'Jaribu dereva yeyote',
     'The women drivers nearby are busy. Try again in a minute, or ask any driver.': 'Madereva wanawake walio karibu wana kazi. Jaribu tena baada ya dakika moja, au omba dereva yeyote.',
     'We’ll only ask women drivers. It can take a little longer.': 'Tutawauliza madereva wanawake tu. Inaweza kuchukua muda kidogo zaidi.',
@@ -306,6 +310,10 @@
     [/^(\d+) points? for every UGX 1,000 you pay$/, (m) => `Pointi ${m[1]} kwa kila UGX 1,000 unayolipa`],
     [/^(\d+) points = (UGX [\d,]+), spent on your next trips$/, (m) => `Pointi ${m[1]} = ${m[2]}, kwa safari zako zijazo`],
     [/^([\d,]+) more points for (UGX [\d,]+)$/, (m) => `Pointi ${m[1]} zaidi kupata ${m[2]}`],
+    [/^Stop (\d)$/, (m) => `Kituo ${m[1]}`],
+    [/^Stop (\d) · done$/, (m) => `Kituo ${m[1]} · kimekamilika`],
+    [/^Done at stop (\d) · continue$/, (m) => `Nimemaliza kituo ${m[1]} · endelea`],
+    [/^UGX ([\d,]+) per stop, plus the extra distance$/, (m) => `UGX ${m[1]} kwa kila kituo, pamoja na umbali wa ziada`],
   ];
   const DICT = lang === 'lg' ? LG : SW, PATS = lang === 'lg' ? LG_PAT : PAT;
   const tr = (t) => {

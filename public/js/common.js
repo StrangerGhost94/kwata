@@ -1398,9 +1398,11 @@
   K.label = (html, dir = 'left') => L.divIcon({ className: '', html: `<div class="map-label">${html}</div>`, iconSize: null, iconAnchor: dir === 'left' ? [-14, 18] : [-14, 18] });
   K.vehicleEmoji = (v) => (v === 'car' ? '🚗' : '🏍️');
 
-  K.route = async function (a, b) {
+  // Road route from a to b, through any stops in `via` (in order).
+  K.route = async function (a, b, via = []) {
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+      const pts = [a, ...via, b].map((p) => `${p.lng},${p.lat}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${pts}?overview=full&geometries=geojson`;
       const r = await fetch(url);
       const j = await r.json();
       const rt = j.routes && j.routes[0];
@@ -1409,7 +1411,7 @@
       // `min` is a rough traffic-adjusted figure for ETAs shown on the map.
       return { km: rt.distance / 1000, freeMin: rt.duration / 60, min: (rt.duration / 60) * 1.8, coords: rt.geometry.coordinates.map(([x, y]) => [y, x]) };
     } catch {
-      return { km: null, freeMin: null, min: null, coords: [[a.lat, a.lng], [b.lat, b.lng]] };
+      return { km: null, freeMin: null, min: null, coords: [a, ...via, b].map((p) => [p.lat, p.lng]) };
     }
   };
 

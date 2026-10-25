@@ -456,7 +456,7 @@
           <span class="badge" style="background:var(--ink);color:#fff">${K.esc(K.SERVICE_LABEL[o.service])}</span></div>
         <div class="stops">
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(o.pickup.address)}</b></span></div>
-          <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination · ${o.distanceKm.toFixed(1)} km, ${Math.round(o.durationMin)} min</small><b class="ellipsis">${o.drop.hidden ? 'Shown after you accept' : K.esc(o.drop.address)}</b></span></div>
+          <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination${(o.stops || []).length ? ` · ${o.stops.length} stop${o.stops.length > 1 ? 's' : ''} on the way` : ''} · ${o.distanceKm.toFixed(1)} km, ${Math.round(o.durationMin)} min</small><b class="ellipsis">${o.drop.hidden ? 'Shown after you accept' : K.esc(o.drop.address)}</b></span></div>
         </div>
         ${o.notes ? `<p class="note-line">${K.ic('msg', 'sm')}<span><small>Pickup note</small>${K.esc(o.notes)}</span></p>` : ''}
         <div class="est"><div class="est-row"><span><small>You earn</small><b>${K.ugx(o.earning)}</b></span>
@@ -508,14 +508,23 @@
     render();
   }
 
+  // Where the driver is heading now: the pickup, then each stop not yet done, then the destination.
+  const nextStop = (t) => (t.stops || []).findIndex((x) => !x.doneAt);
+  function legTarget(t) {
+    if (t.status !== 'in_progress') return t.pickup;
+    const i = nextStop(t);
+    return i >= 0 ? { ...t.stops[i], stopNo: i + 1 } : t.drop;
+  }
+  const stopRowsD = (t) => (t.stops || []).map((x, i) => `<div class="stop${x.doneAt ? ' done' : ''}"><span class="s-ic"><span class="dot-stop">${x.doneAt ? '✓' : i + 1}</span></span><span><small>Stop ${i + 1}${x.doneAt ? ' · done' : ''}</small><b class="ellipsis">${K.esc(x.address)}</b></span></div>`).join('');
+
   function navLink(p) { return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=${S.driver.vehicleType === 'boda' ? 'two-wheeler' : 'driving'}`; }
 
   function updateBanner() {
     const nb = K.$('#banner'), t = S.trip;
     if (!nb || !t || t.status === 'completed') return;
-    const target = t.status === 'in_progress' ? t.drop : t.pickup;
+    const target = legTarget(t);
     const km = S.loc ? K.km(S.loc, target) : null;
-    const head = t.status === 'in_progress' ? (t.service === 'parcel' ? 'Delivering' : 'On trip') : t.status === 'arrived' ? 'Waiting at pickup' : 'Head to pickup';
+    const head = target.stopNo ? `Stop ${target.stopNo}` : t.status === 'in_progress' ? (t.service === 'parcel' ? 'Delivering' : 'On trip') : t.status === 'arrived' ? 'Waiting at pickup' : 'Head to pickup';
     nb.innerHTML = `<span class="round" aria-hidden="true">${K.ic('nav')}</span>
       <span class="grow"><b>${head}${km != null && t.status !== 'arrived' ? ` · ${fmtKm(km)}` : ''}</b><small class="ellipsis" style="display:block">${K.esc(String(target.address).split(',')[0])}${km != null && t.status !== 'arrived' ? ` · ${K.etaMin(S.loc, target)} min` : ''}</small></span>
       <button class="btn btn-primary btn-sm" data-nav>Navigate</button>`;
@@ -530,28 +539,29 @@
     if (!S.loc) { K.toast('Waiting for your location…'); return; }
     const toDrop = t.status === 'in_progress';
     if (t.status === 'arrived') return;
-    const target = toDrop ? t.drop : t.pickup;
+    const target = legTarget(t);
     S.navOn = true;
     if (routeLayer) { routeLayer.remove(); routeLayer = null; }
     K.Nav.start({
       map, loc: S.loc, target, externalUrl: navLink(target),
-      arriveLabel: toDrop ? (t.service === 'parcel' ? 'You’ve reached the drop-off' : 'You’ve reached the destination') : 'You’ve reached the pickup',
-      onArrive: () => { S.navSkip = `${t.id}:${t.status}`; K.Nav.stop(true); routedFor = null; render(); },
-      onExit: () => { S.navOn = false; S.navSkip = `${t.id}:${t.status}`; routedFor = null; render(); },
+      arriveLabel: target.stopNo ? `You’ve reached stop ${target.stopNo}` : toDrop ? (t.service === 'parcel' ? 'You’ve reached the drop-off' : 'You’ve reached the destination') : 'You’ve reached the pickup',
+      onArrive: () => { S.navSkip = legKey(t); K.Nav.stop(true); routedFor = null; render(); },
+      onExit: () => { S.navOn = false; S.navSkip = legKey(t); routedFor = null; render(); },
     });
   }
   function syncNav() {
     const t = S.trip;
     if (!t || t.status === 'completed' || t.status === 'arrived') { if (K.Nav.active()) { K.Nav.stop(true); routedFor = null; } if (!t || t.status === 'completed') S.navOn = false; return; }
-    const target = t.status === 'in_progress' ? t.drop : t.pickup;
+    const target = legTarget(t);
     const cur = K.Nav.target();
     if (cur && (cur.lat !== target.lat || cur.lng !== target.lng)) { K.Nav.stop(true); routedFor = null; }
     if (K.Nav.active() || !S.loc || S.offer) return;
     // Directions open by themselves on accepting and when the trip starts (unless the driver
     // switched that off, or closed navigation for this leg).
-    const leg = `${t.id}:${t.status}`;
+    const leg = legKey(t);
     if ((S.navOn && t.status === 'in_progress') || (autoNav() && S.navSkip !== leg && ['accepted', 'in_progress'].includes(t.status))) startNav();
   }
+  const legKey = (t) => `${t.id}:${t.status}:${nextStop(t)}`;   // each stop is its own leg
   const autoNav = () => { try { return localStorage.getItem('flytte_auto_nav') !== 'off'; } catch { return true; } };
 
   // Screen 19: active trip
@@ -561,7 +571,8 @@
     const nx = S.next;
     const nextChip = nx ? `<div class="next-chip">${K.ic('clock', 'sm')}<span class="grow">Next: pickup at <b>${K.esc(String(nx.pickup.address).split(',')[0])}</b> after this trip</span></div>` : '';
     const toPickup = t.status !== 'in_progress';
-    showTarget(toPickup ? t.pickup : t.drop, toPickup ? 'pickup' : 'drop');
+    const lt = legTarget(t);
+    showTarget(lt, toPickup ? 'pickup' : 'drop');
     const parcel = t.parcel ? `<div class="card small" style="margin:10px 0">${K.ic('gift', 'sm')} <b>${K.esc(t.parcel.item)}</b><br>Deliver to ${K.esc(t.parcel.recipientName)} · <a href="tel:${K.esc(t.parcel.recipientPhone)}"><b>${K.esc(prettyPhone(t.parcel.recipientPhone))}</b></a></div>` : '';
     sheet.innerHTML = `
       <div class="grabber"></div>
@@ -576,6 +587,7 @@
       ${t.status === 'arrived' ? '<div class="wait-box" id="wait" role="timer" aria-live="off"></div>' : ''}
       <div class="stops">
         <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
+        ${stopRowsD(t)}
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
       </div>
       <div class="fare-row"><span class="muted">${t.paymentMethod === 'cash' ? 'Collect in cash' : 'Fare'}</span><b>${K.ugx(t.paymentMethod === 'cash' ? t.payable : t.fare)}</b></div>
@@ -597,6 +609,9 @@
       action.innerHTML = '<button class="btn btn-primary btn-block btn-lg" id="start">Start trip</button>';
       K.$('#start').onclick = () => step('start', { pin: K.$('#pin').value });
       const pin = K.$('#pin'); pin.oninput = () => { pin.value = pin.value.replace(/\D/g, ''); if (pin.value.length === 4) K.$('#start').focus(); };
+    } else if (t.status === 'in_progress' && lt.stopNo) {
+      action.innerHTML = `<button class="btn btn-primary btn-block btn-lg" id="stopDone">Done at stop ${lt.stopNo} · continue</button>`;
+      K.$('#stopDone').onclick = async (e) => { e.target.disabled = true; await step('stop'); e.target.disabled = false; };
     } else if (t.status === 'in_progress') K.slider(action, { label: t.service === 'parcel' ? 'Slide to complete delivery' : 'Slide to complete trip', cls: 'dark', onDone: () => {
       const dc = K.$('#dcode');
       if (dc && dc.value.trim().length !== 4) { K.$('#err').textContent = 'Enter the 4-digit delivery code from the recipient.'; const a = K.$('#action'); a.reset && a.reset(); dc.focus(); return; }

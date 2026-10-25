@@ -29,14 +29,22 @@ function point(p) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return null;
   return { lat, lng, address: clean(p.address, 200) || 'Pinned location' };
 }
-// Pickup and destination must be real, different places.
+// Pickup and destination must be real, different places. Up to MAX_STOPS stops in between.
+const MAX_STOPS = 2;
 function route(body, res) {
   const pickup = point(body.pickup), drop = point(body.drop);
   if (!pickup) { bad(res, 'Set your pickup point first.'); return null; }
   if (!drop) { bad(res, 'Choose where you’re going.'); return null; }
   if (haversine(pickup, drop) < 0.05) { bad(res, 'Your pickup and destination are the same place. Choose a different destination.'); return null; }
-  return { pickup, drop };
+  const raw = Array.isArray(body.stops) ? body.stops : [];
+  if (raw.length > MAX_STOPS) { bad(res, `You can add up to ${MAX_STOPS} stops.`); return null; }
+  const stops = raw.map(point);
+  if (stops.some((x) => !x)) { bad(res, 'One of your stops isn’t a valid place. Remove it and add it again.'); return null; }
+  const pts = [pickup, ...stops, drop];
+  for (let i = 1; i < pts.length; i++) if (haversine(pts[i - 1], pts[i]) < 0.05) { bad(res, 'Two places in a row are the same. Remove the extra stop.'); return null; }
+  return { pickup, drop, stops };
 }
+const sameStops = (a = [], b = []) => a.length === b.length && a.every((x, i) => haversine(x, b[i]) < 0.15);
 
 // Tiny in-memory rate limiter for login / register.
 // A local test server allows 20x more, so a full `npm test` run doesn't hit the sign-up limit.
@@ -80,6 +88,7 @@ r.get('/config', wrap(async (req, res) => {
     commissionPct: s.commissionPct,
     supportPhone: supportPhone(s),
     minWithdrawal: s.minWithdrawal,
+    stopFee: s.stopFee || 0,
     growth: { firstRide: s.growth.firstRide, referral: s.growth.referral, rewards: s.growth.rewards },
     drivers: { freeWaitMin: s.drivers.freeWaitMin, noShowFee: s.drivers.noShowFee, cancelFee: s.drivers.cancelFee, cancelGraceMin: s.drivers.cancelGraceMin, cashDebtLimit: s.drivers.cashDebtLimit, headingHomePerDay: s.drivers.headingHomePerDay },
   });
@@ -541,9 +550,9 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
 r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   const rt0 = route(req.body || {}, res);
   if (!rt0) return;
-  const { pickup, drop } = rt0;
+  const { pickup, drop, stops } = rt0;
   surge.recordLook(req.user.id, pickup.lat, pickup.lng);   // someone checking prices = demand signal
-  const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin);
+  const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin, stops);
   // How far is the nearest free driver for each ride type?
   for (const o of q.options) {
     const near = rt.nearbyDrivers(pickup.lat, pickup.lng, o.id)[0];
@@ -558,7 +567,7 @@ r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   }
   q.promoCode = code;
   // Lock these prices for 2 minutes: booking within that time pays exactly this.
-  q.quoteId = surge.saveQuote({ userId: req.user.id, pickup, drop, km: q.distanceKm, promoCode: code, options: q.options.map((o) => ({ id: o.id, fare: o.fare, regularFare: o.regularFare, durationMin: o.durationMin, surge: o.surge })) });
+  q.quoteId = surge.saveQuote({ userId: req.user.id, pickup, drop, stops, km: q.distanceKm, promoCode: code, options: q.options.map((o) => ({ id: o.id, fare: o.fare, regularFare: o.regularFare, durationMin: o.durationMin, surge: o.surge })) });
   q.lockedForSec = 120;
   res.json(q);
 }));
@@ -594,7 +603,8 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const { service, paymentMethod = 'cash', distanceKm, durationMin, parcel, notes } = req.body || {};
   const rt0 = route(req.body || {}, res);
   if (!rt0) return;
-  const { pickup, drop } = rt0;
+  const { pickup, drop, stops } = rt0;
+  if (stops.length && service === 'parcel') return bad(res, 'Parcels go straight to one address. Remove the stops, or book a ride instead.');
   const s = await getSettings();
   const svc = typeof service === 'string' && Object.prototype.hasOwnProperty.call(s.services, service) ? s.services[service] : null;
   if (!svc || !svc.enabled) return bad(res, 'That ride type is not available.');
@@ -630,10 +640,10 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   // otherwise price it now and make sure the rider isn't surprised by a jump.
   let km, min, fare;
   const locked = surge.getQuote(req.body.quoteId, req.user.id);
-  const lockedOpt = locked && haversine(locked.pickup, pickup) < 0.15 && haversine(locked.drop, drop) < 0.15 && locked.options.find((o) => o.id === service);
+  const lockedOpt = locked && haversine(locked.pickup, pickup) < 0.15 && haversine(locked.drop, drop) < 0.15 && sameStops(locked.stops, stops) && locked.options.find((o) => o.id === service);
   if (lockedOpt) { km = locked.km; min = lockedOpt.durationMin; fare = scheduledFor ? lockedOpt.regularFare : lockedOpt.fare; }
   else {
-    const q = await quote(pickup, drop, distanceKm, durationMin);
+    const q = await quote(pickup, drop, distanceKm, durationMin, stops);
     const o = q.options.find((x) => x.id === service);
     km = q.distanceKm; min = o.durationMin; fare = scheduledFor ? o.regularFare : o.fare; // scheduled rides never surge
     const expected = Number(req.body.expectedFare);
@@ -662,11 +672,11 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await db.one(`
     INSERT INTO trips(rider_id, service, pickup_lat, pickup_lng, pickup_address, drop_lat, drop_lng, drop_address,
       distance_km, duration_min, fare, payment_method, pin, share_token, parcel, notes,
-      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING id`,
+      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver, stops)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING id`,
   [req.user.id, service, pickup.lat, pickup.lng, pickup.address, drop.lat, drop.lng, drop.address,
     km, min, fare, paymentMethod, pin, share, parcelJson, notes ? clean(notes, 200) || null : null,
-    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true]);
+    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true, stops.length ? JSON.stringify(stops.map((x) => ({ lat: x.lat, lng: x.lng, address: x.address }))) : null]);
 
   if (req.body.quoteId) surge.dropQuote(req.body.quoteId);
   if (!scheduledFor) { surge.recordRequest(service, pickup.lat, pickup.lng); rt.dispatch(t.id).catch(console.error); }
@@ -897,6 +907,21 @@ r.post('/trips/:id/arrived', auth.requireAuth('driver'), wrap(async (req, res) =
 
 // The rider didn't come out. After the free waiting time the driver can leave; the no-show
 // fee goes to the driver from the rider's wallet when the wallet covers it.
+// Multi-stop trips: the driver marks each stop done, in order, then drives on to the next one.
+r.post('/trips/:id/stop', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'driver');
+  if (!t) return;
+  if (t.status !== 'in_progress') return bad(res, 'Start the trip first.');
+  const stops = t.stops ? JSON.parse(t.stops) : [];
+  const i = stops.findIndex((x) => !x.doneAt);
+  if (i < 0) return bad(res, 'There are no more stops on this trip.');
+  stops[i].doneAt = new Date().toISOString();
+  const ok = await db.one('UPDATE trips SET stops = $1 WHERE id = $2 AND stops = $3 RETURNING id', [JSON.stringify(stops), t.id, t.stops]);
+  if (!ok) return bad(res, 'This trip has just changed. Try again.');
+  await rt.broadcast(t.id);
+  res.json({ ok: true, done: i + 1, left: stops.length - i - 1 });
+}));
+
 r.post('/trips/:id/noshow', auth.requireAuth('driver'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'driver');
   if (!t) return;

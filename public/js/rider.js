@@ -5,7 +5,7 @@
   const S = {
     view: 'home', pickup: null, drop: null, route: null, quote: null, gps: null,
     service: localStorage.getItem('flytte_service') || 'boda',
-    trip: null, user: null, config: null, recent: [], parcel: null, rating: 0, unread: 0, chatOpen: false, messages: [],
+    trip: null, user: null, config: null, recent: [], parcel: null, stops: [], rating: 0, unread: 0, chatOpen: false, messages: [],
   };
   let map, sock, sheet, routeLayer, labels = [], driverMarker, meMarker, nearby = new Map(), revTimer, phaseKm = null, routedPhase = null;
 
@@ -387,26 +387,29 @@
     const c = map.unproject(map.project([ll.lat, ll.lng], z).add([0, shift]), z);
     map.setView(c, z, { animate: !!animate, duration: 0.5 });
   }
-  function setService(id) { S.service = id; try { localStorage.setItem('flytte_service', id); } catch {} }
+  function setService(id) {
+    if (id === 'parcel' && S.stops && S.stops.length && S.view === 'choose') { S.stops = []; K.toast('Parcels go straight to one address, so your stops were removed.', 4000); setTimeout(prepareQuote, 0); }
+    S.service = id; try { localStorage.setItem('flytte_service', id); } catch {}
+  }
 
   // ---------- full-screen search ----------
   let searchTimer;
   function openSearch(opts = {}) {
     if (opts.preset) { chooseDrop(opts.preset); return; }
-    const saveAs = opts.saveAs;
-    const pickFirst = !saveAs && !!opts.pickFirst;
+    const saveAs = opts.saveAs, addStop = !!opts.addStop, single = !!saveAs || addStop;   // one search box
+    const pickFirst = !single && !!opts.pickFirst;
     const page = document.createElement('div');
     page.className = 'page push-in';
     page.style.zIndex = 870;
     page.innerHTML = `<div class="page-inner">
       <div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Close">${K.ic('back')}</button>
-        <h2>${saveAs ? 'Set ' + saveAs + ' address' : pickFirst ? 'Set your pickup point' : S.service === 'parcel' ? 'Where should it go?' : 'Where are you going?'}</h2></div>
-      ${saveAs ? '' : `<div class="route-box" style="margin-bottom:6px">
+        <h2>${saveAs ? 'Set ' + saveAs + ' address' : addStop ? 'Add a stop' : pickFirst ? 'Set your pickup point' : S.service === 'parcel' ? 'Where should it go?' : 'Where are you going?'}</h2></div>
+      ${single ? '' : `<div class="route-box" style="margin-bottom:6px">
         <div class="rb-line" style="grid-row:span 2"><span class="rb-dot"></span><span class="rb-bar"></span><span class="rb-sq"></span></div>
         <input id="qPick" placeholder="Set your pickup point" value="${K.esc(S.pickup && !opts.pickFirst ? (S.pickup.short || S.pickup.address) : '')}" autocomplete="off" aria-label="Pickup point">
         <input id="qDrop" placeholder="Where to?" autocomplete="off" aria-label="Destination">
       </div>`}
-      ${saveAs ? '<input id="qDrop" placeholder="Search for an address" autocomplete="off" aria-label="Search">' : ''}
+      ${single ? `<input id="qDrop" placeholder="${addStop ? 'Search for your stop' : 'Search for an address'}" autocomplete="off" aria-label="Search">` : ''}
       <p class="error" id="sErr" role="alert"></p>
       <div id="res" style="margin-top:10px" aria-live="polite"></div></div>`;
     root.querySelector('#app').appendChild(page);
@@ -429,7 +432,7 @@
       const recent = saveAs ? [] : S.recent.map((r) => ({ ...r, _ic: 'clock' }));
       const extra = target === 'pick' && S.gps ? [{ name: 'Current location', address: 'Use GPS', lat: S.gps.lat, lng: S.gps.lng, _ic: 'locate' }] : [];
       current = [...extra, ...saved, ...recent, ...K.PLACES.map((p) => ({ ...p, _ic: p.icon || 'pin' }))];
-      const mapRow = !saveAs ? `<button class="lrow" id="onMap"><span class="ic">${K.ic('pin')}</span><span class="t">${target === 'pick' ? 'Set pickup on map' : 'Set destination on map'}</span></button>` : '';
+      const mapRow = !single ? `<button class="lrow" id="onMap"><span class="ic">${K.ic('pin')}</span><span class="t">${target === 'pick' ? 'Set pickup on map' : 'Set destination on map'}</span></button>` : '';
       res.innerHTML = (target === 'pick' ? mapRow : '') + rows(current, (p) => p._ic) + (target === 'drop' ? mapRow : '');
       bind();
       const om = K.$('#onMap', page);
@@ -467,6 +470,10 @@
     if (qPick) { qPick.onfocus = () => { target = 'pick'; qPick.select(); showDefault(); }; qPick.oninput = () => onInput(qPick); }
 
     async function pick(p) {
+      if (addStop) {
+        S.stops = [...(S.stops || []), { lat: p.lat, lng: p.lng, address: p.name }].slice(0, 2);
+        close(); prepareQuote(); return;
+      }
       if (saveAs) {
         try {
           const out = await K.api('/me', { savedPlaces: { [saveAs]: { lat: p.lat, lng: p.lng, address: p.name } } }, 'PATCH');
@@ -520,9 +527,9 @@
     leaveHomeSheet(); S.lastView = 'choose';
     topbar();
     sheet.innerHTML = `<div class="grabber"></div><h2>Choose a ride</h2><div class="bar indet"><i></i></div>`;
-    S.route = await K.route(S.pickup, S.drop);
+    S.route = await K.route(S.pickup, S.drop, S.stops);
     try {
-      S.quote = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, promoCode: S.promoCode || undefined });
+      S.quote = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, stops: S.stops, distanceKm: S.route.km, durationMin: S.route.freeMin, promoCode: S.promoCode || undefined });
       S.quote.at = Date.now();
       if (!S.quote.options.find((o) => o.id === S.service)) setService(S.quote.options[0].id);
       showRoute();
@@ -535,7 +542,7 @@
   async function refreshQuote() {
     if (S.view !== 'choose' || !S.route) return;
     try {
-      const q = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, promoCode: S.promoCode || undefined });
+      const q = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, stops: S.stops, distanceKm: S.route.km, durationMin: S.route.freeMin, promoCode: S.promoCode || undefined });
       q.at = Date.now(); S.quote = q;
       if (S.view === 'choose') render();
     } catch {}
@@ -548,6 +555,7 @@
     const etaPick = (S.quote && (S.quote.options.find((o) => o.id === S.service) || {}).etaMin) || null;
     labels.push(L.marker(S.route.coords[0], { icon: K.divIcon('<div class="pin-ci"></div>', [18, 18]) }).addTo(map));
     labels.push(L.marker(S.route.coords[S.route.coords.length - 1], { icon: K.divIcon('<div class="pin-sq"></div>', [18, 18]) }).addTo(map));
+    (S.stops || []).forEach((x, i) => labels.push(L.marker([x.lat, x.lng], { icon: K.divIcon(`<div class="pin-stop">${i + 1}</div>`, [20, 20]) }).addTo(map)));
     labels.push(L.marker(S.route.coords[0], { icon: K.label(`${etaPick ? `<b>${etaPick}<br>min</b>` : ''}<span>${K.esc(shorten(S.pickup.short || S.pickup.address))}</span>`), interactive: false }).addTo(map));
     labels.push(L.marker(S.route.coords[S.route.coords.length - 1], { icon: K.label(`<span>${K.esc(shorten(S.drop.address))}</span>`), interactive: false }).addTo(map));
     fit(routeLayer.bounds());
@@ -664,6 +672,8 @@
         </button>`).join('')}
       </div>
       <button class="payrow" id="pickRow" style="padding-bottom:4px"><span class="dot-pick" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Pickup</span><span class="ellipsis" id="pickLabel" style="display:block">${K.esc(S.pickup.address)}</span></span><span class="small muted">Change</span></button>
+      ${(S.stops || []).map((x, i) => `<div class="payrow stop-row"><span class="stop-num" aria-hidden="true">${i + 1}</span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Stop ${i + 1}</span><span class="ellipsis" style="display:block">${K.esc(x.address)}</span></span><button class="btn icon-btn btn-ghost" data-rmstop="${i}" aria-label="Remove stop ${i + 1}">${K.ic('x', 'sm')}</button></div>`).join('')}
+      ${S.service !== 'parcel' && (S.stops || []).length < 2 ? `<button class="payrow add-stop" id="addStop"><span class="paylogo note-ic">${K.ic('plus', 'sm')}</span><span class="grow">Add a stop<span class="tiny muted" style="display:block;font-weight:500">${K.ugx((S.config && S.config.stopFee) || 0)} per stop, plus the extra distance</span></span></button>` : ''}
       <button class="payrow note-row" id="noteBtn"><span class="paylogo note-ic">${K.ic('msg', 'sm')}</span><span class="grow ellipsis">${S.note ? K.esc(S.note) : '<span class="muted">Add a pickup note</span>'}</span>${S.note ? '<span class="small muted">Edit</span>' : K.ic('chev', 'sm')}</button>
       ${S.service === 'parcel' ? `<button class="payrow" id="parcelRow"><span class="paylogo wallet">${K.ic('gift', 'sm')}</span><span class="grow">${S.parcel ? `Package for ${K.esc(S.parcel.recipientName)}` : 'Add delivery details'}</span>${K.ic('chev', 'sm')}</button>` : ''}
       <div class="chip-row">
@@ -680,6 +690,8 @@
       setService(b.dataset.s); showRoute(); render();
     });
     K.$('#payRow').onclick = () => openPayments({ onPick: render });
+    const asb = K.$('#addStop'); if (asb) asb.onclick = () => openSearch({ addStop: true });
+    sheet.querySelectorAll('[data-rmstop]').forEach((b) => b.onclick = () => { S.stops.splice(+b.dataset.rmstop, 1); prepareQuote(); });
     K.$('#pickRow').onclick = () => { S.prevPickup = S.pickup ? { ...S.pickup } : null; S.view = 'pickup'; clearRoute(); map.setView([S.pickup.lat, S.pickup.lng], 18); render(); };
     const pr = K.$('#parcelRow'); if (pr) pr.onclick = openParcel;
     K.$('#whenBtn').onclick = openWhen;
@@ -714,6 +726,9 @@
     const c = K.$('#clr', m.el); if (c) c.onclick = () => { S.note = ''; m.close(); render(); };
   }
 
+  // Stops between pickup and destination on the trip screens; done ones are ticked.
+  const stopRows = (t) => (t.stops || []).map((x, i) => `<div class="stop${x.doneAt ? ' done' : ''}"><span class="s-ic"><span class="dot-stop">${x.doneAt ? '✓' : i + 1}</span></span><span><small>Stop ${i + 1}${x.doneAt ? ' · done' : ''}</small><b class="ellipsis">${K.esc(x.address)}</b></span></div>`).join('');
+
   // "How it's priced": the parts behind the upfront price, and why it may be higher right now.
   function whyPrice(q, o) {
     const p = o.parts || {};
@@ -725,6 +740,7 @@
       <div class="kv"><span>Distance (${p.km || q.distanceKm} km)</span><b>${K.ugx(p.distance || 0)}</b></div>
       <div class="kv"><span>Time (about ${p.min || o.durationMin} min)</span><b>${K.ugx(p.time || 0)}</b></div>
       ${minApplied ? `<div class="kv"><span>Minimum fare</span><b>${K.ugx(p.minFare)}</b></div>` : ''}
+      ${p.stops ? `<div class="kv"><span>Stops (${(S.stops || []).length})</span><b>${K.ugx(p.stops)}</b></div>` : ''}
       ${o.surge > 1 ? `<div class="kv"><span>Busy-time pricing</span><b>×${o.surge}</b></div>` : ''}
       ${o.discount ? `<div class="kv"><span>${K.esc(o.promoLabel || 'Discount')}</span><b class="pos">−${K.ugx(o.discount)}</b></div>` : ''}
       <div class="big-total"><span class="bold">You pay</span><b>${K.ugx(payOf(o))}</b></div>
@@ -779,7 +795,7 @@
     btn.disabled = true; btn.textContent = 'Requesting…'; err.textContent = '';
     if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
     const opt = S.quote.options.find((o) => o.id === S.service);
-    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined, notes: S.note || undefined, womanDriver: S.womanDriver || undefined };
+    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined, notes: S.note || undefined, womanDriver: S.womanDriver || undefined, stops: S.stops.length ? S.stops : undefined };
     if (S.service === 'parcel') body.parcel = S.parcel;
     // A locked wallet needs the rider's fingerprint, face or a code before paying from it.
     if (body.paymentMethod === 'wallet' && S.user.walletLock) {
@@ -986,6 +1002,7 @@
         <div class="bar" style="margin:14px 0 4px"><i id="etaBar" style="width:${pct}%"></i></div>
         <div class="stops">
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
+          ${stopRows(t)}
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
         </div>
         ${extrasHtml(t)}
@@ -1012,6 +1029,7 @@
         ${t.notes ? `<p class="note-line">${K.ic('msg', 'sm')}<span><small>Your pickup note</small>${K.esc(t.notes)}</span></p>` : ''}
         <div class="stops">
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
+          ${stopRows(t)}
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Drop-off</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
         </div>
         <div class="fare-row"><span class="row" style="gap:8px">${PAY[payOfTrip(t)].logo}<span class="muted">${PAY[payOfTrip(t)].name}</span></span><b>${fareHtml(t)}</b></div>
@@ -1153,6 +1171,7 @@
       <p class="small muted">${K.when(t.createdAt)}</p>
       <div class="stops">
         <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b>${K.esc(t.pickup.address)}</b></span></div>
+        ${stopRows(t)}
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b>${K.esc(t.drop.address)}</b></span></div>
       </div>
       <div class="kv"><span>Service</span><b>${svcName(t.service)}</b></div>
@@ -1219,6 +1238,7 @@
       <p class="rc-no">${no} · ${K.esc(date)}</p>
       <div class="rc-total"><small>Total</small><b>${total}</b><span>${K.esc(P.name)}${t.paymentStatus === 'paid' || t.paymentMethod === 'cash' ? ' · Paid' : ''}</span></div>
       <div class="stops"><div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b>${K.esc(t.pickup.address)}</b></span></div>
+        ${stopRows(t)}
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b>${K.esc(t.drop.address)}</b></span></div></div>
       ${rows.map(([a, b]) => `<div class="kv"><span>${K.esc(a)}</span><b>${b}</b></div>`).join('')}
       <div class="kv"><span>Service</span><b>${svcName(t.service)}${t.distanceKm ? ` · ${Number(t.distanceKm).toFixed(1)} km` : ''}</b></div>
@@ -1448,7 +1468,7 @@
   function reset() {
     const hadTrip = !!S.trip;
     S.view = 'home'; S.drop = null; S.quote = null; S.route = null; S.trip = null; S.rating = 0; S.parcel = null;
-    S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false; S.womanDriver = false;
+    S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false; S.womanDriver = false; S.stops = [];
     loadGrowth();
     S.messages = []; S.unread = 0; routedPhase = null; phaseKm = null;
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }

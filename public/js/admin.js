@@ -373,6 +373,7 @@
         <div><label for="rad">Search radius (km)</label><input id="rad" type="number" min="1" max="30" value="${s.dispatchRadiusKm}"></div>
         <div><label for="to">Seconds to accept</label><input id="to" type="number" min="8" max="60" value="${s.offerTimeoutSec}"></div>
         <div><label for="mw">Min cash out (UGX)</label><input id="mw" type="number" min="0" value="${s.minWithdrawal}"></div>
+        <div><label for="sf">Fee per extra stop (UGX)</label><input id="sf" type="number" min="0" step="500" value="${s.stopFee}"></div>
         <div><label for="sp">Support phone</label><input id="sp" type="tel" value="${K.esc(s.supportPhone || '')}" placeholder="Not set: hidden in the apps"></div>
       </div>
       <h2 style="margin-top:26px">Dynamic pricing</h2>
@@ -408,7 +409,7 @@
         tr.querySelectorAll('[data-f]').forEach((i) => { o[i.dataset.f] = i.type === 'checkbox' ? i.checked : i.type === 'text' ? i.value : +i.value; });
         services[tr.dataset.id] = o;
       });
-      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, supportPhone: K.$('#sp').value,
+      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, stopFee: +K.$('#sf').value, supportPhone: K.$('#sp').value,
         dynamic: { enabled: K.$('#dyn').checked, weather: K.$('#wx').checked, sensitivity: +K.$('#sens').value, maxBoda: +K.$('#mb').value, maxCar: +K.$('#mc').value } }, 'PUT');
       K.toast('Pricing saved. New requests use it right away.');
     };
