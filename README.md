@@ -92,7 +92,7 @@ Driver payouts are currently sent by your team by Mobile Money and marked paid i
 
 ## Before public launch
 
-- **Maps at scale**: the app uses OpenFreeMap vector maps (OpenStreetMap data), the public OSRM demo router and Nominatim search. These are fine for testing and a pilot but have usage limits and no uptime guarantee. Before heavy traffic, switch to a paid provider (Mapbox, Google Maps Platform, or self-hosted OSRM) — the calls live in `public/js/common.js`.
+- **Maps at scale**: the app uses OpenFreeMap vector maps (OpenStreetMap data), the public OSRM demo router, Nominatim for turning a dropped pin into an address, and the public Photon server for place search. These are fine for testing and a pilot but have usage limits and no uptime guarantee. Before heavy traffic, self-host Photon (set `PHOTON_URL`) or switch to a paid provider (Mapbox, Google Maps Platform), and self-host OSRM. The routing and map calls live in `public/js/common.js`, place search in `src/places.js`.
 - **SMS verification**: add phone OTP at sign-up (e.g. Africa's Talking) so every number is real.
 - **Driver vetting**: check permit, logbook, National ID and insurance in person before approving.
 - **Legal**: confirm current Ministry of Works & Transport rules for digital ride-hailing operators and register as a data controller with Uganda's Personal Data Protection Office. Write terms of service and a privacy policy (the app has no Terms/Privacy pages yet, so sign-up doesn't link to any).
@@ -115,6 +115,8 @@ src/realtime.js      live driver locations, dispatch to nearest driver, trip eve
 src/routes.js        all API endpoints
 src/ledger.js        wallet, earnings and commission bookkeeping
 src/payments.js      Flutterwave Mobile Money + card
+src/places.js        place search: landmarks, popular places, OpenStreetMap (Photon)
+src/landmarks.js     Kampala landmarks and their nicknames
 public/              landing, rider, driver, admin, tracking pages
 test/e2e.js          full ride simulation
 ```
@@ -130,6 +132,16 @@ Fares are upfront and calibrated to Kampala (about 8–10% below Bolt's publishe
 - **Rain** – live weather from Open-Meteo adds a small boost (more for boda). Open-Meteo's free API is for non-commercial use; for production set `OPEN_METEO_KEY` (their commercial plan) or switch rain off in Admin → Pricing.
 - **Locked quotes** – every price shown is locked for 2 minutes; riders pay exactly what they accepted. If a lock expires and the price has risen more than 5%, the rider is shown the new price before booking.
 - **Admin → Pricing** – edit rates, fixed boost, surge on/off, sensitivity, caps, rain boost, and see live conditions.
+
+## Place search
+
+Riders search through Flytte's server (`/api/places/search`, `src/places.js`), which lists:
+
+1. **Kampala landmarks** (`src/landmarks.js`): malls, markets, taxi parks, hospitals, campuses, hotels, stadiums and places of worship, found by the names people type ("owino", "mubs", "namboole", "ihk"). Positions come from OpenStreetMap and were checked by hand; the airport points at the passenger terminal.
+2. **Places popular with riders**, learned from completed trips. A place is only suggested once 3 different riders have used it, and "Home", "Work" and similar are never learned, so nobody's own address is shown to others.
+3. **OpenStreetMap results via Photon**, which allows search-as-you-type (Nominatim doesn't). Results within 80 km, nearest first. If Photon doesn't answer, landmarks and popular places still show.
+
+To add a landmark, add a line to `src/landmarks.js` with coordinates from openstreetmap.org (right-click → "Show address").
 
 ## Growth features (bring riders in, bring them back)
 

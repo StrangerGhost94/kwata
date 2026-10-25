@@ -19,14 +19,14 @@
 
   K.PLACES = [
     { name: 'Entebbe International Airport', address: 'Entebbe', lat: 0.0424, lng: 32.4435, icon: 'plane' },
-    { name: 'Acacia Mall', address: 'Kisementi, Kololo', lat: 0.3383, lng: 32.5873 },
-    { name: 'Garden City Mall', address: 'Yusuf Lule Road', lat: 0.3181, lng: 32.5917 },
-    { name: 'Kampala Old Taxi Park', address: 'Central Division', lat: 0.3127, lng: 32.5766 },
-    { name: 'Makerere University', address: 'Makerere', lat: 0.3355, lng: 32.5682 },
-    { name: 'Mulago National Referral Hospital', address: 'Mulago', lat: 0.3379, lng: 32.5757 },
-    { name: 'Village Mall Bugolobi', address: 'Bugolobi', lat: 0.3177, lng: 32.6165 },
+    { name: 'Acacia Mall', address: 'Kisementi, Kololo', lat: 0.33659, lng: 32.58773 },
+    { name: 'Garden City Mall', address: 'Yusuf Lule Road', lat: 0.3199, lng: 32.59212 },
+    { name: 'Kampala Old Taxi Park', address: 'Central Division', lat: 0.31223, lng: 32.57696 },
+    { name: 'Makerere University', address: 'Makerere', lat: 0.33515, lng: 32.56823 },
+    { name: 'Mulago National Referral Hospital', address: 'Mulago', lat: 0.33893, lng: 32.57579 },
+    { name: 'Village Mall Bugolobi', address: 'Bugolobi', lat: 0.32014, lng: 32.61766 },
     { name: 'Ntinda Trading Centre', address: 'Ntinda', lat: 0.3536, lng: 32.6142 },
-    { name: 'Kampala Serena Hotel', address: 'Kintu Road, Nakasero', lat: 0.3164, lng: 32.5841 },
+    { name: 'Kampala Serena Hotel', address: 'Kintu Road, Nakasero', lat: 0.31923, lng: 32.58637 },
   ];
 
   // ---------- icons ----------
@@ -1425,15 +1425,12 @@
     return { remove: () => { map.removeLayer(casing); map.removeLayer(line); }, bounds: () => casing.getBounds() };
   };
 
+  // Place search runs on our server (src/places.js): Kampala landmarks, places riders use, then
+  // OpenStreetMap. Returns the places; `.partial` is true when the map search didn't answer.
   K.search = async function (q, near) {
     const c = near || K.KAMPALA;
-    const url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=ug&limit=7&viewbox=${c.lng - 0.35},${c.lat + 0.3},${c.lng + 0.35},${c.lat - 0.3}&q=${encodeURIComponent(q)}`;
-    const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-    const j = await r.json();
-    return j.map((x) => {
-      const parts = x.display_name.split(', ');
-      return { name: parts[0], address: parts.slice(1, 4).join(', '), lat: +x.lat, lng: +x.lon };
-    });
+    const out = await K.api(`/places/search?${new URLSearchParams({ q, lat: c.lat.toFixed(4), lng: c.lng.toFixed(4) })}`, null, 'GET', { timeout: 8000 });
+    return Object.assign(out.results || [], { partial: !!out.partial });
   };
 
   K.reverse = async function (lat, lng) {

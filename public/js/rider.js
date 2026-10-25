@@ -438,15 +438,25 @@
         render();
       };
     };
+    // Landmarks get a star, places popular with riders a trend arrow, everything else a pin.
+    const kindIcon = (p) => p.icon || (p.kind === 'landmark' ? 'star' : p.kind === 'popular' ? 'trend' : 'pin');
+    let searchSeq = 0;
     const onInput = (el) => {
       clearTimeout(searchTimer);
       const text = el.value.trim();
-      if (text.length < 3) { showDefault(); return; }
+      const seq = ++searchSeq;   // only the latest search may fill the list
+      if (text.length < 2) { showDefault(); return; }
       searchTimer = setTimeout(async () => {
-        res.innerHTML = `<p class="small faint" style="padding:12px 2px">Searching…</p>`;
-        try { current = await K.search(text, S.pickup); res.innerHTML = current.length ? rows(current) : `<p class="small muted" style="padding:12px 2px">No places found. Try a landmark or the area name.</p>`; bind(); }
-        catch { res.innerHTML = '<p class="error">Search is not responding. Check your connection.</p>'; }
-      }, 400);
+        if (!res.querySelector('.lrow')) res.innerHTML = `<p class="small faint" style="padding:12px 2px">Searching…</p>`;
+        try {
+          const found = await K.search(text, S.pickup || S.gps);
+          if (seq !== searchSeq) return;
+          current = found;
+          res.innerHTML = found.length ? rows(found, kindIcon) + (found.partial ? '<p class="small faint" style="padding:8px 2px">Some places may be missing. Keep typing or set the spot on the map.</p>' : '')
+            : `<p class="small muted" style="padding:12px 2px">No places found. Try a landmark or the area name.</p>`;
+          bind();
+        } catch { if (seq === searchSeq) res.innerHTML = '<p class="error">Search is not responding. Check your connection.</p>'; }
+      }, 250);
     };
     qDrop.oninput = () => onInput(qDrop);
     qDrop.onfocus = () => { target = 'drop'; showDefault(); };

@@ -13,6 +13,7 @@ const wa = require('./whatsapp');
 const tg = require('./telegram');
 const { getSettings, updateSettings, quote } = require('./pricing');
 const surge = require('./surge');
+const places = require('./places');
 const { haversineKm: haversine } = require('./pricing');
 
 const r = express.Router();
@@ -43,9 +44,11 @@ const LIVE = !!process.env.DATABASE_URL || process.env.NODE_ENV === 'production'
 const LIMIT_SCALE = LIVE ? 1 : 20;
 const hits = new Map();
 setInterval(() => { const now = Date.now(); for (const [k, arr] of hits) if (!arr.length || now - arr[arr.length - 1] > 30 * 60e3) hits.delete(k); }, 10 * 60e3).unref();
-function limit(max, windowMs) {
+// `by` keys the count on something other than the IP, e.g. the signed-in user: many phones in
+// Uganda share one carrier IP, so per-IP limits on everyday actions would block whole networks.
+function limit(max, windowMs, by) {
   return (req, res, next) => {
-    const key = req.ip + req.path;
+    const key = (by ? by(req) : req.ip) + req.path;
     const now = Date.now();
     const arr = (hits.get(key) || []).filter((t) => now - t < windowMs);
     arr.push(now); hits.set(key, arr);
@@ -927,11 +930,19 @@ r.post('/trips/:id/complete', auth.requireAuth('driver'), wrap(async (req, res) 
   });
   rt.setDriverFree(req.user.id, t.id);
   await rt.broadcast(t.id);
+  places.learnFromTrip(t.id).catch((e) => console.error('learn places:', e.message));
   for (const b of bonuses) rt.notify(req.user.id, 'toast', { text: `🎉 Bonus reached: ${b.title}. UGX ${b.reward.toLocaleString()} added to your balance.` });
   if (settled && settled.referral && settled.referral.referrerReward) {
     rt.notify(settled.referral.referrerId, 'toast', { text: `🎉 Your friend took their first Flytte trip. UGX ${settled.referral.referrerReward.toLocaleString()} added to your wallet.` });
   }
   res.json({ ok: true });
+}));
+
+// ---------- Place search: Kampala landmarks, places riders use, then OpenStreetMap (src/places.js) ----------
+r.get('/places/search', auth.requireAuth(), limit(90, 60e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
+  const lat = Number(req.query.lat), lng = Number(req.query.lng);
+  const near = Number.isFinite(lat) && Number.isFinite(lng) && lat > -1.5 && lat < 4.3 && lng > 29.5 && lng < 35.1 ? { lat, lng } : undefined;
+  res.json(await places.search(String(req.query.q || '').slice(0, 100), near));
 }));
 
 // ---------- Tips ----------
