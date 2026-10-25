@@ -63,7 +63,7 @@ function view(t, role) {
     fare: t.fare, paymentMethod: t.payment_method, paymentStatus: t.payment_status,
     parcel: t.parcel ? JSON.parse(t.parcel) : null, notes: t.notes,
     createdAt: t.created_at, acceptedAt: t.accepted_at, startedAt: t.started_at, completedAt: t.completed_at,
-    cancelledBy: t.cancelled_by, cancelReason: t.cancel_reason === 'no_show' ? 'no_show' : undefined, noShowFee: t.no_show_fee || 0,
+    cancelledBy: t.cancelled_by, cancelReason: t.cancel_reason === 'no_show' ? 'no_show' : undefined, noShowFee: t.no_show_fee || 0, cancelFee: t.cancel_fee || 0,
     arrivedAt: t.arrived_at || null,
     discount: t.discount || 0, payable: t.fare - (t.discount || 0), promoLabel: t.promo_label || null,
     tip: t.tip || 0, tipMethod: t.tip_method || null,
@@ -80,7 +80,7 @@ function view(t, role) {
   if (role === 'public') {
     v.rider = { name: (t.rider_name || '').split(' ')[0] };
     delete v.fare; delete v.paymentMethod; delete v.paymentStatus; delete v.parcel; delete v.notes;
-    delete v.discount; delete v.payable; delete v.promoLabel; delete v.tip; delete v.tipMethod; delete v.noShowFee;
+    delete v.discount; delete v.payable; delete v.promoLabel; delete v.tip; delete v.tipMethod; delete v.noShowFee; delete v.cancelFee;
     if (v.passenger) v.rider = { name: String(v.passenger.name).split(' ')[0] };
     delete v.passenger;
     if (v.driver) v.driver = { name: t.driver_name, plate: t.plate, vehicle: v.driver.vehicle, vehicleType: t.vehicle_type, photo: v.driver.photo, location: v.driver.location, checks: v.driver.checks };

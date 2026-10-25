@@ -37,6 +37,8 @@ const DEFAULTS = {
     cashDebtLimit: 30000,   // commission owed (UGX) before new cash trips pause; Mobile Money/wallet trips continue
     freeWaitMin: 5,         // free waiting at pickup before the driver may cancel as a no-show
     noShowFee: 2000,        // paid to the driver from the rider's wallet on a no-show (only if the wallet covers it)
+    cancelFee: 1000,        // paid to the driver from the rider's wallet when the rider cancels late (only if the wallet covers it)
+    cancelGraceMin: 2,      // minutes after a driver accepts during which the rider can cancel for free
     headingHomePerDay: 2,   // how many times a day a driver can switch on "Heading home"
     queueNext: true,        // offer a nearby next trip when the current one is about to finish
     showDestination: true,  // drivers see where the trip goes before accepting (off: only the distance, address after accepting)
@@ -129,6 +131,8 @@ async function updateSettings(patch) {
         cashDebtLimit: num(c.cashDebtLimit, 0, 1000000, 30000),
         freeWaitMin: num(c.freeWaitMin, 0, 30, 5),
         noShowFee: num(c.noShowFee, 0, 50000, 2000),
+        cancelFee: num(c.cancelFee, 0, 50000, 1000),
+        cancelGraceMin: num(c.cancelGraceMin, 0, 30, 2),
         headingHomePerDay: num(c.headingHomePerDay, 0, 10, 2),
         queueNext: c.queueNext !== false && c.queueNext !== 'false',
         showDestination: c.showDestination !== false && c.showDestination !== 'false',

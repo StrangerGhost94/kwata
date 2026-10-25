@@ -250,6 +250,7 @@ async function migrate() {
     PRIMARY KEY (driver_id, bonus_id, period_key)
   );
   ALTER TABLE driver_docs ADD COLUMN IF NOT EXISTS expires_on DATE;
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS cancel_fee INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_lat DOUBLE PRECISION;
   ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_lng DOUBLE PRECISION;
   ALTER TABLE drivers ADD COLUMN IF NOT EXISTS home_address TEXT;

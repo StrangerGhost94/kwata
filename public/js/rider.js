@@ -1308,12 +1308,29 @@
     const bar = K.$('#etaBar'); if (bar && phaseKm && t.status !== 'arrived') bar.style.width = Math.max(5, Math.min(100, 100 - (K.km(p, target) / phaseKm) * 100)) + '%';
   }
 
+  // Mirrors cancelFeeDue in src/routes.js: free during the grace period, and when the driver is very late.
+  function cancelFeeNow(t) {
+    const d = S.config.drivers || {};
+    if (!d.cancelFee || !t.driver || !t.acceptedAt || !['accepted', 'arrived'].includes(t.status)) return { fee: 0, freeFor: 0 };
+    const mins = (Date.now() - new Date(t.acceptedAt).getTime()) / 60000;
+    if (mins < d.cancelGraceMin) return { fee: 0, freeFor: Math.ceil(d.cancelGraceMin - mins) };
+    if (t.status === 'accepted' && mins >= 15) return { fee: 0, freeFor: 0 };
+    return { fee: d.cancelFee, freeFor: 0 };
+  }
   async function cancelTrip() {
     const t = S.trip;
-    const m = K.modal(`<h2>Cancel your ride?</h2><p class="muted">${t.driver ? `${K.esc(K.first(t.driver.name))} is already on the way.` : `We’re still finding you a ${who(t)}.`}</p>
+    const { fee, freeFor } = cancelFeeNow(t);
+    const name = t.driver ? K.esc(K.first(t.driver.name)) : '';
+    const feeNote = fee ? `<p class="card small" style="margin:10px 0">A ${K.ugx(fee)} cancellation fee goes to ${name} for their time, from your Flytte Wallet if it has enough.</p>`
+      : freeFor ? `<p class="small muted" style="margin:6px 0 10px">Free to cancel for ${freeFor} more minute${freeFor === 1 ? '' : 's'}.</p>` : '';
+    const m = K.modal(`<h2>Cancel your ride?</h2><p class="muted">${t.driver ? `${name} is already on the way.` : `We’re still finding you a ${who(t)}.`}</p>${feeNote}
       <button class="btn btn-danger btn-block btn-lg" id="yes">Yes, cancel</button><button class="btn btn-block" style="margin-top:8px" data-close>Keep my ride</button>`);
     K.$('#yes', m.el).onclick = async () => {
-      try { await K.api(`/trips/${t.id}/cancel`, { reason: 'rider' }); m.close(); reset(); } catch (e) { K.toast(e.message); }
+      try {
+        const out = await K.api(`/trips/${t.id}/cancel`, { reason: 'rider' });
+        m.close(); reset();
+        if (out.fee) K.toast(`Ride cancelled. ${K.ugx(out.fee)} cancellation fee paid to ${name}.`, 5000);
+      } catch (e) { K.toast(e.message); }
     };
   }
 

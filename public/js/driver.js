@@ -494,7 +494,7 @@
     if (t.status === 'cancelled' || t.status === 'requested') {
       if (S.trip && S.trip.id === t.id) {
         if (t.cancelReason === 'no_show') K.toast(t.noShowFee ? `Marked as a no-show. ${K.ugx(t.noShowFee)} was added to your balance.` : 'Marked as a no-show. You’re free for the next trip.', 5000);
-        else if (t.cancelledBy === 'rider') K.toast(`The ${customer(t)} cancelled this trip.`);
+        else if (t.cancelledBy === 'rider') K.toast(t.cancelFee ? `The ${customer(t)} cancelled. ${K.ugx(t.cancelFee)} cancellation fee was added to your balance.` : `The ${customer(t)} cancelled this trip.`, t.cancelFee ? 5000 : undefined);
         S.trip = S.next || null; S.next = null; routedFor = null; clearTarget(); render();
         if (!S.trip) loadOverview();
       }
@@ -863,10 +863,10 @@
     host.innerHTML = `
       <div class="sum-grid">
         <div><span>Trips</span><b>${tt.trips}</b></div><div><span>Fares</span><b>${K.ugx(tt.fare)}</b></div>
-        <div><span>Commission</span><b>−${K.ugx(tt.commission)}</b></div><div><span>Tips, fees & bonuses</span><b>${K.ugx(tt.tips + tt.noShowFees + tt.bonuses)}</b></div>
+        <div><span>Commission</span><b>−${K.ugx(tt.commission)}</b></div><div><span>Tips, fees & bonuses</span><b>${K.ugx(tt.tips + tt.noShowFees + (tt.cancelFees || 0) + tt.bonuses)}</b></div>
         <div class="wide"><span>You earned</span><b>${K.ugx(tt.earning)}</b></div></div>
       ${d.trips.length ? d.trips.map((t) => `<div class="trip-line">
-          <div class="tl-top"><b class="ellipsis">${t.noShow ? 'No-show fee' : `${K.esc(String(t.from).split(',')[0])} → ${K.esc(String(t.to).split(',')[0])}`}</b><b>${K.ugx(t.earning)}</b></div>
+          <div class="tl-top"><b class="ellipsis">${t.noShow ? (t.feeKind === 'cancel' ? 'Cancellation fee' : 'No-show fee') : `${K.esc(String(t.from).split(',')[0])} → ${K.esc(String(t.to).split(',')[0])}`}</b><b>${K.ugx(t.earning)}</b></div>
           <div class="tl-sub"><span>${K.when(t.at)} · ${K.SERVICE_LABEL[t.service] || ''}${t.noShow ? '' : ` · ${K.PAY_LABEL[t.method] || t.method}`}</span>
             ${t.noShow ? '' : `<span>Fare ${K.ugx(t.fare)} · commission −${K.ugx(t.commission)}${t.discount ? ` · discount covered ${K.ugx(t.discount)}` : ''}${t.tip ? ` · tip ${K.ugx(t.tip)}${t.tipMethod === 'cash' ? ' cash' : ''}` : ''}</span>`}</div></div>`).join('')
         : '<p class="small muted">No trips in this period yet.</p>'}
@@ -880,7 +880,7 @@
   function downloadCsv(d) {
     const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
     const rows = [['Date', 'Trip', 'Service', 'Payment', 'From', 'To', 'Fare (UGX)', 'Commission (UGX)', 'Discount covered (UGX)', 'Tip (UGX)', 'No-show fee (UGX)', 'You earned (UGX)']];
-    for (const t of d.trips) rows.push([new Date(t.at).toISOString().slice(0, 16).replace('T', ' '), t.id, t.service, t.noShow ? 'no-show' : t.method, t.from, t.to, t.fare, t.commission, t.discount, t.tip, t.noShowFee, t.earning]);
+    for (const t of d.trips) rows.push([new Date(t.at).toISOString().slice(0, 16).replace('T', ' '), t.id, t.service, t.noShow ? (t.feeKind === 'cancel' ? 'cancellation' : 'no-show') : t.method, t.from, t.to, t.fare, t.commission, t.discount, t.tip, t.noShowFee + (t.cancelFee || 0), t.earning]);
     for (const b of d.bonuses) rows.push([new Date(b.created_at).toISOString().slice(0, 16).replace('T', ' '), '', 'bonus', '', b.note, '', '', '', '', '', '', b.amount]);
     const csv = rows.map((r) => r.map(q).join(',')).join('\r\n');
     const a = document.createElement('a');

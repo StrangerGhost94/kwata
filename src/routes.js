@@ -81,7 +81,7 @@ r.get('/config', wrap(async (req, res) => {
     supportPhone: supportPhone(s),
     minWithdrawal: s.minWithdrawal,
     growth: { firstRide: s.growth.firstRide, referral: s.growth.referral, rewards: s.growth.rewards },
-    drivers: { freeWaitMin: s.drivers.freeWaitMin, noShowFee: s.drivers.noShowFee, cashDebtLimit: s.drivers.cashDebtLimit, headingHomePerDay: s.drivers.headingHomePerDay },
+    drivers: { freeWaitMin: s.drivers.freeWaitMin, noShowFee: s.drivers.noShowFee, cancelFee: s.drivers.cancelFee, cancelGraceMin: s.drivers.cancelGraceMin, cashDebtLimit: s.drivers.cashDebtLimit, headingHomePerDay: s.drivers.headingHomePerDay },
   });
 }));
 
@@ -707,6 +707,17 @@ async function ownTrip(req, res, role) {
   return t;
 }
 
+// The fee a rider owes for cancelling now: once the grace period after the driver accepted has passed.
+// Never when the driver has been on the way for LATE_MIN minutes without arriving (the delay is theirs).
+const CANCEL_LATE_MIN = 15;
+function cancelFeeDue(t, d, now = Date.now()) {
+  if (!d.cancelFee || !t.driver_id || !t.accepted_at || !['accepted', 'arrived'].includes(t.status)) return 0;
+  const mins = (now - new Date(t.accepted_at).getTime()) / 60000;
+  if (mins < d.cancelGraceMin) return 0;
+  if (t.status === 'accepted' && mins >= CANCEL_LATE_MIN) return 0;
+  return d.cancelFee;
+}
+
 r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req, res) => {
   const role = req.user.role;
   const t = await ownTrip(req, res, role);
@@ -725,15 +736,33 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
     rt.dispatch(t.id, req.user.id).catch(console.error);
     return res.json({ ok: true });
   }
-  await db.query("UPDATE trips SET status = 'cancelled', cancelled_by = $1, cancel_reason = $2 WHERE id = $3",
-    [role, clean((req.body || {}).reason, 200), t.id]);
+  // A late cancel pays the driver for their time (see cancelFeeDue), from the wallet when it covers it.
+  const s = await getSettings();
+  const due = cancelFeeDue(t, s.drivers);
+  let fee = 0, done = false;
+  await db.tx(async (tx) => {
+    const fresh = await tx.one("UPDATE trips SET status = 'cancelled', cancelled_by = $1, cancel_reason = $2 WHERE id = $3 AND status = $4 RETURNING id",
+      [role, clean((req.body || {}).reason, 200), t.id, t.status]);
+    if (!fresh) return;
+    done = true;
+    if (!due || !t.driver_id) return;
+    const rider = await tx.one('SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE', [t.rider_id]);
+    if (!rider || rider.wallet_balance < due) return;
+    fee = due;
+    await tx.query('UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id = $2', [fee, t.rider_id]);
+    await tx.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'cancel_fee',$2,$3,'Cancellation fee: the driver was already on the way')", [t.rider_id, -fee, t.id]);
+    await tx.query('UPDATE drivers SET earnings_balance = earnings_balance + $1 WHERE user_id = $2', [fee, t.driver_id]);
+    await tx.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'cancel_fee',$2,$3,'Cancellation fee from the rider')", [t.driver_id, fee, t.id]);
+    await tx.query('UPDATE trips SET cancel_fee = $1 WHERE id = $2', [fee, t.id]);
+  });
+  if (!done) return bad(res, 'This trip has already changed. Pull down to refresh.');
   rt.clearOffer(t.id);
   if (t.driver_id) {
     rt.setDriverFree(t.driver_id, t.id);
-    if (['accepted', 'arrived'].includes(t.status)) dtools.push(t.driver_id, { type: 'cancelled', tag: `trip-${t.id}`, title: 'Trip cancelled', body: 'The rider cancelled. You’re free for the next request.' }, { ttl: 300 }).catch(() => {});
+    if (['accepted', 'arrived'].includes(t.status)) dtools.push(t.driver_id, { type: 'cancelled', tag: `trip-${t.id}`, title: 'Trip cancelled', body: fee ? `The rider cancelled. UGX ${fee.toLocaleString()} cancellation fee added to your balance.` : 'The rider cancelled. You’re free for the next request.' }, { ttl: 300 }).catch(() => {});
   }
   await rt.broadcast(t.id);
-  res.json({ ok: true });
+  res.json({ ok: true, fee });
 }));
 
 r.post('/trips/:id/rate', auth.requireAuth('rider', 'driver'), wrap(async (req, res) => {
@@ -1133,10 +1162,10 @@ r.post('/driver/home', auth.requireAuth('driver'), wrap(async (req, res) => {
 r.get('/driver/trips', auth.requireAuth('driver'), wrap(async (req, res) => {
   const days = [1, 7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
   const since = days === 1 ? new Date(Date.parse(todayKla() + 'T00:00:00Z') - 3 * 3600e3) : new Date(Date.now() - days * 86400e3);
-  const { rows } = await db.query(`SELECT id, service, payment_method, fare, discount, commission, tip, tip_method, no_show_fee, status, cancel_reason,
+  const { rows } = await db.query(`SELECT id, service, payment_method, fare, discount, commission, tip, tip_method, no_show_fee, cancel_fee, status, cancel_reason,
       pickup_address, drop_address, distance_km, completed_at, created_at
     FROM trips WHERE driver_id = $1 AND (
-      (status = 'completed' AND completed_at >= $2) OR (status = 'cancelled' AND cancel_reason = 'no_show' AND created_at >= $2))
+      (status = 'completed' AND completed_at >= $2) OR (status = 'cancelled' AND (cancel_reason = 'no_show' OR cancel_fee > 0) AND created_at >= $2))
     ORDER BY COALESCE(completed_at, created_at) DESC LIMIT 300`, [req.user.id, since]);
   const { rows: bon } = await db.query("SELECT amount, note, created_at FROM transactions WHERE user_id = $1 AND type = 'bonus' AND created_at >= $2 ORDER BY id DESC", [req.user.id, since]);
   const trips = rows.map((x) => {
@@ -1146,13 +1175,14 @@ r.get('/driver/trips', auth.requireAuth('driver'), wrap(async (req, res) => {
       id: x.id, at: x.completed_at || x.created_at, service: x.service, method: x.payment_method, noShow,
       from: x.pickup_address, to: x.drop_address, km: x.distance_km,
       fare: noShow ? 0 : x.fare, discount: noShow ? 0 : x.discount, commission: noShow ? 0 : x.commission,
-      tip: x.tip || 0, tipMethod: x.tip_method, noShowFee: x.no_show_fee || 0,
-      earning: noShow ? x.no_show_fee : x.fare - x.commission + walletTip,
+      tip: x.tip || 0, tipMethod: x.tip_method, noShowFee: x.no_show_fee || 0, cancelFee: x.cancel_fee || 0,
+      feeKind: noShow ? (x.cancel_reason === 'no_show' ? 'no_show' : 'cancel') : null,
+      earning: noShow ? (x.no_show_fee || 0) + (x.cancel_fee || 0) : x.fare - x.commission + walletTip,
     };
   });
   const sum = (k) => trips.reduce((a, t) => a + (t[k] || 0), 0);
   const bonusTotal = bon.reduce((a, b) => a + b.amount, 0);
-  res.json({ days, since, trips, bonuses: bon, totals: { trips: trips.filter((t) => !t.noShow).length, fare: sum('fare'), commission: sum('commission'), discount: sum('discount'), tips: sum('tip'), noShowFees: sum('noShowFee'), bonuses: bonusTotal, earning: sum('earning') + bonusTotal } });
+  res.json({ days, since, trips, bonuses: bon, totals: { trips: trips.filter((t) => !t.noShow).length, fare: sum('fare'), commission: sum('commission'), discount: sum('discount'), tips: sum('tip'), noShowFees: sum('noShowFee'), cancelFees: sum('cancelFee'), bonuses: bonusTotal, earning: sum('earning') + bonusTotal } });
 }));
 
 // Pay the commission owed on cash trips by Mobile Money.

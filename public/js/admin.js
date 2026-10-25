@@ -221,6 +221,8 @@
         <div class="kpis" style="max-width:720px">
           <div><label for="fw">Free waiting at pickup (min)</label><input id="fw" type="number" min="0" max="30" value="${d.freeWaitMin}"></div>
           <div><label for="nf">No-show fee to driver (UGX)</label><input id="nf" type="number" min="0" step="500" value="${d.noShowFee}"></div>
+          <div><label for="cf">Late cancellation fee to driver (UGX)</label><input id="cf" type="number" min="0" step="500" value="${d.cancelFee}"></div>
+          <div><label for="cg">Free cancellation after a driver accepts (minutes)</label><input id="cg" type="number" min="0" max="30" value="${d.cancelGraceMin}"></div>
           <div><label for="dl">Pause cash trips when owed (UGX)</label><input id="dl" type="number" min="0" step="1000" value="${d.cashDebtLimit}"></div>
           <div><label for="hh">Heading home uses per day</label><input id="hh" type="number" min="0" max="10" value="${d.headingHomePerDay}"></div>
           <div><label for="rd">Document reminder (days before)</label><input id="rd" type="number" min="1" max="90" value="${d.docReminderDays}"></div>
@@ -251,7 +253,7 @@
       K.$('#saveR').onclick = async () => {
         read();
         try {
-          const out = await K.api('/admin/settings', { drivers: { freeWaitMin: +K.$('#fw').value, noShowFee: +K.$('#nf').value, cashDebtLimit: +K.$('#dl').value, headingHomePerDay: +K.$('#hh').value, docReminderDays: +K.$('#rd').value, mismatchPauseReports: +K.$('#mp').value, queueNext: K.$('#qn').checked, showDestination: K.$('#sd').checked }, bonuses }, 'PUT');
+          const out = await K.api('/admin/settings', { drivers: { freeWaitMin: +K.$('#fw').value, noShowFee: +K.$('#nf').value, cancelFee: +K.$('#cf').value, cancelGraceMin: +K.$('#cg').value, cashDebtLimit: +K.$('#dl').value, headingHomePerDay: +K.$('#hh').value, docReminderDays: +K.$('#rd').value, mismatchPauseReports: +K.$('#mp').value, queueNext: K.$('#qn').checked, showDestination: K.$('#sd').checked }, bonuses }, 'PUT');
           Object.assign(d, out.drivers); bonuses.splice(0, bonuses.length, ...out.bonuses);
           K.toast('Driver rules saved.'); draw();
         } catch (e) { K.toast(e.message); }
