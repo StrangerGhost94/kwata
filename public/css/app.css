@@ -2105,3 +2105,21 @@ html.tod-evening .sp-photo img, html.tod-evening .auth-hero img { filter: bright
 }
 /* Split page in dark mode. */
 html.theme-dark .split-card { background: var(--card); }
+/* Night-time sharing: trip card and the Account sheet's "how it's sent" line */
+.night-card { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; background: var(--brand-soft); border: 1px solid var(--brand-line); border-radius: 14px; padding: 12px; margin: 10px 0 2px; font-size: .92rem; }
+.night-card .nc-ic { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; }
+.night-card .grow { flex: 1 1 180px; min-width: 0; }
+.night-card b { display: block; }
+.night-card small { display: block; color: var(--ink-2); margin-top: 2px; line-height: 1.35; }
+.night-card .nc-done { color: var(--go); font-weight: 700; }
+.night-card .nc-wa { flex: 1 1 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: #25D366; color: #fff; border: 0; font-weight: 700; min-height: 44px; }
+.night-card.ok { background: var(--surface); border-color: var(--line); align-items: center; }
+.night-card.ok > svg { color: var(--go); flex: none; }
+.night-how { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; background: var(--brand-soft); color: #6B4D00; border-radius: 12px; padding: 8px 12px; margin: 10px 0 0; }
+.night-how.ok { background: #E7F6EE; color: #0B5E31; }
+.night-how svg { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+html.theme-dark .night-card { background: rgba(255,214,10,.12); border-color: rgba(255,214,10,.3); }
+html.theme-dark .night-card.ok { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.1); }
+html.theme-dark .night-card small { color: #C7C7CC; }
+html.theme-dark .night-how { background: rgba(255,214,10,.12); color: #F5F5F7; }
+html.theme-dark .night-how.ok { background: rgba(48,209,88,.14); color: #F5F5F7; }
