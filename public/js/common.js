@@ -1090,7 +1090,7 @@
   };
 
   // ---------- maps ----------
-  // ---------- language: English or Kiswahili (translations live in i18n.js) ----------
+  // ---------- language: English, Luganda or Kiswahili (translations live in i18n.js) ----------
   K.lang = () => window.FLYTTE_LANG || 'en';
   K.setLang = (l) => { try { localStorage.setItem('flytte_lang', l); } catch {} location.reload(); };
 
@@ -1298,7 +1298,7 @@
           <p class="set-note">${t === 'auto' ? 'Follows your phone’s light or dark setting.' : t === 'dark' ? 'Easier on the eyes at night.' : 'The classic Flytte look.'}</p></div>
         <h3 class="set-h">Language</h3>
         <div class="set-card list" role="radiogroup" aria-label="Language">
-          ${[['en', 'English', 'English'], ['sw', 'Kiswahili', 'Swahili']].map(([k, n, sub]) => `<button class="set-row" role="radio" aria-checked="${l === k}" data-lang="${k}"><span class="grow"><b>${n}</b><small>${sub}</small></span>${l === k ? K.ic('check') : ''}</button>`).join('')}
+          ${[['en', 'English', 'English'], ['lg', 'Luganda', 'Oluganda'], ['sw', 'Kiswahili', 'Swahili']].map(([k, n, sub]) => `<button class="set-row" role="radio" aria-checked="${l === k}" data-lang="${k}"><span class="grow"><b>${n}</b><small>${sub}</small></span>${l === k ? K.ic('check') : ''}</button>`).join('')}
         </div>
         <h3 class="set-h">Legal</h3>
         <div class="set-card list">
