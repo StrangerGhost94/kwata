@@ -2038,3 +2038,70 @@ html.theme-dark:not(.launch-dark) .sp-icon.sp-gold { background: linear-gradient
 .faq-item[open] summary .i { transform: rotate(180deg); }
 .faq-item p { margin: 0 0 14px; color: var(--ink-2); font-size: .9rem; line-height: 1.45; }
 .rep-reply { display: block; margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: var(--surface); font-size: .85rem; }
+
+/* ---------- Activity: route drawings, month groups, rich trip detail ---------- */
+.act-h { display: flex; align-items: baseline; justify-content: space-between; margin: 18px 4px 8px; }
+.act-h b { font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.act-h .link-btn { color: var(--ink-2); font-weight: 700; }
+.tc { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px; margin-bottom: 8px; border: 0; border-radius: 18px; background: var(--card); color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+  animation: tc-in .42s var(--spring, cubic-bezier(.32,.72,0,1)) both; animation-delay: calc(var(--i, 0) * 35ms); }
+@keyframes tc-in { from { opacity: 0; transform: translateY(10px); } }
+.tc .grow { min-width: 0; display: grid; gap: 2px; }
+.tc b { font-size: .98rem; font-weight: 700; }
+.tc small { font-size: .78rem; color: var(--ink-2); }
+.tc .badge { justify-self: start; margin-top: 3px; }
+.tc-map { width: 64px; height: 64px; border-radius: 14px; overflow: hidden; flex: none; background: var(--surface); }
+.tc-p { display: grid; justify-items: end; gap: 6px; font-weight: 800; font-size: .92rem; white-space: nowrap; }
+.tc-face { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
+.tc-stars { color: #B8860B; font-weight: 700; }
+.sk-tc { cursor: default; animation: none; }
+.rthumb { width: 100%; height: 100%; display: block; }
+.rt-grid { stroke: var(--line); stroke-width: 3; fill: none; opacity: .7; }
+.rt-line-bg { stroke: var(--card); stroke-width: 5; fill: none; stroke-linecap: round; }
+.rt-line { stroke: var(--ink); stroke-width: 2.4; fill: none; stroke-linecap: round; }
+.rt-a { fill: var(--brand); stroke: var(--ink); stroke-width: 1.4; }
+.rt-b { fill: var(--ink); }
+.rt-stop { fill: var(--card); stroke: var(--ink); stroke-width: 1.4; }
+.td-map { height: 180px; margin: -6px -6px 14px; border-radius: 16px; overflow: hidden; background: var(--surface); }
+.timeline { list-style: none; margin: 12px 0 14px; padding: 0 0 0 4px; }
+.timeline li { position: relative; display: flex; justify-content: space-between; gap: 10px; padding: 0 0 12px 20px; font-size: .9rem; }
+.timeline li::before { content: ''; position: absolute; left: 0; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); }
+.timeline li::after { content: ''; position: absolute; left: 4px; top: 16px; bottom: -2px; width: 1.5px; background: var(--line); }
+.timeline li.last::after { display: none; }
+.timeline li.last::before { background: var(--go); }
+.timeline b { font-weight: 600; }
+.timeline span { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .tc { animation: none; } }
+
+/* ---------- Home: suggestion for right now, prices on tiles, calm offline, smooth cars ---------- */
+.sugg { display: flex; align-items: center; gap: 12px; width: 100%; margin: 12px 0 2px; padding: 12px 14px; border: 0; border-radius: 18px; background: var(--dark); color: #fff; font: inherit; text-align: left; cursor: pointer; animation: tc-in .4s var(--spring, cubic-bezier(.32,.72,0,1)) both; }
+.sugg .grow { min-width: 0; display: grid; gap: 1px; }
+.sugg small { font-size: .74rem; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: .04em; }
+.sugg b { font-size: 1.02rem; }
+.sugg-meta { font-size: .8rem; color: #D1D1D6; }
+.sugg-ic { width: 38px; height: 38px; border-radius: 12px; background: rgba(255,255,255,.12); display: grid; place-items: center; flex: none; }
+.sugg-ic .i, .sugg-go .i { color: #fff; }
+.tile-price { font-size: .68rem !important; font-weight: 700; color: var(--ink) !important; opacity: 1 !important; min-height: 0 !important; }
+.where-go .off-txt { display: none; }
+html.is-offline .where-go .on-txt { display: none; }
+html.is-offline .where-go .off-txt { display: inline; color: var(--ink-2); }
+html.is-offline .where-go { opacity: .75; }
+html.is-offline #map { filter: grayscale(.65) brightness(1.02); transition: filter .6s; }
+#map { transition: filter .6s; }
+.veh { transition: transform .9s cubic-bezier(.4,0,.2,1); will-change: transform; }
+@media (prefers-reduced-motion: reduce) { .veh, #map { transition: none; } .sugg { animation: none; } }
+
+/* Launch and sign-in photo follow the time of day: bright in the morning and day, golden at sunset,
+   city lights at night (the photo itself). */
+html.tod-morning .sp-photo img, html.tod-morning .auth-hero img { filter: brightness(1.18) saturate(1.08) sepia(.1); }
+html.tod-day .sp-photo img, html.tod-day .auth-hero img { filter: brightness(1.28) saturate(1.04) contrast(.94); }
+html.tod-evening .sp-photo img, html.tod-evening .auth-hero img { filter: brightness(1.06) saturate(1.2) sepia(.22); }
+
+/* One motion language: pages, sheets and dialogs move on the same spring. */
+.page, .overlay .modal, .overlay .drawer, .sheet { transition-timing-function: var(--spring, cubic-bezier(.32,.72,0,1)); animation-timing-function: var(--spring, cubic-bezier(.32,.72,0,1)); }
+/* Phones set to reduce motion get calm, instant changes everywhere. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+/* Split page in dark mode. */
+html.theme-dark .split-card { background: var(--card); }
