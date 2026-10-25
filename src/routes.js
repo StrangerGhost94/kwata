@@ -19,6 +19,8 @@ const { haversineKm: haversine } = require('./pricing');
 const r = express.Router();
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
+// "1.0.0 (a1b2c3d)": the release plus the deploy it came from, shown at the bottom of Account.
+const APP_VERSION = require('../package.json').version + ((process.env.RAILWAY_GIT_COMMIT_SHA || '') ? ` (${process.env.RAILWAY_GIT_COMMIT_SHA.slice(0, 7)})` : '');
 const baseUrl = (req) => process.env.PUBLIC_URL || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
 
 const clean = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -86,6 +88,7 @@ r.get('/config', wrap(async (req, res) => {
     emailReceipts: require('./email').enabled(),   // riders can add an email for trip receipts
     codeChannels: [...(wa.enabled() ? ['whatsapp'] : []), ...(tg.enabled() ? ['telegram'] : []), ...(sms.enabled() ? ['sms'] : [])], // where the code can be sent
     commissionPct: s.commissionPct,
+    version: APP_VERSION,
     supportPhone: supportPhone(s),
     minWithdrawal: s.minWithdrawal,
     stopFee: s.stopFee || 0,
@@ -513,7 +516,31 @@ r.post('/me/delete', auth.requireAuth('rider', 'driver'), limit(5, 10 * 60e3), w
 }));
 
 r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
-  const { name, email, emergencyContact, savedPlaces, payPref, payPhone } = req.body || {};
+  const { name, email, emergencyContact, savedPlaces, payPref, payPhone, photo, ridePrefs, nightShare } = req.body || {};
+  // Profile photo: a small JPEG the app resizes first; only the rider sees it, in their own account.
+  if (photo !== undefined) {
+    if (photo !== null && !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(String(photo))) return bad(res, 'Choose a photo (JPG or PNG).');
+    if (photo && photo.length > 120000) return bad(res, 'That photo is too large. Try another one.');
+    await db.query('UPDATE users SET photo = $1 WHERE id = $2', [photo, req.user.id]);
+  }
+  // Ride preferences used on every booking.
+  if (ridePrefs !== undefined) {
+    const p = ridePrefs || {};
+    const s = await getSettings();
+    const out = {
+      service: typeof p.service === 'string' && s.services[p.service] ? p.service : null,
+      womanDriver: p.womanDriver === true,
+      note: clean(p.note, 120) || null,
+    };
+    await db.query('UPDATE users SET ride_prefs = $1 WHERE id = $2', [JSON.stringify(out), req.user.id]);
+  }
+  // Night-time trip sharing: the emergency contact gets the live link by SMS for trips that start late.
+  if (nightShare !== undefined) {
+    const n = nightShare || {};
+    const from = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(n.from)) ? n.from : '21:00';
+    if (n.on && !(emergencyContact || req.user.emergency_contact)) return bad(res, 'Add an emergency contact first.');
+    await db.query('UPDATE users SET night_share = $1 WHERE id = $2', [JSON.stringify({ on: !!n.on, from }), req.user.id]);
+  }
   if (payPref !== undefined) {
     if (!['mtn', 'airtel', 'card', 'cash', 'wallet'].includes(payPref)) return bad(res, 'Choose a payment method.');
     await db.query('UPDATE users SET pay_pref = $1 WHERE id = $2', [payPref, req.user.id]);
@@ -530,13 +557,20 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
   if (savedPlaces && typeof savedPlaces === 'object') {
     let current = {};
     try { current = JSON.parse(req.user.saved_places || '{}'); } catch {}
-    for (const key of ['home', 'work']) {
-      if (savedPlaces[key] === null) delete current[key];
-      else if (savedPlaces[key]) {
-        const pt = point(savedPlaces[key]);
-        if (!pt) return bad(res, 'That place is outside our service area.');
-        current[key] = pt;
+    // Home, Work, and up to 10 places of the rider's own ("Mum's place", "Gym"): keys c + a short id.
+    for (const key of Object.keys(savedPlaces)) {
+      const custom = /^c[a-z0-9]{1,10}$/.test(key);
+      if (!['home', 'work'].includes(key) && !custom) continue;
+      if (savedPlaces[key] === null) { delete current[key]; continue; }
+      const pt = point(savedPlaces[key]);
+      if (!pt) return bad(res, 'That place is outside our service area.');
+      if (custom) {
+        const label = clean(savedPlaces[key].label, 30);
+        if (label.length < 2) return bad(res, 'Give the place a name, e.g. Mum’s place.');
+        if (!current[key] && Object.keys(current).filter((k) => k.startsWith('c')).length >= 10) return bad(res, 'You can save up to 10 places of your own.');
+        pt.label = label;
       }
+      current[key] = pt;
     }
     await db.query('UPDATE users SET saved_places = $1 WHERE id = $2', [JSON.stringify(current), req.user.id]);
   }
@@ -544,6 +578,72 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
     'UPDATE users SET name = COALESCE($1, name), emergency_contact = COALESCE($2, emergency_contact) WHERE id = $3 RETURNING *',
     [name ? clean(name, 80) : null, ec, req.user.id]);   // email changes go through /me/email (confirmed with a code)
   res.json({ user: auth.publicUser(u) });
+}));
+
+// ---------- Account ----------
+// Change phone number: a code goes to the NEW number (POST /auth/otp/send), and is confirmed here.
+r.post('/me/phone', auth.requireAuth(), limit(10, 10 * 60e3), wrap(async (req, res) => {
+  const p = auth.normalizePhone((req.body || {}).phone, auth.ccOf(req.user.phone));
+  const code = String((req.body || {}).code || '').replace(/\D/g, '');
+  if (!p) return bad(res, 'Enter a valid mobile number, e.g. 0772 123456.');
+  if (p === req.user.phone) return bad(res, 'That’s already your number.');
+  if (await db.one('SELECT id FROM users WHERE phone = $1', [p])) return bad(res, 'That number already has a Flytte account.');
+  if (code.length !== 6) return bad(res, 'Enter the 6-digit code.');
+  const wrong = await checkCode(p, code);
+  if (wrong) return bad(res, wrong);
+  const u = await db.one('UPDATE users SET phone = $1, pay_phone = CASE WHEN pay_phone = phone OR pay_phone IS NULL THEN $1 ELSE pay_phone END WHERE id = $2 RETURNING *', [p, req.user.id]);
+  res.json({ user: auth.publicUser(u) });
+}));
+
+// Signed-in devices: see them, sign one out, or sign out everywhere except this phone.
+r.get('/me/sessions', auth.requireAuth(), wrap(async (req, res) => {
+  const { rows } = await db.query('SELECT id, device, created_at, last_seen FROM sessions WHERE user_id = $1 AND revoked = FALSE ORDER BY last_seen DESC LIMIT 20', [req.user.id]);
+  res.json({ sessions: rows.map((s) => ({ id: s.id, device: s.device, since: s.created_at, lastSeen: s.last_seen, current: s.id === req.sid })), legacy: !req.sid });
+}));
+r.post('/me/sessions/:id/revoke', auth.requireAuth(), wrap(async (req, res) => {
+  if (req.params.id === req.sid) return bad(res, 'To sign out of this phone, use Log out.');
+  const s = await db.one('UPDATE sessions SET revoked = TRUE WHERE id = $1 AND user_id = $2 RETURNING id', [String(req.params.id), req.user.id]);
+  if (!s) return bad(res, 'That device is already signed out.', 404);
+  res.json({ ok: true });
+}));
+r.post('/me/sessions/revoke-others', auth.requireAuth(), wrap(async (req, res) => {
+  await db.query('UPDATE sessions SET revoked = TRUE WHERE user_id = $1 AND id <> $2', [req.user.id, req.sid || '']);
+  await db.query('UPDATE users SET signed_out_before = NOW() WHERE id = $1', [req.user.id]);   // older sign-ins without a session id too
+  // This phone keeps going: an older sign-in gets a fresh one with a session id.
+  const token = req.sid ? null : auth.issue(req, res, req.user);
+  res.json({ ok: true, token });
+}));
+
+// This month (or another) at a glance: trips, spending, savings, and the trips for a statement.
+r.get('/me/summary', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(req.query.month || ''));
+  const now = new Date(Date.now() + 3 * 3600e3);
+  const y = m ? +m[1] : now.getUTCFullYear(), mo = m ? +m[2] - 1 : now.getUTCMonth();
+  const from = new Date(Date.UTC(y, mo, 1) - 3 * 3600e3), to = new Date(Date.UTC(y, mo + 1, 1) - 3 * 3600e3);   // Kampala months
+  const { rows } = await db.query(`SELECT id, service, payment_method, fare, discount, tip, tip_method, pickup_address, drop_address, distance_km, completed_at
+    FROM trips WHERE rider_id = $1 AND status = 'completed' AND completed_at >= $2 AND completed_at < $3 ORDER BY completed_at DESC`, [req.user.id, from, to]);
+  const all = await db.one(`SELECT COUNT(*)::int AS n, COALESCE(SUM(distance_km), 0)::float AS km FROM trips WHERE rider_id = $1 AND status = 'completed'`, [req.user.id]);
+  const trips = rows.map((t) => ({ id: t.id, at: t.completed_at, service: t.service, method: t.payment_method, from: t.pickup_address, to: t.drop_address,
+    km: t.distance_km, fare: t.fare, discount: t.discount || 0, paid: t.fare - (t.discount || 0), tip: t.tip || 0 }));
+  const sum = (k) => trips.reduce((a, t) => a + (t[k] || 0), 0);
+  const byService = {};
+  for (const t of trips) byService[t.service] = (byService[t.service] || 0) + 1;
+  res.json({ month: `${y}-${String(mo + 1).padStart(2, '0')}`, trips, totals: { trips: trips.length, spent: sum('paid') + sum('tip'), saved: sum('discount'), tips: sum('tip'), km: Math.round(trips.reduce((a, t) => a + Number(t.km || 0), 0)) },
+    byService, allTime: { trips: all.n, km: Math.round(all.km), since: req.user.created_at } });
+}));
+
+// Reports from all trips, for the Help centre.
+r.get('/me/reports', auth.requireAuth(), wrap(async (req, res) => {
+  const { rows } = await db.query('SELECT id, trip_id, kind, details, status, reply, created_at FROM trip_issues WHERE user_id = $1 ORDER BY id DESC LIMIT 30', [req.user.id]);
+  res.json(rows.map((i) => ({ id: i.id, tripId: i.trip_id, kind: i.kind, details: i.details, status: i.status, reply: i.reply, at: i.created_at })));
+}));
+
+// "Rate Flytte": a few stars and an optional note, read by the team in Admin → Customer help.
+r.post('/feedback', auth.requireAuth(), limit(5, 3600e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
+  const stars = Math.round(Number((req.body || {}).stars));
+  if (!(stars >= 1 && stars <= 5)) return bad(res, 'Choose 1 to 5 stars.');
+  await db.query('INSERT INTO app_feedback(user_id, stars, note) VALUES ($1,$2,$3)', [req.user.id, stars, clean((req.body || {}).note, 500) || null]);
+  res.json({ ok: true });
 }));
 
 // ---------- Rider ----------
@@ -974,6 +1074,26 @@ r.post('/trips/:id/noshow', auth.requireAuth('driver'), wrap(async (req, res) =>
   res.json({ ok: true, fee });
 }));
 
+// Night-time sharing: when a trip starts late (from the rider's chosen time until 5 am, Kampala time),
+// their emergency contact gets the live link by SMS. Once per trip.
+const inNight = (from, now = new Date()) => {
+  const k = new Date(now.getTime() + 3 * 3600e3), mins = k.getUTCHours() * 60 + k.getUTCMinutes();
+  const [h, m] = String(from || '21:00').split(':').map(Number), start = h * 60 + m;
+  return mins >= start || mins < 5 * 60;
+};
+async function nightShare(tripId) {
+  const t = await rt.loadTrip(tripId);
+  if (!t || t.night_shared) return;
+  const u = await db.one('SELECT name, emergency_contact, night_share FROM users WHERE id = $1', [t.rider_id]);
+  let ns = null; try { ns = JSON.parse(u.night_share || 'null'); } catch {}
+  if (!ns || !ns.on || !u.emergency_contact || !inNight(ns.from)) return;
+  const done = await db.one('UPDATE trips SET night_shared = TRUE WHERE id = $1 AND night_shared = FALSE RETURNING id', [tripId]);
+  if (!done || !sms.enabled()) return;
+  const ride = ['car', 'comfort', 'airport'].includes(t.service) ? 'car' : 'boda';
+  const link = `${process.env.PUBLIC_URL || 'https://flytte.co'}/t/${t.share_token}`;
+  await sms.send(u.emergency_contact, `${String(u.name).split(' ')[0]} is on a Flytte ${ride} (${t.plate || ''}, driver ${String(t.driver_name || '').split(' ')[0]}) to ${String(t.drop_address).split(',')[0]}. Follow live: ${link}`);
+}
+
 r.post('/trips/:id/start', auth.requireAuth('driver'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'driver');
   if (!t) return;
@@ -981,6 +1101,7 @@ r.post('/trips/:id/start', auth.requireAuth('driver'), wrap(async (req, res) => 
   if (String((req.body || {}).pin || '').trim() !== t.pin) return bad(res, 'Wrong PIN. Ask the rider for the 4-digit PIN in their app.');
   await db.query("UPDATE trips SET status = 'in_progress', started_at = NOW() WHERE id = $1", [t.id]);
   await rt.broadcast(t.id);
+  nightShare(t.id).catch((e) => console.error('night share:', e.message));
   res.json({ ok: true });
 }));
 
@@ -1425,6 +1546,11 @@ r.post('/admin/changes/:id', admin, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+r.get('/admin/feedback', admin, wrap(async (req, res) => {
+  const { rows } = await db.query(`SELECT f.stars, f.note, f.created_at, u.name, u.phone FROM app_feedback f JOIN users u ON u.id = f.user_id ORDER BY f.id DESC LIMIT 100`);
+  const avg = await db.one('SELECT COUNT(*)::int AS n, COALESCE(AVG(stars), 0)::float AS avg FROM app_feedback');
+  res.json({ count: avg.n, average: Math.round(avg.avg * 10) / 10, items: rows.map((x) => ({ stars: x.stars, note: x.note, at: x.created_at, name: x.name, phone: x.phone })) });
+}));
 r.get('/admin/issues', admin, wrap(async (req, res) => {
   const { rows } = await db.query(`SELECT i.*, u.name, u.phone, t.pickup_address, t.drop_address, t.fare, t.payment_method, t.completed_at, t.created_at AS trip_at,
       t.rider_id, t.driver_id, ru.name AS rider_name, ru.phone AS rider_phone, du.name AS driver_name, du.phone AS driver_phone, dv.plate
