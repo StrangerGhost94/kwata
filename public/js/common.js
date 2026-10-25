@@ -1456,6 +1456,9 @@
     return sock;
   };
 
+  // "6:40 pm": how people in Kampala say the time.
+  K.clock = (d) => d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/^0/, '');
+
   K.share = async function (url, text) {
     if (navigator.share) { try { await navigator.share({ title: 'Flytte trip', text, url }); return; } catch {} }
     try { await navigator.clipboard.writeText(url); K.toast('Trip link copied'); }

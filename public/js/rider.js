@@ -980,8 +980,8 @@
         </div>
         ${extrasHtml(t)}
         <div class="fare-row"><span class="muted">Total fare</span><b>${fareHtml(t)}</b></div>
-        <div class="sheet-foot"><div class="row"><button class="btn fill" id="share">${K.ic('share', 'sm')} Share trip</button><button class="btn btn-danger-soft fill" id="sos" style="margin-top:0">${K.ic('sos', 'sm')} SOS</button></div></div>`;
-      K.$('#share').onclick = shareTrip;
+        <div class="sheet-foot"><div class="row"><button class="btn fill" id="share">${K.ic('send', 'sm')} Send arrival time</button><button class="btn btn-danger-soft fill" id="sos" style="margin-top:0">${K.ic('sos', 'sm')} SOS</button></div></div>`;
+      K.$('#share').onclick = shareEta;
       K.$('#sos').onclick = sos;
     } else {
       const arrived = t.status === 'arrived';
@@ -1363,6 +1363,20 @@
 
   // ---------- safety ----------
   const shareTrip = () => K.share(location.origin + '/t/' + S.trip.shareToken, `Follow my Flytte trip live: ${S.trip.driver.name}, ${S.trip.driver.plate}`);
+  // One tap: a WhatsApp message with the arrival time and the live link (the share sheet where WhatsApp isn't there).
+  function etaMessage(t, mins, now = new Date()) {
+    const link = location.origin + '/t/' + t.shareToken;
+    const ride = t.service === 'parcel' ? 'My Flytte parcel is' : `I’m on my way to ${t.drop.address} in a Flytte ${t.driver && t.driver.vehicleType === 'car' ? 'car' : 'boda'}.`;
+    if (t.service === 'parcel') {
+      return mins ? `${ride} on its way to ${t.drop.address}. It should arrive at about ${K.clock(new Date(now.getTime() + mins * 60e3))} (${mins} min). Follow it live: ${link}` : `${ride} on its way to ${t.drop.address}. Follow it live: ${link}`;
+    }
+    return mins ? `${ride} I’ll arrive at about ${K.clock(new Date(now.getTime() + mins * 60e3))} (${mins} min). Follow my trip live: ${link}` : `${ride} Follow my trip live: ${link}`;
+  }
+  function shareEta() {
+    const text = etaMessage(S.trip, S.trip.status === 'in_progress' ? tripMins() : null);
+    const w = window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
+    if (!w) K.share(location.origin + '/t/' + S.trip.shareToken, text);
+  }
   function openSafetySheet() {
     const t = S.trip;
     const m = K.modal(`<h2>Safety</h2>
