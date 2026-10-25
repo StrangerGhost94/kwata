@@ -87,6 +87,8 @@ app.get(['/admin', '/admin.html'], page('admin.html'));
 app.get(['/about', '/about.html'], page('about.html'));
 // The service worker must never be cached by the browser, or updates get stuck.
 app.get('/sw.js', (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.sendFile(path.join(__dirname, 'public', 'sw.js')); });
+// Inter, served from here (not Google): the same font on Android as the app's design, at once and offline.
+app.use('/fonts', express.static(path.join(__dirname, 'node_modules', '@fontsource-variable', 'inter', 'files'), { maxAge: '30d', immutable: true }));
 app.use('/vendor/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist'), { maxAge: '7d' }));
 app.use('/vendor/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist'), { maxAge: '7d' }));
 app.use('/vendor/maplibre-leaflet', express.static(path.join(__dirname, 'node_modules', '@maplibre', 'maplibre-gl-leaflet'), { maxAge: '7d' }));

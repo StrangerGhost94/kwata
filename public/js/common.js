@@ -17,6 +17,16 @@
   } catch {}
   K.KAMPALA = { lat: 0.3136, lng: 32.5811 };
 
+  // ---------- Android ----------
+  // Android phones get: the hardware/gesture Back closing what's on top (not leaving the app), firmer
+  // haptics, and on lighter phones solid surfaces instead of live blur.
+  K.android = /Android/i.test(navigator.userAgent);
+  if (K.android) {
+    document.documentElement.classList.add('android');
+    const mem = navigator.deviceMemory || 4, cores = navigator.hardwareConcurrency || 4;
+    if (mem <= 4 || cores <= 4) document.documentElement.classList.add('lite');
+  }
+
   K.PLACES = [
     { name: 'Entebbe International Airport', address: 'Entebbe', lat: 0.0424, lng: 32.4435, icon: 'plane' },
     { name: 'Acacia Mall', address: 'Kisementi, Kololo', lat: 0.33659, lng: 32.58773 },
@@ -292,6 +302,46 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), ms);
   };
 
+  // ---------- Back button ----------
+  // Every dialog, sheet page and tab page that opens gets a history entry, so Back (Android's button or
+  // gesture, or a browser's back) closes the top one instead of leaving Flytte. Closing it with its own
+  // button removes the entry again. On Android, Back at the home screen asks once before closing the app.
+  (function () {
+    if (!history.pushState || APP === 'admin') return;
+    const open = []; let skip = 0, lastRoot = 0;
+    const isLayer = (n) => n.nodeType === 1 && n.classList && (n.classList.contains('overlay') || n.classList.contains('page'));
+    const closeLayer = (el) => {
+      el._viaBack = true;
+      if (el.classList.contains('overlay')) el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      else if (el.dataset.tabpage) { const h = document.querySelector('[data-tab="home"]'); h ? h.click() : el.remove(); }
+      else { const x = el.querySelector('[data-x]'); x ? x.click() : el.remove(); }
+    };
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        m.addedNodes.forEach((n) => { if (isLayer(n) && !open.includes(n)) { open.push(n); history.pushState({ flytte: open.length }, ''); } });
+        m.removedNodes.forEach((n) => {
+          const i = open.indexOf(n); if (i < 0) return;
+          open.splice(i, 1);
+          if (!n._viaBack) { skip++; history.back(); }
+        });
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+    // Android: one entry under the app, so Back at the home screen can ask before leaving.
+    if (K.android) history.pushState({ flytte: 0 }, '');
+    addEventListener('popstate', () => {
+      if (skip) { skip--; return; }
+      const top = open[open.length - 1];
+      if (top) { closeLayer(top); return; }
+      if (!K.android) return;
+      if (K.onRootBack && K.onRootBack()) { history.pushState({ flytte: 0 }, ''); return; }   // e.g. leave "Choose a ride" for home
+      // First Back at the home screen: ask. A second Back within 2.5 s finds nothing left and closes the app;
+      // after that the question is armed again.
+      K.toast('Press back again to close Flytte', 2500);
+      clearTimeout(lastRoot);
+      lastRoot = setTimeout(() => { if (!open.length && document.visibilityState === 'visible') history.pushState({ flytte: 0 }, ''); }, 2500);
+    });
+  })();
+
   // ---------- connection status ----------
   // A calm banner while the phone has no connection; it disappears by itself when it's back.
   K.netBanner = (on, text) => {
@@ -319,7 +369,7 @@
   K.haptic = () => {
     try {
       if (K.reduced()) return;
-      if (navigator.vibrate) { navigator.vibrate(8); return; }
+      if (navigator.vibrate) { navigator.vibrate(K.android ? 16 : 8); return; }   // Android motors barely register 8 ms
       if (!/iP(hone|ad|od)/.test(navigator.userAgent)) return;
       if (!hapSw) {
         hapSw = document.createElement('label');

@@ -8,7 +8,7 @@
     "dev": "node --watch server.js",
     "test": "node test/payments.js && node test/e2e.js && node test/growth.js && node test/flows.js && node test/drivers.js && node test/identity.js && node test/otp.js && node test/account.js && node test/rating.js && node test/ux.js && node test/walletlock.js && node test/email.js && node test/session.js && node test/resilience.js && node test/places.js && node test/trust.js && node test/cancelfee.js && node test/woman.js && node test/stops.js && node test/split.js && node test/profile.js && node test/premium.js && node test/nightshare.js",
     "test:drivers": "node test/drivers.js",
-    "test:ui": "node test/ui.js",
+    "test:ui": "node test/ui.js && node test/android.js",
     "test:payments": "node test/payments.js",
     "test:flows": "node test/flows.js"
   },
@@ -17,6 +17,7 @@
   "license": "ISC",
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@fontsource-variable/inter": "^5.3.0",
     "@maplibre/maplibre-gl-leaflet": "^0.1.4",
     "@simplewebauthn/server": "^14.0.3",
     "bcryptjs": "^3.0.3",

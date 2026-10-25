@@ -617,8 +617,7 @@ body[data-app="rider"], body[data-app="driver"] { -webkit-text-size-adjust: 100%
 html.standalone, html.standalone body { height: 100%; overscroll-behavior: none; }
 html.standalone .app { position: fixed; inset: 0; }
 
-/* =====================================================================
-   iOS 26 "Liquid Glass"
+/* ==============================================================   iOS 26 "Liquid Glass"
    Frosted, translucent surfaces with a soft specular edge that let the
    map show through: floating capsule tab bar, glass chips and buttons
    over the map, dark glass banners, rounder sheets, capsule buttons.
@@ -2123,3 +2122,27 @@ html.theme-dark .night-card.ok { background: rgba(255,255,255,.06); border-color
 html.theme-dark .night-card small { color: #C7C7CC; }
 html.theme-dark .night-how { background: rgba(255,214,10,.12); color: #F5F5F7; }
 html.theme-dark .night-how.ok { background: rgba(48,209,88,.14); color: #F5F5F7; }
+=======
+
+/* Inter, served by Flytte itself (see server.js /fonts). iPhones keep the system font (first in --font);
+   Android and others get Inter straight away instead of Roboto, then a jump when Google's copy loads. */
+@font-face { font-family: 'Inter'; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url(/fonts/inter-latin-wght-normal.woff2) format('woff2-variations'), url(/fonts/inter-latin-wght-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Inter'; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url(/fonts/inter-latin-ext-wght-normal.woff2) format('woff2-variations'), url(/fonts/inter-latin-ext-wght-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+
+/* Lighter phones (most Androids under ~4 GB): solid surfaces instead of live blur, which costs frames there. */
+html.lite .tabbar, html.lite .hello-chip, html.lite .fab, html.lite .pill-chip, html.lite .drv-head, html.lite .trip-banner,
+html.lite .nav-back-btn, html.lite .page-head [data-x], html.lite .page-head [data-back], html.lite .modal, html.lite #toast, html.lite .sheet {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+html.lite .tabbar, html.lite .hello-chip, html.lite .fab, html.lite .pill-chip, html.lite .drv-head, html.lite .trip-banner,
+html.lite .page-head [data-x], html.lite .page-head [data-back], html.lite .modal { background: #FAFAFB !important; }
+html.lite.theme-dark .tabbar, html.lite.theme-dark .hello-chip, html.lite.theme-dark .fab, html.lite.theme-dark .pill-chip, html.lite.theme-dark .drv-head, html.lite.theme-dark .trip-banner,
+html.lite.theme-dark .page-head [data-x], html.lite.theme-dark .page-head [data-back], html.lite.theme-dark .modal { background: #1C1C1E !important; }
+html.lite .page-head::before, html.lite .nav-bar::before { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--edge-bg, var(--bg)); -webkit-mask-image: none; mask-image: none; }
+
+/* Home tiles: prices never wrap on narrow (360 px) phones. */
+.svc-t .tile-price { white-space: nowrap; letter-spacing: -.01em; }
+@media (max-width: 370px) { .svc-t .tile-price { font-size: .62rem !important; } .svc-t b { font-size: .8rem; } }
