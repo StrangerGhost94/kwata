@@ -318,7 +318,23 @@ async function migrate() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (trip_id, rider_id, kind)
   );
-  CREATE INDEX IF NOT EXISTS driver_reports_idx ON driver_reports(driver_id, created_at)`;
+  CREATE INDEX IF NOT EXISTS driver_reports_idx ON driver_reports(driver_id, created_at);
+  CREATE TABLE IF NOT EXISTS places (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_key TEXT NOT NULL,
+    lat DOUBLE PRECISION NOT NULL,
+    lng DOUBLE PRECISION NOT NULL,
+    uses INTEGER NOT NULL DEFAULT 0,
+    riders INTEGER NOT NULL DEFAULT 0,
+    last_used TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS places_key_idx ON places(name_key);
+  CREATE TABLE IF NOT EXISTS place_riders (
+    place_id INTEGER NOT NULL,
+    rider_id INTEGER NOT NULL,
+    PRIMARY KEY (place_id, rider_id)
+  )`;
   for (const s of statements.split(';').map((x) => x.trim()).filter(Boolean)) {
     await query(s);
   }
