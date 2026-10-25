@@ -545,7 +545,7 @@
     // Signed in: the launch screen is static, like a native one. It always stays long enough to
     // register (a split-second flash looks like a glitch), a little longer on the first open of the day.
     if (quick) sp.classList.add('repeat');
-    const wait = Math.max(0, (quick ? 800 : 1100) - (performance.now() - T0));
+    const wait = Math.max(0, (quick ? 450 : 700) - (performance.now() - T0));
     setTimeout(() => requestAnimationFrame(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 650); }), wait);
   };
 
@@ -557,7 +557,7 @@
     const photoReady = img && !img.complete ? Promise.race([img.decode().catch(() => {}), new Promise((r) => setTimeout(r, 1500))]) : Promise.resolve();
     // Hold the launch photo for a moment from the instant the app opened (not from when the script ran),
     // so the eye settles on it before it moves, even when the installed app loads slowly.
-    const hold = new Promise((r) => setTimeout(r, Math.max(350, (quick ? 1200 : 1700) - performance.now())));
+    const hold = new Promise((r) => setTimeout(r, Math.max(300, (quick ? 700 : 1100) - performance.now())));
     const pageReady = new Promise((r) => { const t0 = performance.now(); (function look() { const a = document.querySelector('.auth2'); if (a || performance.now() - t0 > 4000) r(a); else requestAnimationFrame(look); })(); });
     Promise.all([pageReady, photoReady, hold]).then(([auth]) => {
       if (!auth) { sp.classList.add('out'); setTimeout(() => sp.remove(), 300); return; }
@@ -1476,7 +1476,7 @@
     let startX = 0, x = 0, dragging = false, done = false;
     const max = () => el.clientWidth - knob.offsetWidth - 10;
     const set = (v) => { x = Math.max(0, Math.min(max(), v)); knob.style.transform = `translateX(${x}px)`; el.querySelector('.label').style.opacity = 1 - x / max(); };
-    const finish = () => { if (done) return; done = true; set(max()); onDone && onDone(); };
+    const finish = () => { if (done) return; done = true; set(max()); K.haptic(); onDone && onDone(); };
     knob.addEventListener('pointerdown', (e) => { dragging = true; startX = e.clientX - x; knob.setPointerCapture(e.pointerId); knob.style.transition = 'none'; });
     knob.addEventListener('pointermove', (e) => { if (dragging) set(e.clientX - startX); });
     knob.addEventListener('pointerup', () => {
@@ -1489,6 +1489,39 @@
     el.reset = () => { done = false; set(0); };
     return el;
   };
+
+  // The sheet glides to its new height when its content changes (a stop added, a new step), instead of
+  // jumping. Dragging moves the sheet with transform, so it never fights this.
+  K.smoothSheet = function (el) {
+    if (!window.ResizeObserver || !el.animate || el._smooth) return;
+    el._smooth = true;
+    let last = 0, anim = null;
+    new ResizeObserver(() => {
+      if (anim) return;                       // our own animation is resizing it
+      const h = el.offsetHeight;
+      if (last && h && Math.abs(h - last) > 24 && !K.reduced() && !document.hidden) {
+        const from = last;
+        el.style.overflow = 'hidden';
+        anim = el.animate([{ height: from + 'px' }, { height: h + 'px' }], { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' });
+        anim.onfinish = anim.oncancel = () => { anim = null; el.style.overflow = ''; last = el.offsetHeight; };
+      }
+      last = h;
+    }).observe(el);
+  };
+
+  // Something failed: say what happened and always offer a way forward (try again, plus an alternative).
+  K.failed = function (el, message, retry, alt) {
+    el.innerHTML = `<div class="err-state" role="alert"><span class="err-ic">${K.ic('refresh')}</span><p>${K.esc(message)}</p>
+      <div class="row">${retry ? '<button class="btn btn-primary fill" data-retry>Try again</button>' : ''}${alt ? `<button class="btn fill" data-alt-act>${K.esc(alt[0])}</button>` : ''}</div></div>`;
+    const r = el.querySelector('[data-retry]'); if (r) r.onclick = retry;
+    const a = el.querySelector("[data-alt-act]"); if (a) a.onclick = alt[1];
+  };
+
+  // Light taps on the actions that matter, app-wide: requesting, confirming, choosing, switching, rating.
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest && e.target.closest('.btn-primary, .btn-danger, .opt, .svc-t, .q-chip, [role=switch], [role=radio], .stars button');
+    if (t && !t.disabled) K.haptic();
+  }, true);
 
   // Bottom sheet you can drag down to reveal the map (and back up), with snap.
   // Bottom sheet with iOS-style physics: drag from anywhere on it, flick to snap, rubber-band at the ends.

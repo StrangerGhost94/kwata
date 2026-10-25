@@ -1947,3 +1947,48 @@ html.theme-dark:not(.launch-dark) .sp-icon.sp-gold { background: linear-gradient
 .stop.done .dot-stop { background: var(--go); }
 .stop-num { width: 22px; height: 22px; margin: 0 9px 0 6px; background: var(--ink); color: var(--bg); flex: none; }
 .stop-row { cursor: default; }
+
+/* Choose a ride: arrival time first, seats next to the name, one promo note, short list. */
+.opt .meta { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+.opt .meta b { color: var(--ink); font-weight: 700; }
+.opt-seats { font-size: .74rem; font-weight: 600; color: var(--ink-3); margin-left: 2px; }
+.opt.none { opacity: .55; }
+.opt.none[aria-pressed="true"] { opacity: 1; }
+.promo-band { display: flex; align-items: center; gap: 6px; margin: -4px 0 10px; padding: 7px 10px; border-radius: 10px; background: var(--brand-soft); color: var(--go); font-size: .8rem; font-weight: 700; }
+.more-opts { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; padding: 8px; border: 0; background: none; color: var(--ink-2); font-weight: 700; font-size: .85rem; cursor: pointer; }
+
+/* Trip: the plate is what riders look for on the street, so it leads; one compact trust line. */
+.driver-card .plate-chip { font-size: 1.05rem; padding: 5px 10px; letter-spacing: .05em; background: var(--surface); border: 1.5px solid var(--line); }
+.trust-row { margin-top: 4px; }
+.trip-banner .tb-face { width: 36px; height: 36px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: #2C2C2E; color: #fff; font-weight: 800; font-size: .8rem; flex: none; }
+.trip-banner .tb-face img { width: 100%; height: 100%; object-fit: cover; }
+.plate-mini { font-weight: 800; letter-spacing: .04em; background: var(--brand); color: var(--brand-ink); padding: 1px 6px; border-radius: 5px; }
+
+/* Home: up to 5 ride types fit on screen without a cut-off tile at the edge. */
+.svc-strip.fit { overflow: visible; gap: 8px; }
+.svc-strip.fit .svc-t { flex: 1 1 0; min-width: 0; }
+.svc-t b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-chip.add .t b { font-weight: 600; color: var(--ink-2); }
+
+/* Something failed: what happened, and a way forward. */
+.err-state { text-align: center; padding: 18px 6px 8px; }
+.err-state .err-ic { width: 44px; height: 44px; border-radius: 50%; background: var(--stop-soft); color: var(--stop); display: inline-grid; place-items: center; margin-bottom: 8px; }
+.err-state p { margin: 0 0 14px; color: var(--ink-2); font-weight: 500; }
+.err-state .row { gap: 8px; }
+
+/* Driver app: read at a glance in sunlight, on a bike mount. Bigger type and stronger contrast
+   where it matters most: the navigation banner, the main actions and the trip request. */
+[data-app="driver"] .trip-banner { padding: 12px 14px; }
+[data-app="driver"] .trip-banner b { font-size: 1.15rem; letter-spacing: -.01em; }
+[data-app="driver"] .trip-banner small { font-size: .92rem; color: var(--ink-2); font-weight: 600; opacity: 1; }
+[data-app="driver"] .trip-banner .btn-sm { min-height: 44px; padding: 0 16px; font-size: .95rem; }
+[data-app="driver"] .slider { height: 64px; }
+[data-app="driver"] .slider .knob { width: 54px; height: 54px; }
+[data-app="driver"] .slider .label { font-size: 1.12rem; }
+[data-app="driver"] .sheet-foot .btn-lg { min-height: 58px; font-size: 1.08rem; }
+[data-app="driver"] .stop b, [data-app="driver"] .driver-card .grow > b { font-size: 1.05rem; }
+[data-app="driver"] .stop small { font-size: .8rem; color: var(--ink-2); font-weight: 600; }
+[data-app="driver"] .fare-row b { font-size: 1.25rem; }
+[data-app="driver"] .req .est .est-side b { font-size: 17px; }
+
+.nowrap { white-space: nowrap; }

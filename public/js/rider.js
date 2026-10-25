@@ -56,7 +56,7 @@
       else if (e.target.closest('[data-face]')) showDriver();
       else if (e.target.closest('[data-split]')) openSplit();
     });
-    K.draggableSheet(sheet);
+    K.draggableSheet(sheet); K.smoothSheet(sheet);
     map = K.map('map');
     map.on('moveend', onPinMove);
     map.on('dragstart', () => { if (S.view === 'home') S.mapTouched = true; });
@@ -215,6 +215,13 @@
         <button class="round" id="bnShare" aria-label="Share trip">${K.ic('share')}</button></div>`;
       K.$('#bnSos').onclick = openSafetySheet;
       K.$('#bnShare').onclick = shareTrip;
+    } else if (v === 'trip' && S.trip.driver && ['accepted', 'arrived'].includes(S.trip.status)) {
+      // Before pickup, the countdown and plate stay in view on the map, where riders look.
+      const d = S.trip.driver, mins = tripMins(), here = S.trip.status === 'arrived';
+      tb.innerHTML = `<div class="trip-banner"><span class="round tb-face">${d.photo ? `<img src="${K.esc(d.photo)}" alt="">` : K.initials(d.name)}</span>
+        <span class="grow"><b>${K.esc(K.first(d.name))} · <span class="plate-mini">${K.esc(d.plate || '')}</span></b><small id="bnTxt">${here ? 'Here now · meet at the pickup' : mins ? `Here in ${mins} min` : 'On the way'}</small></span>
+        <button class="round" id="bnSos" aria-label="Safety">${K.ic('shield')}</button></div>`;
+      K.$('#bnSos').onclick = openSafetySheet;
     } else if (v === 'trip') {
       tb.innerHTML = `<span></span><button class="btn icon-btn fab" id="safeBtn" aria-label="Safety">${K.ic('shield')}</button>`;
       K.$('#safeBtn').onclick = openSafetySheet;
@@ -263,7 +270,7 @@
           <button class="when-pill ${S.when ? 'on' : ''}" id="homeWhen" aria-label="Pickup time">${K.ic('clock', 'sm')}<span>${S.when ? K.esc(whenLabel(S.when)) : 'Now'}</span>${K.ic('chevDown', 'sm')}</button>
         </div>
         <div class="quick" id="quickHost">${quickHtml()}</div>
-        <div class="svc-strip" id="svcStrip">${main.map((id) => `<button class="svc-t" data-svc="${id}"><span class="tile">${K.ART[id]}</span><b>${svcName(id)}</b><small data-eta="${id}">&nbsp;</small></button>`).join('')}</div>
+        <div class="svc-strip${main.length <= 5 ? ' fit' : ''}" id="svcStrip">${main.map((id) => `<button class="svc-t" data-svc="${id}"><span class="tile">${K.ART[id]}</span><b>${svcName(id)}</b><small data-eta="${id}">&nbsp;</small></button>`).join('')}</div>
         <div id="foldMark"></div>
         <div id="forYou">${forYouHtml()}</div>
         <div id="installHost"></div>
@@ -279,10 +286,13 @@
 
   function quickHtml() {
     const sp = S.user.savedPlaces || {};
-    const chip = (attrs, ic, label, sub) => `<button class="q-chip" ${attrs}><span class="ic">${K.ic(ic, 'sm')}</span><span class="t"><b>${K.esc(label)}</b>${sub ? `<small>${K.esc(sub)}</small>` : ''}</span></button>`;
-    return chip('data-place="home"', 'home', 'Home', sp.home ? shortName(sp.home.address) : 'Add') +
-      chip('data-place="work"', 'work', 'Work', sp.work ? shortName(sp.work.address) : 'Add') +
-      S.recent.slice(0, 3).map((r, i) => chip(`data-recent="${i}"`, 'clock', shorten(shortName(r.name), 22), '')).join('');
+    const chip = (attrs, ic, label, sub, cls = '') => `<button class="q-chip${cls}" ${attrs}><span class="ic">${K.ic(ic, 'sm')}</span><span class="t"><b>${K.esc(label)}</b>${sub ? `<small>${K.esc(sub)}</small>` : ''}</span></button>`;
+    // Saved places first, then recent destinations; "Add home/work" goes last once there are recents.
+    const set = (k) => !!sp[k];
+    const saved = ['home', 'work'].filter(set).map((k) => chip(`data-place="${k}"`, k, k === 'home' ? 'Home' : 'Work', shortName(sp[k].address)));
+    const recent = S.recent.slice(0, 3).map((r, i) => chip(`data-recent="${i}"`, 'clock', shorten(shortName(r.name), 22), ''));
+    const add = ['home', 'work'].filter((k) => !set(k)).map((k) => chip(`data-place="${k}"`, k, k === 'home' ? 'Home' : 'Work', 'Add', recent.length ? ' add' : ''));
+    return [...saved, ...(recent.length ? [...recent, ...add] : [...add])].join('');
   }
   function bindQuick() {
     sheet.querySelectorAll('[data-place]').forEach((b) => b.onclick = () => {
@@ -463,7 +473,11 @@
           res.innerHTML = found.length ? rows(found, kindIcon) + (found.partial ? '<p class="small faint" style="padding:8px 2px">Some places may be missing. Keep typing or set the spot on the map.</p>' : '')
             : `<p class="small muted" style="padding:12px 2px">No places found. Try a landmark or the area name.</p>`;
           bind();
-        } catch { if (seq === searchSeq) res.innerHTML = '<p class="error">Search is not responding. Check your connection.</p>'; }
+        } catch {
+          if (seq !== searchSeq) return;
+          K.failed(res, 'Search isn’t answering right now. Check your connection, or set the place on the map.', () => onInput(el),
+            ['Use the map', () => { showDefault(); const om = K.$('#onMap', page); if (om) om.click(); }]);
+        }
       }, 250);
     };
     qDrop.oninput = () => onInput(qDrop);
@@ -535,7 +549,7 @@
       if (!S.quote.options.find((o) => o.id === S.service)) setService(S.quote.options[0].id);
       showRoute();
       render();
-    } catch (e) { sheet.innerHTML = `<p class="error">${K.esc(e.message)}</p><button class="btn btn-block" id="b">Back</button>`; K.$('#b').onclick = reset; }
+    } catch (e) { sheet.innerHTML = '<div class="grabber"></div><div id="qErr"></div>'; K.failed(K.$('#qErr'), e.message, prepareQuote, ['Back', reset]); }
   }
 
   // Prices are locked for 2 minutes. If the rider is still deciding, quietly get a fresh lock.
@@ -573,8 +587,8 @@
 
   const surgeText = (o) => {
     const r = o.surgeReasons || [];
-    const why = r.includes('rain') && r.includes('demand') ? 'Rain and high demand' : r.includes('rain') ? 'Raining' : r.includes('demand') ? 'High demand nearby' : 'Busy right now';
-    return `↑ ${why} · fares ×${o.surge}`;
+    const why = r.includes('rain') && r.includes('demand') ? 'Rain, busy' : r.includes('rain') ? 'Raining' : r.includes('demand') ? 'High demand' : 'Busy now';
+    return `↑ ${why} · ×${o.surge}`;
   };
 
   // Scheduled rides are never surge-priced; discounts come off the price shown.
@@ -582,7 +596,7 @@
   const payOf = (o) => Math.max(0, baseOf(o) - (o.discount ? Math.min(o.discount, baseOf(o)) : 0));
   const priceHtml = (o) => {
     const base = baseOf(o), pay = payOf(o);
-    const was = pay < base ? base : (!S.when && o.surge > 1 && o.regularFare < o.fare ? o.regularFare : null);
+    const was = pay < base ? base : null;   // only a real discount is crossed out; busy-time pricing is explained on the card
     return `${was ? `<span class="was">${K.ugx(was)}</span>` : ''}<span class="${pay < base ? 'deal-price' : ''}">${K.ugx(pay)}</span>`;
   };
   const whenLabel = (d) => {
@@ -657,23 +671,36 @@
     const q = S.quote;
     const sel = q.options.find((o) => o.id === S.service);
     const p = pref(), P = PAY[p];
-    const meta = (o) => [o.etaMin != null ? `${o.etaMin} min` : 'No drivers nearby', o.seats ? `${o.seats} seat${o.seats > 1 ? 's' : ''}` : 'Up to 10 kg'].join(' · ');
+    // Arrival first: how soon the driver comes and when you'd get there. Seats sit next to the name.
+    const seats = (o) => (o.seats ? `${o.seats} seat${o.seats > 1 ? 's' : ''}` : 'Up to 10 kg');
+    const meta = (o) => o.etaMin == null ? 'No drivers nearby'
+      : `<b>${o.etaMin} min</b> <span class="nowrap">· drop-off ${K.clock(new Date(Date.now() + (o.etaMin + o.durationMin) * 60e3))}</span>`;
+    // One promo for every option (e.g. first ride 50% off) is said once, above the list.
+    const promos = [...new Set(q.options.filter((o) => o.discount).map((o) => o.promoLabel))];
+    const sharedPromo = promos.length === 1 && q.options.every((o) => o.discount) ? promos[0] : null;
+    // The 3 most useful options, plus the chosen one; the rest behind "More options".
+    const ranked = [...q.options].sort((a, b) => (a.etaMin == null) - (b.etaMin == null));
+    const shown = S.allOpts || q.options.length <= 3 ? q.options : q.options.filter((o) => o.id === S.service || ranked.slice(0, 3).includes(o)).slice(0, 4);
+    const hidden = q.options.length - shown.length;
     sheet.innerHTML = `
       <div class="grabber"></div>
       <div class="row" style="margin-bottom:12px;align-items:baseline"><h2 style="margin:0" class="grow">Choose a ride</h2>
         <span class="tiny muted">${[q.raining ? '🌧 Raining' : '', { rush: 'Rush hour traffic', busy: 'Busy roads', clear: 'Clear roads' }[q.traffic] || ''].filter(Boolean).join(' · ')}</span></div>
+      ${sharedPromo ? `<p class="promo-band">${K.ic('tag', 'sm')}<span>${K.esc(sharedPromo)} · applied to every ride</span></p>` : ''}
       <div class="opts" role="radiogroup" aria-label="Ride type">
-      ${q.options.map((o) => `
-        <button class="opt" data-s="${o.id}" aria-pressed="${o.id === S.service}">
+      ${shown.map((o) => `
+        <button class="opt${o.etaMin == null ? ' none' : ''}" data-s="${o.id}" aria-pressed="${o.id === S.service}">
           <span class="art">${K.artFor(o.id, o.vehicle)}</span>
-          <span class="grow"><span class="name" style="display:block">${K.esc(svcName(o.id))}</span>
-            <span class="meta">${meta(o)}</span>${o.surge > 1 && !S.when ? `<span class="surge" style="display:block">${surgeText(o)}</span>` : ''}${o.discount ? `<span class="deal" style="display:block">${K.ic('tag', 'sm')} ${K.esc(o.promoLabel)}</span>` : ''}</span>
+          <span class="grow"><span class="name" style="display:block">${K.esc(svcName(o.id))} <span class="opt-seats">${seats(o)}</span></span>
+            <span class="meta">${meta(o)}</span>${o.surge > 1 && !S.when ? `<span class="surge" style="display:block">${surgeText(o)}</span>` : ''}${o.discount && !sharedPromo ? `<span class="deal" style="display:block">${K.ic('tag', 'sm')} ${K.esc(o.promoLabel)}</span>` : ''}</span>
           <span class="price">${priceHtml(o)}</span>
           <span class="tick">${K.ic('check', 'sm')}</span>
         </button>`).join('')}
+      ${hidden > 0 ? `<button class="more-opts" id="moreOpts">More options (${hidden}) ${K.ic('chevDown', 'sm')}</button>` : ''}
       </div>
       <button class="payrow" id="pickRow" style="padding-bottom:4px"><span class="dot-pick" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Pickup</span><span class="ellipsis" id="pickLabel" style="display:block">${K.esc(S.pickup.address)}</span></span><span class="small muted">Change</span></button>
       ${(S.stops || []).map((x, i) => `<div class="payrow stop-row"><span class="stop-num" aria-hidden="true">${i + 1}</span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Stop ${i + 1}</span><span class="ellipsis" style="display:block">${K.esc(x.address)}</span></span><button class="btn icon-btn btn-ghost" data-rmstop="${i}" aria-label="Remove stop ${i + 1}">${K.ic('x', 'sm')}</button></div>`).join('')}
+      <button class="payrow" id="dropRow"><span class="dot-drop" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">${S.service === 'parcel' ? 'Deliver to' : 'To'}</span><span class="ellipsis" style="display:block">${K.esc(S.drop.address)}</span></span><span class="small muted">Change</span></button>
       ${S.service !== 'parcel' && (S.stops || []).length < 2 ? `<button class="payrow add-stop" id="addStop"><span class="paylogo note-ic">${K.ic('plus', 'sm')}</span><span class="grow">Add a stop<span class="tiny muted" style="display:block;font-weight:500">${K.ugx((S.config && S.config.stopFee) || 0)} per stop, plus the extra distance</span></span></button>` : ''}
       <button class="payrow note-row" id="noteBtn"><span class="paylogo note-ic">${K.ic('msg', 'sm')}</span><span class="grow ellipsis">${S.note ? K.esc(S.note) : '<span class="muted">Add a pickup note</span>'}</span>${S.note ? '<span class="small muted">Edit</span>' : K.ic('chev', 'sm')}</button>
       ${S.service === 'parcel' ? `<button class="payrow" id="parcelRow"><span class="paylogo wallet">${K.ic('gift', 'sm')}</span><span class="grow">${S.parcel ? `Package for ${K.esc(S.parcel.recipientName)}` : 'Add delivery details'}</span>${K.ic('chev', 'sm')}</button>` : ''}
@@ -691,6 +718,8 @@
       setService(b.dataset.s); showRoute(); render();
     });
     K.$('#payRow').onclick = () => openPayments({ onPick: render });
+    const mo = K.$('#moreOpts'); if (mo) mo.onclick = () => { S.allOpts = true; render(); };
+    K.$('#dropRow').onclick = () => openSearch();
     const asb = K.$('#addStop'); if (asb) asb.onclick = () => openSearch({ addStop: true });
     sheet.querySelectorAll('[data-rmstop]').forEach((b) => b.onclick = () => { S.stops.splice(+b.dataset.rmstop, 1); prepareQuote(); });
     K.$('#pickRow').onclick = () => { S.prevPickup = S.pickup ? { ...S.pickup } : null; S.view = 'pickup'; clearRoute(); map.setView([S.pickup.lat, S.pickup.lng], 18); render(); };
@@ -947,8 +976,8 @@
   const sinceText = (ym) => ym ? new Date(ym + '-01T12:00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '';
   const trustRow = (d) => {
     const c = d.checks || {};
-    const b = [c.id && 'ID checked', c.permit && 'Permit valid'].filter(Boolean).map((x) => `<span class="trust-b">${K.ic('check', 'sm')}<span>${x}</span></span>`);
-    return b.length ? `<span class="trust-row">${b.join('')}</span>` : '';
+    const label = c.id && c.permit ? 'ID & permit checked' : c.id ? 'ID checked' : c.permit ? 'Permit valid' : '';
+    return label ? `<span class="trust-row"><span class="trust-b">${K.ic('check', 'sm')}<span>${label}</span></span></span>` : '';
   };
   const facePhoto = (d) => d.photo ? `<button class="photo-btn" data-face aria-label="See ${K.esc(K.first(d.name))}’s photo">${photo(d)}</button>` : photo(d);
   function showDriver() {
@@ -1048,7 +1077,7 @@
       sheet.innerHTML = `
         <div class="grabber"></div>
         ${arrived ? `<div class="arrive-hero" role="status"><small>${K.esc(K.first(d.name))} is here · look for</small><b class="arrive-plate">${K.esc(d.plate || '')}</b><span>${K.esc(d.vehicle || svcName(t.service))}</span></div>`
-          : `<h2 style="font-size:1.15rem">Your ${who(t)} is on the way</h2>`}
+          : `<h2 style="font-size:1.15rem">${K.esc(K.first(d.name))} is on the way</h2>`}
         <div class="driver-card" style="margin-top:12px">${facePhoto(d)}
           <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))}</span>${trustRow(d)}</span>
           <span style="text-align:right"><span class="plate-chip">${K.esc(d.plate)}</span><span style="display:block;width:70px;height:44px;margin-top:4px">${K.artFor(t.service, d.vehicleType)}</span></span></div>
@@ -1359,7 +1388,7 @@
     else if (t.status === 'no_drivers') S.view = 'none';
     else if (t.status === 'cancelled') { if (t.cancelledBy === 'rider') { reset(); return; } S.view = 'none'; K.toast(`Your ${who(t)} cancelled. Try again.`); }
     if (prev !== t.status) {
-      if (t.status === 'accepted') { K.toast(`${K.first(t.driver.name)} is on the way`); vibrate(); loadMessages(); }
+      if (t.status === 'accepted') { vibrate(); loadMessages(); }   // the banner and headline already say who's coming
       if (t.status === 'arrived') { vibrate(); chime(); }
       if (t.status === 'completed') S.note = '';
     }
@@ -1379,7 +1408,7 @@
     const t = S.trip, target = t.status === 'in_progress' ? t.drop : t.pickup;
     const mins = K.etaMin(p, target);
     const et = K.$('#etaTxt'); if (et && t.status === 'accepted') et.textContent = `Arriving in ${mins} min`;
-    const bn = K.$('#bnTxt'); if (bn) bn.textContent = `Arriving in ${mins} min`;
+    const bn = K.$('#bnTxt'); if (bn) bn.textContent = t.status === 'in_progress' ? `Arriving in ${mins} min` : t.status === 'accepted' ? `Here in ${mins} min` : bn.textContent;
     const bar = K.$('#etaBar'); if (bar && phaseKm && t.status !== 'arrived') bar.style.width = Math.max(5, Math.min(100, 100 - (K.km(p, target) / phaseKm) * 100)) + '%';
   }
 
@@ -1512,7 +1541,7 @@
 
   function reset() {
     const hadTrip = !!S.trip;
-    S.view = 'home'; S.drop = null; S.quote = null; S.route = null; S.trip = null; S.rating = 0; S.parcel = null;
+    S.view = 'home'; S.drop = null; S.quote = null; S.route = null; S.trip = null; S.rating = 0; S.parcel = null; S.allOpts = false;
     S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false; S.womanDriver = false; S.stops = [];
     loadGrowth();
     S.messages = []; S.unread = 0; routedPhase = null; phaseKm = null;
@@ -1550,7 +1579,7 @@
     };
     sp.body.innerHTML = K.skeleton('list', 2);
     if (S.growth) draw(S.growth);
-    try { S.growth = await K.api('/me/growth'); draw(S.growth); } catch (e) { if (!S.growth) sp.body.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; }
+    try { S.growth = await K.api('/me/growth'); draw(S.growth); } catch (e) { if (!S.growth) K.failed(sp.body, e.message, async () => { try { S.growth = await K.api('/me/growth'); draw(S.growth); } catch (x) { K.toast(x.message); } }); }
   }
 
   async function openRewards(onBack) {
@@ -1604,7 +1633,7 @@
     };
     sp.body.innerHTML = K.skeleton('list', 2);
     if (S.growth) draw(S.growth);
-    try { S.growth = await K.api('/me/growth'); draw(S.growth); } catch (e) { if (!S.growth) sp.body.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; }
+    try { S.growth = await K.api('/me/growth'); draw(S.growth); } catch (e) { if (!S.growth) K.failed(sp.body, e.message, async () => { try { S.growth = await K.api('/me/growth'); draw(S.growth); } catch (x) { K.toast(x.message); } }); }
   }
 
   // ---------- tabs: activity & account (screens 11–13) ----------
