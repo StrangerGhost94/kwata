@@ -24,7 +24,11 @@ async function loadTrip(id) {
       dv.plate, dv.vehicle_make, dv.vehicle_color, dv.vehicle_type,
       (SELECT COUNT(*)::int FROM trips x WHERE x.driver_id = t.driver_id AND x.status = 'completed') AS d_trips,
       (SELECT COUNT(*)::int FROM trips x WHERE x.rider_id = t.rider_id AND x.status = 'completed') AS r_trips,
-      (SELECT dd.created_at FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'photo') AS d_photo
+      (SELECT dd.created_at FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'photo') AS d_photo,
+      EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'national_id') AS d_has_id,
+      EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'license') AS d_has_permit,
+      (SELECT dd.expires_on FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'license') AS d_permit_exp,
+      dv.status AS d_status, dv.created_at AS d_since
     FROM trips t
     JOIN users r ON r.id = t.rider_id
     LEFT JOIN users d ON d.id = t.driver_id
@@ -33,6 +37,19 @@ async function loadTrip(id) {
 }
 
 const rating = (s, c) => (c ? Math.round((s / c) * 10) / 10 : null);
+
+// What riders are shown about a driver's checks. "ID checked": a National ID is on file and the Flytte
+// team approved the driver. "Permit valid": a driving permit is on file and its expiry date hasn't passed.
+function driverChecks(t) {
+  const approved = t.d_status === 'approved';
+  const exp = t.d_permit_exp ? new Date(t.d_permit_exp) : null;
+  const today = new Date(new Date().toISOString().slice(0, 10));
+  return {
+    id: approved && !!t.d_has_id,
+    permit: approved && !!t.d_has_permit && (!exp || exp >= today),
+    since: t.d_since ? new Date(t.d_since).toISOString().slice(0, 7) : null,   // "2026-10"
+  };
+}
 
 // role: 'rider' | 'driver' | 'admin' | 'public'
 function view(t, role) {
@@ -57,6 +74,7 @@ function view(t, role) {
       photo: t.d_photo ? `/api/drivers/${t.driver_id}/photo?v=${new Date(t.d_photo).getTime()}` : null, // a newly approved photo shows straight away
       plate: t.plate, vehicle: [t.vehicle_color, t.vehicle_make].filter(Boolean).join(' '), vehicleType: t.vehicle_type,
       location: live && live.lat ? { lat: live.lat, lng: live.lng, heading: live.heading } : null,
+      checks: driverChecks(t),
     } : null,
   };
   if (role === 'public') {
@@ -65,7 +83,7 @@ function view(t, role) {
     delete v.discount; delete v.payable; delete v.promoLabel; delete v.tip; delete v.tipMethod; delete v.noShowFee;
     if (v.passenger) v.rider = { name: String(v.passenger.name).split(' ')[0] };
     delete v.passenger;
-    if (v.driver) v.driver = { name: t.driver_name, plate: t.plate, vehicle: v.driver.vehicle, vehicleType: t.vehicle_type, photo: v.driver.photo, location: v.driver.location };
+    if (v.driver) v.driver = { name: t.driver_name, plate: t.plate, vehicle: v.driver.vehicle, vehicleType: t.vehicle_type, photo: v.driver.photo, location: v.driver.location, checks: v.driver.checks };
     return v;
   }
   v.rider = { id: t.rider_id, name: t.rider_name, rating: rating(t.r_rs, t.r_rc), trips: t.r_trips };

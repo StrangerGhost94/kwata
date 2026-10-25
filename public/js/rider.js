@@ -50,7 +50,11 @@
         </nav>
       </div>`;
     sheet = K.$('#sheet');
-    sheet.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-report]') && S.trip && S.trip.driver) reportMismatch(); });
+    sheet.addEventListener('click', (e) => {
+      if (!e.target.closest || !S.trip || !S.trip.driver) return;
+      if (e.target.closest('[data-report]')) reportMismatch();
+      else if (e.target.closest('[data-face]')) showDriver();
+    });
     K.draggableSheet(sheet);
     map = K.map('map');
     map.on('moveend', onPinMove);
@@ -881,6 +885,33 @@
     return K.etaMin(t.driver.location, t.status === 'in_progress' ? t.drop : t.pickup);
   }
   const photo = (d, cls = 'photo') => `<span class="${cls}">${d.photo ? `<img src="${K.esc(d.photo)}" alt="">` : K.initials(d.name)}</span>`;
+  // What Flytte checked about the driver, shown before pickup (see driverChecks in src/realtime.js).
+  const sinceText = (ym) => ym ? new Date(ym + '-01T12:00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '';
+  const trustRow = (d) => {
+    const c = d.checks || {};
+    const b = [c.id && 'ID checked', c.permit && 'Permit valid'].filter(Boolean).map((x) => `<span class="trust-b">${K.ic('check', 'sm')}<span>${x}</span></span>`);
+    return b.length ? `<span class="trust-row">${b.join('')}</span>` : '';
+  };
+  const facePhoto = (d) => d.photo ? `<button class="photo-btn" data-face aria-label="See ${K.esc(K.first(d.name))}’s photo">${photo(d)}</button>` : photo(d);
+  function showDriver() {
+    const t = S.trip, d = t && t.driver; if (!d) return;
+    const c = d.checks || {};
+    const item = (ok, label) => `<div class="trust-li${ok ? '' : ' off'}">${K.ic(ok ? 'check' : 'info', 'sm')}<span>${label}</span></div>`;
+    const m = K.modal(`<div class="face-card">
+        ${d.photo ? `<img class="face-big" src="${K.esc(d.photo)}" alt="Photo of ${K.esc(d.name)}">` : `<span class="face-big face-none">${K.initials(d.name)}</span>`}
+        <h2>${K.esc(d.name)}</h2>${stars(d.rating, d.trips)}
+        <div class="face-plate"><span class="plate-chip">${K.esc(d.plate || '')}</span><span class="small muted">${K.esc(d.vehicle || svcName(t.service))}</span></div>
+        <div class="trust-list">
+          ${item(c.id, c.id ? 'National ID checked by Flytte' : 'ID not checked yet')}
+          ${item(c.permit, c.permit ? 'Driving permit on file and valid' : 'Driving permit not confirmed')}
+          ${c.since ? item(true, `Driving with Flytte since ${sinceText(c.since)}`) : ''}
+        </div>
+        <p class="small muted">Make sure the face and plate match before you get on.</p>
+        <button class="btn" data-close>Looks right</button>
+        <button class="link-report" data-mismatch>Driver or plate doesn’t match?</button>
+      </div>`);
+    K.$('[data-mismatch]', m.el).onclick = () => { m.close(); reportMismatch(); };
+  }
   const stars = (r, n) => `<span class="rating"><span class="star-ic">★</span><b>${r || 'New'}</b>${n ? ` (${n} trip${n > 1 ? 's' : ''})` : ''}</span>`;
   const pinDigits = (pin) => `<span class="pin-code" aria-label="PIN ${pin}">${String(pin).split('').map((d) => `<span>${d}</span>`).join('')}</span>`;
 
@@ -938,8 +969,8 @@
     if (t.status === 'in_progress') {
       sheet.innerHTML = `
         <div class="grabber"></div>
-        <div class="driver-card">${photo(d)}
-          <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))} · <span class="plate-chip">${K.esc(d.plate)}</span></span></span>
+        <div class="driver-card">${facePhoto(d)}
+          <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))} · <span class="plate-chip">${K.esc(d.plate)}</span></span>${trustRow(d)}</span>
           ${callBtn('round go')}<button class="round brand" id="chatBtn" aria-label="Message">${K.ic('msg')}</button></div>
         <button class="link-report" data-report>Driver or plate doesn’t match?</button>
         <div class="bar" style="margin:14px 0 4px"><i id="etaBar" style="width:${pct}%"></i></div>
@@ -958,8 +989,8 @@
         <div class="grabber"></div>
         ${arrived ? `<div class="arrive-hero" role="status"><small>${K.esc(K.first(d.name))} is here · look for</small><b class="arrive-plate">${K.esc(d.plate || '')}</b><span>${K.esc(d.vehicle || svcName(t.service))}</span></div>`
           : `<h2 style="font-size:1.15rem">Your ${who(t)} is on the way</h2>`}
-        <div class="driver-card" style="margin-top:12px">${photo(d)}
-          <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))}</span></span>
+        <div class="driver-card" style="margin-top:12px">${facePhoto(d)}
+          <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))}</span>${trustRow(d)}</span>
           <span style="text-align:right"><span class="plate-chip">${K.esc(d.plate)}</span><span style="display:block;width:70px;height:44px;margin-top:4px">${K.artFor(t.service, d.vehicleType)}</span></span></div>
         <button class="link-report" data-report>Driver or plate doesn’t match?</button>
         <div class="eta-line"><span id="etaTxt">${arrived ? `Meet ${K.esc(K.first(d.name))} now` : mins ? `Arriving in ${mins} min` : 'On the way'}</span><span class="small muted" style="font-weight:600">${t.service === 'parcel' ? 'Parcel pickup' : 'Pickup'}</span></div>
