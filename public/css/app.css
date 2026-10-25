@@ -2146,3 +2146,11 @@ html.lite .page-head::before, html.lite .nav-bar::before { -webkit-backdrop-filt
 /* Home tiles: prices never wrap on narrow (360 px) phones. */
 .svc-t .tile-price { white-space: nowrap; letter-spacing: -.01em; }
 @media (max-width: 370px) { .svc-t .tile-price { font-size: .62rem !important; } .svc-t b { font-size: .8rem; } }
+
+/* On the trip: the plate in full colour on its own line (not greyed with the vehicle text), and
+   "Send arrival time" on one line, with SOS only as wide as it needs to be. */
+.driver-card .plate-inline { display: inline-block; margin-top: 4px; color: var(--ink); }
+.trip-acts-row .btn { white-space: nowrap; }
+.trip-acts-row .sos-btn { flex: 0 0 auto; padding-left: 20px; padding-right: 20px; }
+.trip-acts-row #share { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 370px) { .trip-acts-row .btn { padding-left: 12px; padding-right: 12px; gap: 6px; } .trip-acts-row .sos-btn { padding-left: 14px; padding-right: 14px; } }
