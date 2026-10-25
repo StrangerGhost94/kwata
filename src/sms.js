@@ -2,7 +2,8 @@
 // Set EGOSMS_USERNAME and EGOSMS_PASSWORD (Comms → Settings → API Settings) in Railway → Variables, and
 // EGOSMS_SENDER once your sender ID (e.g. Flytte) is approved; until then the account's default senders are used.
 // Without them, a live server keeps password sign-in; a local server prints codes in its log instead.
-const LIVE = !!process.env.DATABASE_URL || process.env.NODE_ENV === 'production';
+// SMS_DEMO=false makes a local server behave like the live site without keys (used by the tests).
+const LIVE = !!process.env.DATABASE_URL || process.env.NODE_ENV === 'production' || process.env.SMS_DEMO === 'false';
 const URL = process.env.EGOSMS_URL || 'https://comms.egosms.co/api/v1/json/'; // EgoSMS Comms API (developers.pahappa.com)
 
 const configured = () => !!(process.env.EGOSMS_USERNAME && process.env.EGOSMS_PASSWORD);

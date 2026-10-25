@@ -183,6 +183,17 @@
     'Tips, fees & bonuses': 'Obusiimo, ebisale ne bonaasi', 'Cash collected': 'Ssente enkalu z’ofunye', 'Balance you can cash out': 'Ssente z’osobola okuggyayo', 'Cash out': 'Ggyayo ssente', 'Completed trips': 'Engendo eziwedde', 'Statement': 'Lipoota', 'Download CSV': 'Wanula CSV',
     'Complete your first trip to see earnings here.': 'Maliriza olugendo lwo olusooka olabe ssente z’ofunye wano.', 'No trips in this period yet.': 'Tewali ngendo mu kiseera kino.',
     'Mon': 'Bbal', 'Tue': 'Lw2', 'Wed': 'Lw3', 'Thu': 'Lw4', 'Fri': 'Lw5', 'Sat': 'Lw6', 'Sun': 'Ssab',
+    "Night trip shared by SMS": "Olugendo lw’ekiro lugabanyiziddwa ku SMS",
+    "Send again": "Ddamu osindike",
+    "Opened in WhatsApp": "Kiggiddwawo mu WhatsApp",
+    "Texts go automatically by SMS.": "Obubaka bugenda bwokka ku SMS.",
+    "Texts aren’t switched on yet. When a night trip starts, Flytte tells you straight away and you send it on WhatsApp with one tap.": "Obubaka bwa SMS tebunnakolezebwa. Olugendo lw’ekiro bwe lutandika, Flytte ekutegeeza amangu ddala n’olusindika ku WhatsApp ng’okoonye omulundi gumu.",
+    "Until 5 am, Kampala time. Once per trip.": "Okutuusa ssaawa kkumi n’emu ez’okumakya, essaawa za Kampala. Omulundi gumu buli lugendo.",
+    "Texts aren’t switched on yet. One tap sends your driver, plate and live link on WhatsApp.": "Obubaka bwa SMS tebunnakolezebwa. Okukoona omulundi gumu kisindika omuvuzi wo, ennamba ya pulati ne link y’olugendo ku WhatsApp.",
+    "The text didn’t go through. One tap sends your driver, plate and live link on WhatsApp.": "SMS tetuuse. Okukoona omulundi gumu kisindika omuvuzi wo, ennamba ya pulati ne link y’olugendo ku WhatsApp.",
+    "We couldn’t share it automatically. One tap sends your driver, plate and live link on WhatsApp.": "Tetusobodde kulugabana tokka. Okukoona omulundi gumu kisindika omuvuzi wo, ennamba ya pulati ne link y’olugendo ku WhatsApp.",
+    "Night trips will be shared": "Engendo z’ekiro zijja kugabanyizibwa",
+    "Night sharing is off": "Okugabana engendo z’ekiro kuggaddwa",
   };
   const LG_DAYS = { Mon: 'Bbal', Tue: 'Lw2', Wed: 'Lw3', Thu: 'Lw4', Fri: 'Lw5', Sat: 'Lw6', Sun: 'Ssab' };
   const LG_LEVEL = { Bronze: 'Ekikomo', Silver: 'Ffeeza', Gold: 'Zaabu' };
@@ -231,6 +242,12 @@
     [/^(.+) accepted$/, (m) => `${m[1]} akkirizza`],
     [/^From (.+)$/, (m) => `Okuva ${m[1]}`],
     [/^(.+) · (UGX [\d,]+) · about (\d+) min$/, (m) => `${m[1]} · ${m[2]} · ng’eddakiika ${m[3]}`],
+    // Night-time sharing
+    [/^Send your trip to (.+)$/, (m) => `Sindika olugendo lwo eri ${m[1]}`],
+    [/^(.+) got your driver, plate and live link\.$/, (m) => `${m[1]} afunye omuvuzi wo, ennamba ya pulati ne link y’olugendo.`],
+    [/^On from (\d\d:\d\d) · texted automatically$/, (m) => `Kikola okuva ${m[1]} · kisindikibwa kyokka`],
+    [/^On from (\d\d:\d\d) · one tap on WhatsApp$/, (m) => `Kikola okuva ${m[1]} · okukoona omulundi gumu ku WhatsApp`],
+    [/^When a trip starts late, (.+) gets your driver, plate and live link\. Only you can turn it off\.$/, (m) => `Olugendo bwe lutandika ekiro, ${m[1]} afuna omuvuzi wo, ennamba ya pulati ne link y’olugendo. Ggwe wekka ayinza okukiggyako.`],
   ];
 
 
@@ -462,6 +479,17 @@
     'Complete your first trip to see earnings here.': 'Kamilisha safari yako ya kwanza uone mapato hapa.',
     'No trips in this period yet.': 'Bado hakuna safari katika kipindi hiki.',
     'Mon': 'Jtt', 'Tue': 'Jnn', 'Wed': 'Jtn', 'Thu': 'Alh', 'Fri': 'Iju', 'Sat': 'Jms', 'Sun': 'Jpl',
+    "Night trip shared by SMS": "Safari ya usiku imeshirikiwa kwa SMS",
+    "Send again": "Tuma tena",
+    "Opened in WhatsApp": "Imefunguliwa kwenye WhatsApp",
+    "Texts go automatically by SMS.": "Ujumbe hutumwa kwa SMS moja kwa moja.",
+    "Texts aren’t switched on yet. When a night trip starts, Flytte tells you straight away and you send it on WhatsApp with one tap.": "Ujumbe wa SMS bado haujawashwa. Safari ya usiku ikianza, Flytte itakujulisha mara moja na utaituma kwa WhatsApp kwa kugusa mara moja.",
+    "Until 5 am, Kampala time. Once per trip.": "Hadi saa 11 alfajiri, saa za Kampala. Mara moja kwa kila safari.",
+    "Texts aren’t switched on yet. One tap sends your driver, plate and live link on WhatsApp.": "Ujumbe wa SMS bado haujawashwa. Kugusa mara moja kunatuma dereva wako, namba ya gari na kiungo cha safari kwa WhatsApp.",
+    "The text didn’t go through. One tap sends your driver, plate and live link on WhatsApp.": "Ujumbe haukufika. Kugusa mara moja kunatuma dereva wako, namba ya gari na kiungo cha safari kwa WhatsApp.",
+    "We couldn’t share it automatically. One tap sends your driver, plate and live link on WhatsApp.": "Hatukuweza kuishiriki moja kwa moja. Kugusa mara moja kunatuma dereva wako, namba ya gari na kiungo cha safari kwa WhatsApp.",
+    "Night trips will be shared": "Safari za usiku zitashirikiwa",
+    "Night sharing is off": "Kushiriki safari za usiku kumezimwa",
   };
   // Phrases with numbers or names in them.
   const DAYS = { Mon: 'Jtt', Tue: 'Jnn', Wed: 'Jtn', Thu: 'Alh', Fri: 'Iju', Sat: 'Jms', Sun: 'Jpl' };
@@ -510,6 +538,12 @@
     [/^(.+) accepted$/, (m) => `${m[1]} amekubali`],
     [/^From (.+)$/, (m) => `Kutoka ${m[1]}`],
     [/^(.+) · (UGX [\d,]+) · about (\d+) min$/, (m) => `${m[1]} · ${m[2]} · takriban dakika ${m[3]}`],
+    // Night-time sharing
+    [/^Send your trip to (.+)$/, (m) => `Tuma safari yako kwa ${m[1]}`],
+    [/^(.+) got your driver, plate and live link\.$/, (m) => `${m[1]} amepokea dereva wako, namba ya gari na kiungo cha safari.`],
+    [/^On from (\d\d:\d\d) · texted automatically$/, (m) => `Imewashwa kuanzia ${m[1]} · inatumwa moja kwa moja`],
+    [/^On from (\d\d:\d\d) · one tap on WhatsApp$/, (m) => `Imewashwa kuanzia ${m[1]} · gusa mara moja kwa WhatsApp`],
+    [/^When a trip starts late, (.+) gets your driver, plate and live link\. Only you can turn it off\.$/, (m) => `Safari ikianza usiku, ${m[1]} atapokea dereva wako, namba ya gari na kiungo cha safari. Ni wewe tu unayeweza kuizima.`],
   ];
   const DICT = lang === 'lg' ? LG : SW, PATS = lang === 'lg' ? LG_PAT : PAT;
   const tr = (t) => {

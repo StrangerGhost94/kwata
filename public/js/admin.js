@@ -113,6 +113,7 @@
         <div class="kpi"><span class="small muted">Live trips</span><b>${s.activeTrips}</b></div>
         <div class="kpi"><span class="small muted">Riders</span><b>${s.riders}</b></div>
       </div>
+      ${nightShareBlock(s.nightShare)}
       <h2>Live map</h2>
       <p class="small muted">Black vehicles are free drivers, gold markers are drivers on a trip, white circles are riders waiting.</p>
       <div id="liveMap"></div>
@@ -127,6 +128,22 @@
     liveLayer = L.layerGroup().addTo(liveMap);
     await loadLive();
     liveTimer = setInterval(loadLive, 5000);
+  }
+
+  // Night-trip sharing: whether SMS is set up, and what went out since Monday (Kampala time).
+  function nightShareBlock(n) {
+    if (!n) return '';
+    const w = n.week || {};
+    const state = n.sms === 'live' ? `<b style="color:var(--go)">SMS is on</b><span class="small muted">EgoSMS keys are set${n.senderId ? ' · own sender ID' : ' · default sender'}</span>`
+      : n.sms === 'demo' ? '<b>Test mode</b><span class="small muted">Local server: texts are printed in the log</span>'
+      : '<b style="color:var(--stop)">SMS is off</b><span class="small muted">Add EGOSMS_USERNAME and EGOSMS_PASSWORD in Railway. Riders get a one-tap WhatsApp send meanwhile.</span>';
+    return `<h2 style="margin-top:24px">Night-trip sharing</h2>
+      <div class="kpis" id="nightShareKpis">
+        <div class="kpi"><span class="small muted">Texts</span>${state}</div>
+        <div class="kpi"><span class="small muted">Sent by SMS this week</span><b>${w.sms || 0}</b></div>
+        <div class="kpi"><span class="small muted">Offered on WhatsApp this week</span><b>${w.whatsapp || 0}</b><span class="small muted">${w.opened || 0} opened by the rider</span></div>
+        <div class="kpi"><span class="small muted">Failed this week</span><b>${w.failed || 0}</b></div>
+      </div>`;
   }
 
   async function loadLive() {

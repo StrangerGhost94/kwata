@@ -1109,6 +1109,38 @@
     });
   }
 
+  // Night-time sharing on the trip screen. Texted by SMS: a quiet line. Not texted (SMS not set up or it
+  // failed): "Send your trip to <contact>" with a one-tap WhatsApp send of the same message and live link.
+  const WA_IC = '<svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z"/></svg>';
+  function nightCard(t) {
+    const n = t.nightShare;
+    if (!n) return '';
+    const who = n.contact ? prettyPhone(n.contact) : 'your emergency contact';
+    if (n.status === 'sms') return `<p class="night-card ok" id="nightCard" role="status">${K.ic('check', 'sm')}<span><b>Night trip shared by SMS</b><small>${K.esc(who)} got your driver, plate and live link.</small></span></p>`;
+    const why = n.reason === 'sms_error' ? 'The text didn’t go through.' : n.status === 'failed' ? 'We couldn’t share it automatically.' : 'Texts aren’t switched on yet.';
+    return `<div class="night-card" id="nightCard" role="status">
+      <span class="nc-ic">${K.ic('clock', 'sm')}</span>
+      <span class="grow"><b>Send your trip to ${K.esc(who)}</b><small>${why} One tap sends your driver, plate and live link on WhatsApp.</small>
+        ${n.opened ? '<small class="nc-done">Opened in WhatsApp</small>' : ''}</span>
+      ${n.whatsapp ? `<button class="btn nc-wa" id="nsWa">${WA_IC}${n.opened ? 'Send again' : 'Send on WhatsApp'}</button>` : ''}</div>`;
+  }
+  function sendNightWhatsApp(t) {
+    const n = t.nightShare;
+    if (!n || !n.whatsapp) return;
+    const w = window.open(n.whatsapp, '_blank', 'noopener');
+    if (!w) location.href = n.whatsapp;
+    if (!n.opened) K.api(`/trips/${t.id}/night-share/opened`, {}).catch(() => {});
+  }
+  // Told once per trip, as soon as the trip screen hears it wasn't texted.
+  function nightToast(t) {
+    const n = t.nightShare;
+    if (!n || n.status === 'sms' || n.opened || !n.whatsapp) return;
+    const key = 'flytte_ns_' + t.id;
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch {}
+    K.toast(`Send your trip to ${n.contact ? prettyPhone(n.contact) : 'your emergency contact'}`, 6000);
+    vibrate();
+  }
+
   // Screens 8 & 9: rider found / on trip
   function vTrip() {
     const t = S.trip, d = t.driver;
@@ -1123,6 +1155,7 @@
           <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))} · <span class="plate-chip">${K.esc(d.plate)}</span></span>${trustRow(d)}</span>
           ${callBtn('round go')}<button class="round brand" id="chatBtn" aria-label="Message">${K.ic('msg')}</button></div>
         <button class="link-report" data-report>Driver or plate doesn’t match?</button>
+        ${nightCard(t)}
         <div class="bar" style="margin:14px 0 4px"><i id="etaBar" style="width:${pct}%"></i></div>
         <div class="stops">
           <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
@@ -1135,6 +1168,7 @@
         <div class="sheet-foot"><div class="row"><button class="btn fill" id="share">${K.ic('send', 'sm')} Send arrival time</button><button class="btn btn-danger-soft fill" id="sos" style="margin-top:0">${K.ic('sos', 'sm')} SOS</button></div></div>`;
       K.$('#share').onclick = shareEta;
       K.$('#sos').onclick = sos;
+      const nw = K.$('#nsWa'); if (nw) nw.onclick = () => sendNightWhatsApp(t);
     } else {
       const arrived = t.status === 'arrived';
       sheet.innerHTML = `
@@ -1478,6 +1512,7 @@
     else if (t.status === 'completed') S.view = 'done';
     else if (t.status === 'no_drivers') S.view = 'none';
     else if (t.status === 'cancelled') { if (t.cancelledBy === 'rider') { reset(); return; } S.view = 'none'; K.toast(`Your ${who(t)} cancelled. Try again.`); }
+    nightToast(t);
     if (prev !== t.status) {
       if (t.status === 'accepted') { vibrate(); loadMessages(); }   // the banner and headline already say who's coming
       if (t.status === 'arrived') { vibrate(); chime(); }
@@ -1849,7 +1884,7 @@
         ${row('places', 'pin', 'Saved places', places ? `${places} saved` : 'Home, work and your own places')}
         ${row('prefs', 'settings', 'Ride preferences', [u.ridePrefs && u.ridePrefs.service ? svcName(u.ridePrefs.service) : '', u.ridePrefs && u.ridePrefs.womanDriver ? 'Woman driver' : ''].filter(Boolean).join(' · ') || 'Default ride, driver and pickup note')}
         ${row('safety', 'shield', 'Emergency contact', u.emergencyContact ? K.esc(prettyPhone(u.emergencyContact)) : 'Add someone we can alert')}
-        ${row('night', 'clock', 'Share night trips', ns.on ? `On from ${K.esc(ns.from)} · sent to your emergency contact` : 'Off', `<span class="set-switch${ns.on ? ' on' : ''}" aria-hidden="true"><i></i></span>`)}
+        ${row('night', 'clock', 'Share night trips', ns.on ? `On from ${K.esc(ns.from)} · ${S.config.nightShareSms ? 'texted automatically' : 'one tap on WhatsApp'}` : 'Off', `<span class="set-switch${ns.on ? ' on' : ''}" aria-hidden="true"><i></i></span>`)}
       </div>
       <h3 class="set-h">Account</h3><div class="set-card list">
         ${row('profile', 'user', 'Profile and sign-in', 'Name, photo, phone number, password')}
@@ -2006,10 +2041,12 @@
   function toggleNight(after) {
     const u = S.user, ns = u.nightShare || { on: false, from: '21:00' };
     if (!u.emergencyContact) { K.toast('Add an emergency contact first.'); openEmergency(after); return; }
-    const m = K.modal(`<h2>Share night trips</h2><p class="small muted">When a trip starts late, ${K.esc(prettyPhone(u.emergencyContact))} gets a text with your driver, plate and live link. Only you can turn it off.</p>
+    const auto = !!S.config.nightShareSms;
+    const m = K.modal(`<h2>Share night trips</h2><p class="small muted">When a trip starts late, ${K.esc(prettyPhone(u.emergencyContact))} gets your driver, plate and live link. Only you can turn it off.</p>
+      <p class="night-how ${auto ? 'ok' : ''}" id="nightHow">${K.ic(auto ? 'check' : 'msg', 'sm')}<span>${auto ? 'Texts go automatically by SMS.' : 'Texts aren’t switched on yet. When a night trip starts, Flytte tells you straight away and you send it on WhatsApp with one tap.'}</span></p>
       <div class="set-card list" style="margin:12px 0"><button class="set-row" id="on" role="switch" aria-checked="${ns.on}"><span class="grow"><b>Share automatically</b></span><span class="set-switch${ns.on ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
       <label for="fr">From</label><select id="fr">${['19:00', '20:00', '21:00', '22:00', '23:00'].map((t) => `<option ${t === ns.from ? 'selected' : ''}>${t}</option>`).join('')}</select>
-      <p class="tiny muted">Until 5 am. Texts go by SMS.</p><button class="btn btn-primary btn-block btn-lg" id="sv">Save</button>`);
+      <p class="tiny muted">Until 5 am, Kampala time. Once per trip.</p><button class="btn btn-primary btn-block btn-lg" id="sv">Save</button>`);
     let on = ns.on;
     K.$('#on', m.el).onclick = (e) => { on = !on; const b = e.currentTarget; b.setAttribute('aria-checked', on); b.querySelector('.set-switch').classList.toggle('on', on); };
     K.$('#sv', m.el).onclick = async () => {

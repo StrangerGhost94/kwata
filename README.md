@@ -69,6 +69,7 @@ Start the server (`npm start`), then:
 
 - `npm test` runs the payment-safety checks, the full ride simulation, the growth features and the booking/payments/tracking rules.
 - `npm run test:ui` drives a real browser through location denied → manual pickup → fares, payment options, offline banner, dialogs and sign-in (needs Chrome; set `CHROME=/path/to/chrome` if it isn't found).
+- `test/nightshare.js` (part of `npm test`) also starts two short-lived servers of its own on ports 3117 and 3118: one with `SMS_DEMO=false` (like the live site without EgoSMS keys, so night trips fall back to a one-tap WhatsApp send) and one whose SMS sends fail.
 - To check the "payments off" behaviour your live site has without Flutterwave keys, start a second server with `PORT=3101 PAYMENTS_DEMO=false npm start` and run the tests with `BASE=http://localhost:3101`.
 - Sign-in and sign-up limits are 20x looser on a local server so a full test run fits; a live server keeps the real limits (e.g. 10 sign-ups per 10 minutes).
 
