@@ -24,14 +24,15 @@ function newRef(prefix) {
   return `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 }
 
-async function createCheckout({ user, amount, purpose, tripId, method, baseUrl }) {
+// `payer`: someone other than the account holder pays (a friend's share of a split fare).
+async function createCheckout({ user, amount, purpose, tripId, method, baseUrl, payer }) {
   amount = Math.round(amount);
   if (!available()) throw new PaymentsUnavailable('Mobile Money and card payments aren’t available yet. Pay with cash for now.');
   if (!(amount > 0)) throw new PaymentsUnavailable('Nothing to pay.');
-  const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : purpose === 'debt' ? 'FLY-DBT' : 'FLY-TRP');
+  const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : purpose === 'debt' ? 'FLY-DBT' : purpose === 'split' ? 'FLY-SPL' : 'FLY-TRP');
   await db.query(
-    'INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount) VALUES ($1,$2,$3,$4,$5)',
-    [tx_ref, user.id, purpose, tripId || null, amount]
+    'INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount, payer_name) VALUES ($1,$2,$3,$4,$5,$6)',
+    [tx_ref, user.id, purpose, tripId || null, amount, payer ? payer.name : null]
   );
 
   if (demo()) {
@@ -45,14 +46,18 @@ async function createCheckout({ user, amount, purpose, tripId, method, baseUrl }
     currency: 'UGX',
     redirect_url: `${baseUrl}/api/payments/callback`,
     payment_options: method === 'card' ? 'card' : 'mobilemoneyuganda',
-    customer: {
+    customer: payer ? {
+      email: `${payer.phone.replace('+', '')}@riders.flytte.app`,
+      phonenumber: payer.phone,
+      name: payer.name,
+    } : {
       email: user.email || `${user.phone.replace('+', '')}@riders.flytte.app`,
       phonenumber: user.phone,
       name: user.name,
     },
     customizations: {
       title: 'Flytte',
-      description: purpose === 'topup' ? 'Flytte wallet top-up' : purpose === 'debt' ? 'Flytte commission payment' : `Flytte trip #${tripId}`,
+      description: purpose === 'topup' ? 'Flytte wallet top-up' : purpose === 'debt' ? 'Flytte commission payment' : purpose === 'split' ? 'Your share of a Flytte trip' : `Flytte trip #${tripId}`,
     },
   };
   const r = await fetch('https://api.flutterwave.com/v3/payments', {
@@ -107,6 +112,10 @@ async function applyPayment(tx_ref, providerRef) {
       // A driver paying the commission owed on cash trips.
       await t.query('UPDATE drivers SET earnings_balance = earnings_balance + $1 WHERE user_id = $2', [p.amount, p.user_id]);
       await t.query("INSERT INTO transactions(user_id, type, amount, note) VALUES ($1,'debt_payment',$2,$3)", [p.user_id, p.amount, `Paid to Flytte by Mobile Money (${tx_ref})`]);
+    } else if (p.purpose === 'split') {
+      // A friend's share of a split fare goes into the rider's wallet; the trip itself is paid as usual.
+      await ledger.creditWallet(t, p.user_id, p.amount, `Split from ${p.payer_name || 'a friend'} (trip #${p.trip_id})`);
+      await t.query('UPDATE fare_splits SET paid = paid + 1 WHERE trip_id = $1', [p.trip_id]);
     } else if (p.purpose === 'trip' && p.trip_id) {
       await ledger.markTripPaid(t, p.trip_id);
     }

@@ -89,6 +89,22 @@ async function settleAsCash(t, tripId) {
   return { ...trip, payment_method: 'cash', payment_status: 'paid' };
 }
 
+// A Mobile Money / card trip paid from the Flytte Wallet at the end instead (e.g. with friends'
+// shares of a split fare). Same books as a wallet trip.
+async function payFromWallet(t, tripId) {
+  const trip = await t.one('SELECT * FROM trips WHERE id = $1 FOR UPDATE', [tripId]);
+  if (!trip || trip.status !== 'completed' || trip.payment_status === 'paid' || !['momo', 'card'].includes(trip.payment_method)) return { error: 'Nothing to pay on this trip.' };
+  const payable = trip.fare - (trip.discount || 0);
+  const rider = await t.one('SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE', [trip.rider_id]);
+  if (rider.wallet_balance < payable) return { error: `Your wallet has UGX ${rider.wallet_balance.toLocaleString()}. Pay by ${trip.payment_method === 'card' ? 'card' : 'Mobile Money'} instead.` };
+  const commission = trip.commission || await commissionFor(trip.fare);
+  await t.query('UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id = $2', [payable, trip.rider_id]);
+  await t.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'trip_payment',$2,$3,'Paid from wallet')", [trip.rider_id, -payable, trip.id]);
+  await creditDriver(t, trip, commission);
+  await t.query("UPDATE trips SET payment_method = 'wallet', payment_status = 'paid', commission = $1 WHERE id = $2", [commission, trip.id]);
+  return { ok: true, trip };
+}
+
 // For mobile money / card trips once the payment is confirmed.
 async function markTripPaid(t, tripId) {
   const trip = await t.one('SELECT * FROM trips WHERE id = $1 FOR UPDATE', [tripId]);
@@ -105,4 +121,4 @@ async function creditWallet(t, userId, amount, note) {
   await t.query("INSERT INTO transactions(user_id, type, amount, note) VALUES ($1,'topup',$2,$3)", [userId, amount, note]);
 }
 
-module.exports = { settleCompletedTrip, markTripPaid, creditWallet, tipDriver, settleAsCash };
+module.exports = { settleCompletedTrip, markTripPaid, creditWallet, tipDriver, settleAsCash, payFromWallet };

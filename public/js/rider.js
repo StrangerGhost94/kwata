@@ -54,6 +54,7 @@
       if (!e.target.closest || !S.trip || !S.trip.driver) return;
       if (e.target.closest('[data-report]')) reportMismatch();
       else if (e.target.closest('[data-face]')) showDriver();
+      else if (e.target.closest('[data-split]')) openSplit();
     });
     K.draggableSheet(sheet);
     map = K.map('map');
@@ -726,6 +727,37 @@
     const c = K.$('#clr', m.el); if (c) c.onclick = () => { S.note = ''; m.close(); render(); };
   }
 
+  // ---------- split the fare ----------
+  // Friends pay their share by Mobile Money through a link; it lands in the rider's wallet.
+  const canSplit = (t) => S.config.paymentsAvailable && t.service !== 'parcel' && t.paymentStatus !== 'paid' && ['accepted', 'arrived', 'in_progress', 'completed'].includes(t.status);
+  const splitRow = (t) => !canSplit(t) ? '' : t.split
+    ? `<button class="payrow" data-split><span class="paylogo note-ic">${K.ic('person', 'sm')}</span><span class="grow">Split ${t.split.people} ways · ${K.ugx(t.split.share)} each<span class="tiny muted" style="display:block;font-weight:500">${t.split.paid} of ${t.split.people - 1} friend${t.split.people > 2 ? 's' : ''} paid · goes to your Flytte Wallet</span></span>${K.ic('chev', 'sm')}</button>`
+    : `<button class="payrow" data-split><span class="paylogo note-ic">${K.ic('person', 'sm')}</span><span class="grow">Split the fare<span class="tiny muted" style="display:block;font-weight:500">Friends pay their share by Mobile Money</span></span>${K.ic('chev', 'sm')}</button>`;
+  function openSplit() {
+    const t = S.trip; if (!t) return;
+    const cur = t.split, min = cur ? Math.max(2, cur.paid + 1) : 2;
+    const m = K.modal(`<h2>Split the fare</h2>
+      <p class="small muted">Send friends a link. Each pays their share by Mobile Money, and it goes into your Flytte Wallet, so you can pay the trip from it.</p>
+      <p class="small" style="margin:12px 0 6px;font-weight:600">How many people, including you?</p>
+      <div class="row" style="gap:8px">${[2, 3, 4].map((n) => `<button class="btn fill ${cur && cur.people === n ? 'btn-primary' : ''}" data-people="${n}" ${n < min ? 'disabled' : ''}>${n}</button>`).join('')}</div>
+      <p class="small muted" id="splitInfo" style="margin:10px 0 0">${cur ? `${K.ugx(cur.share)} each · ${cur.paid} of ${cur.people - 1} paid` : ''}</p>
+      <button class="btn btn-primary btn-block btn-lg" id="splitSend" style="margin-top:12px" ${cur ? '' : 'disabled'}>Send the link on WhatsApp</button>
+      <button class="btn btn-block" style="margin-top:8px" id="splitCopy" ${cur ? '' : 'disabled'}>Copy link</button>`);
+    let link = cur ? `${location.origin}/split/${cur.token}` : null, share = cur ? cur.share : 0;
+    const text = () => `Let’s split our Flytte ride. Your share is ${K.ugx(share)}. Pay it by Mobile Money here: ${link}`;
+    m.el.querySelectorAll('[data-people]').forEach((b) => b.onclick = async () => {
+      try {
+        const out = await K.api(`/trips/${t.id}/split`, { people: +b.dataset.people });
+        link = out.url; share = out.share;
+        m.el.querySelectorAll('[data-people]').forEach((x) => x.classList.toggle('btn-primary', x === b));
+        K.$('#splitInfo', m.el).textContent = `${K.ugx(out.share)} each · ${out.paid} of ${out.people - 1} paid`;
+        K.$('#splitSend', m.el).disabled = false; K.$('#splitCopy', m.el).disabled = false;
+      } catch (e) { K.toast(e.message); }
+    });
+    K.$('#splitSend', m.el).onclick = () => { if (!window.open('https://wa.me/?text=' + encodeURIComponent(text()), '_blank', 'noopener')) K.share(link, text()); };
+    K.$('#splitCopy', m.el).onclick = async () => { try { await navigator.clipboard.writeText(text()); K.toast('Link copied'); } catch { prompt('Copy this link', link); } };
+  }
+
   // Stops between pickup and destination on the trip screens; done ones are ticked.
   const stopRows = (t) => (t.stops || []).map((x, i) => `<div class="stop${x.doneAt ? ' done' : ''}"><span class="s-ic"><span class="dot-stop">${x.doneAt ? '✓' : i + 1}</span></span><span><small>Stop ${i + 1}${x.doneAt ? ' · done' : ''}</small><b class="ellipsis">${K.esc(x.address)}</b></span></div>`).join('');
 
@@ -1007,6 +1039,7 @@
         </div>
         ${extrasHtml(t)}
         <div class="fare-row"><span class="muted">Total fare</span><b>${fareHtml(t)}</b></div>
+        ${splitRow(t)}
         <div class="sheet-foot"><div class="row"><button class="btn fill" id="share">${K.ic('send', 'sm')} Send arrival time</button><button class="btn btn-danger-soft fill" id="sos" style="margin-top:0">${K.ic('sos', 'sm')} SOS</button></div></div>`;
       K.$('#share').onclick = shareEta;
       K.$('#sos').onclick = sos;
@@ -1123,9 +1156,11 @@
         <button class="btn btn-link btn-block" id="details" style="min-height:36px">View details</button>
         <button class="link-report" data-report style="margin:0 auto">Driver or vehicle didn’t match?</button>
       </div>
+      ${needsPay ? splitRow(t) : ''}
       <div class="sheet-foot">
         ${needsPay ? `<p class="error" id="err" role="alert" style="margin:0 0 6px;min-height:0">${S.config.paymentsAvailable ? '' : `${P.name} isn’t available yet. Pay your ${who(t)} ${K.ugx(t.payable)} in cash.`}</p>
-          ${S.config.paymentsAvailable ? `<button class="btn btn-primary btn-block btn-lg" id="pay">Pay ${K.ugx(t.payable)}</button>` : ''}
+          ${S.user.walletBalance >= t.payable ? `<button class="btn btn-primary btn-block btn-lg" id="payWallet">Pay ${K.ugx(t.payable)} from Flytte Wallet</button>` : ''}
+          ${S.config.paymentsAvailable ? `<button class="btn ${S.user.walletBalance >= t.payable ? 'btn-outline' : 'btn-primary'} btn-block btn-lg" id="pay">Pay ${K.ugx(t.payable)}${S.user.walletBalance >= t.payable ? ` by ${P.name}` : ''}</button>` : ''}
           <button class="btn ${S.config.paymentsAvailable ? 'btn-outline' : 'btn-primary'} btn-block btn-lg" id="cashPaid">I paid in cash</button>` : ''}
         ${!t.riderRated ? `<button class="btn ${needsPay ? '' : 'btn-primary'} btn-block btn-lg" id="rate" ${S.rating || !needsPay ? '' : 'disabled'}>${S.rating || needsPay ? `Rate ${who(t)}` : 'Done'}</button>
           ${needsPay ? '' : `<p class="small muted" id="rateHint" style="text-align:center;margin:6px 0 0">${S.rating ? '' : 'Rating is optional'}</p>`}` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}
@@ -1143,6 +1178,16 @@
         const out = await K.api(`/trips/${t.id}/pay`, {});
         if (out.link) location.href = out.link; else { K.toast('Payment received'); S.trip.paymentStatus = 'paid'; render(); }
       } catch (e) { K.$('#err').textContent = e.message; pay.disabled = false; }
+    };
+    const pw = K.$('#payWallet');
+    if (pw) pw.onclick = async () => {
+      pw.disabled = true;
+      try {
+        let walletPass;
+        if (S.user.walletLock) { walletPass = await K.walletLock.unlock({ amount: t.payable }); if (!walletPass) { pw.disabled = false; return; } }
+        await K.api(`/trips/${t.id}/pay-wallet`, { walletPass });
+        S.trip.paymentStatus = 'paid'; S.trip.paymentMethod = 'wallet'; S.user.walletBalance -= t.payable; K.toast('Paid from your Flytte Wallet'); render();
+      } catch (e) { K.$('#err').textContent = e.message; pw.disabled = false; }
     };
     const cp = K.$('#cashPaid');
     if (cp) cp.onclick = async () => {

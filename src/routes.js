@@ -875,6 +875,19 @@ r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
   res.json(out);
 }));
 
+// Pay a Mobile Money / card trip from the Flytte Wallet instead (friends' split shares land there).
+r.post('/trips/:id/pay-wallet', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'rider');
+  if (!t) return;
+  if (walletlock.needsPass(req.user, (req.body || {}).walletPass)) return walletLocked(res);
+  let out;
+  await db.tx(async (tx) => { out = await ledger.payFromWallet(tx, t.id); });
+  if (out.error) return bad(res, out.error);
+  if (t.driver_id) rt.notify(t.driver_id, 'toast', { text: `Trip #${t.id} paid from the rider’s Flytte Wallet` });
+  await rt.broadcast(t.id);
+  res.json({ ok: true });
+}));
+
 // Mobile Money / card didn't work out: the rider pays the driver in cash instead.
 r.post('/trips/:id/pay-cash', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'rider');
@@ -1085,24 +1098,78 @@ r.post('/wallet/topup', auth.requireAuth('rider'), wrap(async (req, res) => {
 }));
 
 // ---------- Payments (Flutterwave) ----------
+const paidText = (p) => p.purpose === 'split'
+  ? `${p.payer_name || 'A friend'} paid their share. UGX ${Number(p.amount).toLocaleString()} is in your Flytte Wallet.` : 'Payment received ✅';
+
+// ---------- Split the fare ----------
+// The rider shares a link; each friend pays an equal share by Mobile Money, which lands in the rider's
+// Flytte Wallet. The trip itself is paid as usual, so the driver is never waiting on several people.
+const splitShare = (amount, people) => Math.ceil(amount / people / 100) * 100;
+r.post('/trips/:id/split', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'rider');
+  if (!t) return;
+  if (!payments.available()) return bad(res, 'Splitting needs Mobile Money, which isn’t available yet.', 503);
+  if (!['accepted', 'arrived', 'in_progress', 'completed'].includes(t.status) || t.payment_status === 'paid') return bad(res, 'This trip can’t be split now.');
+  const people = Math.round(Number((req.body || {}).people));
+  if (!(people >= 2 && people <= 4)) return bad(res, 'Split between 2 and 4 people.');
+  const old = await db.one('SELECT * FROM fare_splits WHERE trip_id = $1', [t.id]);
+  if (old && people - 1 < old.paid) return bad(res, `${old.paid} friend${old.paid > 1 ? 's have' : ' has'} already paid. Split between at least ${old.paid + 1} people.`);
+  const share = old && old.paid ? old.share : splitShare(t.fare - (t.discount || 0), people);   // never change a share someone already paid
+  const token = old ? old.token : crypto.randomBytes(12).toString('base64url');
+  await db.query(`INSERT INTO fare_splits(trip_id, rider_id, token, people, share) VALUES ($1,$2,$3,$4,$5)
+    ON CONFLICT (trip_id) DO UPDATE SET people = EXCLUDED.people, share = EXCLUDED.share`, [t.id, req.user.id, token, people, share]);
+  await rt.broadcast(t.id);
+  res.json({ token, url: `${baseUrl(req)}/split/${token}`, people, share, paid: old ? old.paid : 0 });
+}));
+async function splitByToken(token) {
+  return db.one(`SELECT fs.*, t.status AS trip_status, t.service, t.pickup_address, t.drop_address, t.payment_status, u.name AS rider_name
+    FROM fare_splits fs JOIN trips t ON t.id = fs.trip_id JOIN users u ON u.id = fs.rider_id WHERE fs.token = $1`, [String(token || '').slice(0, 40)]);
+}
+const splitOpen = (sp) => sp.paid < sp.people - 1 && !['cancelled', 'no_drivers'].includes(sp.trip_status);
+r.get('/split/:token', wrap(async (req, res) => {
+  const sp = await splitByToken(req.params.token);
+  if (!sp) return bad(res, 'This link isn’t valid any more.', 404);
+  res.json({ name: String(sp.rider_name || '').split(' ')[0], service: sp.service, from: sp.pickup_address, to: sp.drop_address,
+    share: sp.share, people: sp.people, paid: sp.paid, open: splitOpen(sp), payments: payments.available() });
+}));
+r.post('/split/:token/pay', limit(10, 10 * 60e3), wrap(async (req, res) => {
+  const sp = await splitByToken(req.params.token);
+  if (!sp) return bad(res, 'This link isn’t valid any more.', 404);
+  if (!splitOpen(sp)) return bad(res, 'Everyone has already paid their share. Thank you.');
+  const name = clean((req.body || {}).name, 60), phone = auth.normalizePhone((req.body || {}).phone);
+  if (name.length < 2) return bad(res, 'Enter your name.');
+  if (!phone) return bad(res, 'Enter your Mobile Money number, e.g. 0772 123456.');
+  const rider = await db.one('SELECT * FROM users WHERE id = $1', [sp.rider_id]);
+  let out;
+  try { out = await payments.createCheckout({ user: rider, amount: sp.share, purpose: 'split', tripId: sp.trip_id, method: 'momo', baseUrl: baseUrl(req), payer: { name, phone } }); }
+  catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
+  if (out.demo) { rt.notify(sp.rider_id, 'toast', { text: paidText({ purpose: 'split', payer_name: name, amount: sp.share }) }); await rt.broadcast(sp.trip_id); }
+  res.json(out);
+}));
+
 r.get('/payments/callback', wrap(async (req, res) => {
   const ref = String(req.query.tx_ref || '').slice(0, 80);
-  const result = /^(?:FLY|KWT)-(TOP|TRP|DBT)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
+  const result = /^(?:FLY|KWT)-(TOP|TRP|DBT|SPL)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
   const p = ref && await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
   if (p && p.trip_id && result.ok) await rt.broadcast(p.trip_id);
-  if (p && result.ok) rt.notify(p.user_id, 'toast', { text: 'Payment received ✅' });
-  res.redirect(`${p && p.purpose === 'debt' ? '/driver' : '/'}?payment=${result.ok ? 'success' : (result.reason === 'unreachable' ? 'pending' : 'failed')}`);
+  if (p && result.ok) rt.notify(p.user_id, 'toast', { text: paidText(p) });
+  const outcome = result.ok ? 'success' : (result.reason === 'unreachable' ? 'pending' : 'failed');
+  if (p && p.purpose === 'split') {
+    const sp = await db.one('SELECT token FROM fare_splits WHERE trip_id = $1', [p.trip_id]);
+    return res.redirect(`/split/${sp ? sp.token : ''}?payment=${outcome}`);
+  }
+  res.redirect(`${p && p.purpose === 'debt' ? '/driver' : '/'}?payment=${outcome}`);
 }));
 
 r.post('/payments/webhook', wrap(async (req, res) => {
   if (!payments.webhookAuthentic(req)) return res.status(401).end();
   const ref = req.body && req.body.data && String(req.body.data.tx_ref || '');
-  if (ref && /^(?:FLY|KWT)-(TOP|TRP|DBT)-\d+-[0-9a-f]{8}$/.test(ref)) {
+  if (ref && /^(?:FLY|KWT)-(TOP|TRP|DBT|SPL)-\d+-[0-9a-f]{8}$/.test(ref)) {
     const result = await payments.verifyAndApply(ref);
     const p = await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
     if (p && result.ok) {
       if (p.trip_id) await rt.broadcast(p.trip_id);
-      rt.notify(p.user_id, 'toast', { text: 'Payment received ✅' });
+      rt.notify(p.user_id, 'toast', { text: paidText(p) });
     }
   }
   res.status(200).end();

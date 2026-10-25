@@ -28,11 +28,13 @@ async function loadTrip(id) {
       EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'national_id') AS d_has_id,
       EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'license') AS d_has_permit,
       (SELECT dd.expires_on FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'license') AS d_permit_exp,
-      dv.status AS d_status, dv.created_at AS d_since
+      dv.status AS d_status, dv.created_at AS d_since,
+      fs.people AS split_people, fs.paid AS split_paid, fs.share AS split_share, fs.token AS split_token
     FROM trips t
     JOIN users r ON r.id = t.rider_id
     LEFT JOIN users d ON d.id = t.driver_id
     LEFT JOIN drivers dv ON dv.user_id = t.driver_id
+    LEFT JOIN fare_splits fs ON fs.trip_id = t.id
     WHERE t.id = $1`, [id]);
 }
 
@@ -93,6 +95,7 @@ function view(t, role) {
   if (role === 'rider') {
     v.pin = t.pin; v.shareToken = t.share_token; v.riderRated = t.rider_rating != null;
     v.dropCode = t.drop_code || null; v.pointsEarned = t.points_earned || 0;
+    v.split = t.split_token ? { people: t.split_people, paid: t.split_paid, share: t.split_share, token: t.split_token } : null;
     if (v.driver && live2) v.driver.phone = t.driver_phone;
   }
   if (role === 'driver') {

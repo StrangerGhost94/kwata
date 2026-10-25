@@ -82,6 +82,7 @@ app.get('/driver-beta', underClock('driver.html', '/manifest-driver-beta.json', 
 app.get('/manifest-beta.json', testManifest('manifest.json', '/beta', 'Flytte Test'));
 app.get('/manifest-driver-beta.json', testManifest('manifest-driver.json', '/driver-beta', 'Driver Test'));
 app.get('/t/:token', page('track.html'));
+app.get('/split/:token', page('split.html'));
 app.get(['/admin', '/admin.html'], page('admin.html'));
 app.get(['/about', '/about.html'], page('about.html'));
 // The service worker must never be cached by the browser, or updates get stuck.

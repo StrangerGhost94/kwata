@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF">
+<title>Split a Flytte ride</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  body { background: var(--bg); }
+  .split-page { max-width: 440px; margin: 0 auto; padding: 24px 16px 40px; }
+  .split-brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.2rem; color: var(--ink); text-decoration: none; margin-bottom: 22px; }
+  .split-card { background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow-card); padding: 20px; }
+  .split-share { margin: 14px 0 4px; padding: 14px; border-radius: var(--r); background: var(--brand-soft); display: flex; justify-content: space-between; align-items: baseline; }
+  .split-share b { font-size: 1.6rem; }
+  .split-done { text-align: center; padding: 10px 0; }
+  .split-done .big { font-size: 2.6rem; }
+</style>
+</head>
+<body>
+<main class="split-page">
+  <a class="split-brand" href="/about">
+    <svg width="30" height="22" viewBox="0 0 140 100" aria-hidden="true"><g fill="#F5C518"><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg>Flytte</a>
+  <div class="split-card" id="card" aria-live="polite"><i class="sk" style="width:70%;height:22px"></i><i class="sk" style="width:90%;height:12px;margin-top:12px"></i></div>
+  <p class="tiny muted" style="text-align:center;margin-top:16px">Payments are handled securely by Flutterwave. Flytte never sees your PIN.</p>
+</main>
+<script>
+(function () {
+  const token = location.pathname.split('/').pop();
+  const card = document.getElementById('card');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const ugx = (n) => 'UGX ' + Number(n || 0).toLocaleString('en-US');
+  const RIDE = { boda: 'boda ride', car: 'car ride', comfort: 'Comfort ride', airport: 'airport ride', parcel: 'parcel delivery' };
+  const outcome = new URLSearchParams(location.search).get('payment');
+
+  function done(icon, title, text) {
+    card.innerHTML = `<div class="split-done"><div class="big" aria-hidden="true">${icon}</div><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p></div>`;
+  }
+
+  async function load() {
+    let s;
+    try {
+      const r = await fetch('/api/split/' + encodeURIComponent(token));
+      s = await r.json();
+      if (!r.ok) return done('🔗', 'Link not found', s.error || 'This link isn’t valid any more.');
+    } catch { return done('📶', 'No connection', 'Check your data or Wi-Fi and open the link again.'); }
+    if (outcome === 'success') return done('✅', 'Thank you', `You’ve paid your share. ${s.name} has been told.`);
+    if (outcome === 'pending') return done('⏳', 'Payment is being confirmed', 'If you approved it on your phone, it will be confirmed in a few minutes. You don’t need to pay again.');
+    if (!s.open) return done('🙌', 'All paid', `Everyone has paid their share of ${s.name}’s ride. Thank you.`);
+    if (!s.payments) return done('🕒', 'Not available yet', 'Paying by Mobile Money isn’t available yet. Settle up with your friend directly.');
+    const left = s.people - 1 - s.paid;
+    card.innerHTML = `
+      <h1 style="font-size:1.35rem;margin:0">${esc(s.name)} asked you to split a Flytte ${esc(RIDE[s.service] || 'ride')}</h1>
+      <p class="small muted" style="margin:8px 0 0">${esc(String(s.from).split(',')[0])} → ${esc(String(s.to).split(',')[0])} · shared by ${s.people} people</p>
+      <div class="split-share"><span class="muted">Your share</span><b>${ugx(s.share)}</b></div>
+      <p class="tiny muted" style="margin:0 0 14px">${left === 1 ? 'One share left to pay.' : `${left} shares left to pay.`} It goes to ${esc(s.name)}’s Flytte Wallet to pay for the ride.</p>
+      ${outcome === 'failed' ? '<p class="error">The payment didn’t go through. You can try again.</p>' : ''}
+      <form id="f" novalidate>
+        <label for="nm">Your name</label><input id="nm" name="name" autocomplete="name" required>
+        <label for="ph">Mobile Money number (MTN or Airtel)</label><input id="ph" name="phone" type="tel" inputmode="tel" placeholder="0772 123456" autocomplete="tel" required>
+        <p class="error" id="err" role="alert"></p>
+        <button class="btn btn-primary btn-block btn-lg" type="submit">Pay ${ugx(s.share)} with Mobile Money</button>
+      </form>`;
+    const f = document.getElementById('f');
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const err = document.getElementById('err'), btn = f.querySelector('button');
+      err.textContent = ''; btn.disabled = true; btn.textContent = 'Please wait…';
+      try {
+        const r = await fetch('/api/split/' + encodeURIComponent(token) + '/pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: f.name.value, phone: f.phone.value }) });
+        const out = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(out.error || 'Something went wrong. Try again.');
+        if (out.link) { location.href = out.link; return; }
+        done('✅', 'Thank you', `You’ve paid your share. ${s.name} has been told.`);
+      } catch (x) { err.textContent = x.message; btn.disabled = false; btn.textContent = `Pay ${ugx(s.share)} with Mobile Money`; }
+    };
+  }
+  load();
+})();
+</script>
+</body>
+</html>
