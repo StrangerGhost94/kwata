@@ -116,6 +116,7 @@ async function createAccount(body, role, { approved = false } = {}) {
       vehicleType, services: services.join(','), plate: clean(plate, 12).toUpperCase(),
       vehicleMake: clean(vehicleMake, 60), vehicleColor: clean(vehicleColor, 30),
       licenseNo: clean(licenseNo, 40), momo: auth.normalizePhone(momoNumber, auth.ccOf(p)) || p,
+      woman: body.woman === true,   // for riders who ask for a woman driver; the team confirms it against the ID
     };
   }
 
@@ -124,9 +125,9 @@ async function createAccount(body, role, { approved = false } = {}) {
     const u = await t.one('INSERT INTO users(name, phone, email, password_hash, role) VALUES ($1,$2,$3,$4,$5) RETURNING *',
       [clean(name, 80), p, email ? String(email).trim().slice(0, 120) : null, hash, role]);
     if (driverInfo) {
-      await t.query(`INSERT INTO drivers(user_id, vehicle_type, services, plate, vehicle_make, vehicle_color, license_no, momo_number, status)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [u.id, driverInfo.vehicleType, driverInfo.services, driverInfo.plate, driverInfo.vehicleMake, driverInfo.vehicleColor, driverInfo.licenseNo, driverInfo.momo, approved ? 'approved' : 'pending']);
+      await t.query(`INSERT INTO drivers(user_id, vehicle_type, services, plate, vehicle_make, vehicle_color, license_no, momo_number, status, woman)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [u.id, driverInfo.vehicleType, driverInfo.services, driverInfo.plate, driverInfo.vehicleMake, driverInfo.vehicleColor, driverInfo.licenseNo, driverInfo.momo, approved ? 'approved' : 'pending', driverInfo.woman]);
     }
     return u;
   });
@@ -661,11 +662,11 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await db.one(`
     INSERT INTO trips(rider_id, service, pickup_lat, pickup_lng, pickup_address, drop_lat, drop_lng, drop_address,
       distance_km, duration_min, fare, payment_method, pin, share_token, parcel, notes,
-      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
+      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING id`,
   [req.user.id, service, pickup.lat, pickup.lng, pickup.address, drop.lat, drop.lng, drop.address,
     km, min, fare, paymentMethod, pin, share, parcelJson, notes ? clean(notes, 200) || null : null,
-    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested']);
+    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true]);
 
   if (req.body.quoteId) surge.dropQuote(req.body.quoteId);
   if (!scheduledFor) { surge.recordRequest(service, pickup.lat, pickup.lng); rt.dispatch(t.id).catch(console.error); }
@@ -1278,7 +1279,7 @@ r.get('/admin/drivers', admin, wrap(async (req, res) => {
     id: x.id, name: x.name, phone: x.phone, status: x.status, vehicleType: x.vehicle_type, plate: x.plate,
     vehicle: [x.vehicle_color, x.vehicle_make].filter(Boolean).join(' '), licenseNo: x.license_no, momoNumber: x.momo_number,
     balance: x.earnings_balance, trips: x.trips, rating: x.rating_count ? Math.round((x.rating_sum / x.rating_count) * 10) / 10 : null,
-    createdAt: x.created_at, docs: x.docs,
+    createdAt: x.created_at, docs: x.docs, woman: !!x.woman,
     nextExpiry: x.next_expiry ? (x.next_expiry instanceof Date ? x.next_expiry.toISOString() : String(x.next_expiry)).slice(0, 10) : null,
     acceptanceRate: x.ev_acc + x.ev_rej ? Math.round((x.ev_acc / (x.ev_acc + x.ev_rej)) * 100) : null,
     cancellationRate: x.ev_acc ? Math.round((x.ev_can / x.ev_acc) * 100) : null,
@@ -1402,6 +1403,14 @@ r.post('/admin/users/:id/password', admin, wrap(async (req, res) => {
   const u = await db.one("UPDATE users SET password_hash = $1 WHERE id = $2 AND role <> 'admin' RETURNING id", [await bcrypt.hash(pw, 10), Number(req.params.id)]);
   if (!u) return bad(res, 'User not found.', 404);
   res.json({ ok: true });
+}));
+
+// Woman driver: offered requests from riders who ask for one. Set at sign-up, confirmed by the team.
+r.post('/admin/drivers/:id/woman', admin, wrap(async (req, res) => {
+  const d = await db.one('UPDATE drivers SET woman = $1 WHERE user_id = $2 RETURNING user_id, woman', [req.body.woman === true, Number(req.params.id)]);
+  if (!d) return bad(res, 'Driver not found.', 404);
+  rt.setWoman(d.user_id, d.woman);
+  res.json({ ok: true, woman: d.woman });
 }));
 
 r.post('/admin/drivers/:id/status', admin, wrap(async (req, res) => {

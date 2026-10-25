@@ -67,7 +67,7 @@ function view(t, role) {
     arrivedAt: t.arrived_at || null,
     discount: t.discount || 0, payable: t.fare - (t.discount || 0), promoLabel: t.promo_label || null,
     tip: t.tip || 0, tipMethod: t.tip_method || null,
-    scheduledFor: t.scheduled_for || null,
+    scheduledFor: t.scheduled_for || null, womanDriver: !!t.woman_driver,
     passenger: t.passenger ? JSON.parse(t.passenger) : null,
     driver: t.driver_id ? {
       id: t.driver_id, name: t.driver_name, rating: rating(t.d_rs, t.d_rc), trips: t.d_trips,
@@ -172,6 +172,7 @@ async function candidates(trip, tried) {
   for (const [id, d] of drivers) {
     if (!d.online || !d.lat || tried.has(id) || id === trip.rider_id) continue;
     if (!d.services.includes(trip.service)) continue;
+    if (trip.woman_driver && !d.woman) continue;   // the rider asked for a woman driver
     const connected = !!io.sockets.adapter.rooms.get(`user:${id}`);
     // Phone locked or app in the background: still reachable through a ride alert, for a while.
     const reachable = connected || (d.away && d.push && d.updatedAt && Date.now() - d.updatedAt < AWAY_MS);
@@ -384,7 +385,7 @@ function init(server) {
       }
       const d = drivers.get(u.id);
       d.services = dv ? dv.services.split(',') : [];
-      d.name = u.name; d.plate = dv && dv.plate; d.vehicle = dv && dv.vehicle_type;
+      d.name = u.name; d.plate = dv && dv.plate; d.vehicle = dv && dv.vehicle_type; d.woman = !!(dv && dv.woman);
       if (active) { d.busy = true; d.tripId = active.id; d.tripStatus = active.status; d.queuedTripId = actives[1] ? actives[1].id : null; }
       d.away = false; d.visible = true; clearTimeout(d.awayTimer);
       dtools.hasPush(u.id).then((v) => { d.push = v; }).catch(() => {});
@@ -486,6 +487,8 @@ function setHome(driverId, place) {
   const d = drivers.get(driverId);
   if (d) d.home = place ? { lat: place.lat, lng: place.lng, address: place.address } : null;
 }
+function setWoman(driverId, woman) { const d = drivers.get(driverId); if (d) d.woman = !!woman; }
+
 function driverState(driverId) {
   const d = drivers.get(driverId);
   return d ? { online: d.online, home: d.home || null, push: !!d.push } : { online: false, home: null, push: false };
@@ -499,7 +502,7 @@ function forceOffline(driverId) {
   notify(driverId, 'driver:forced_offline', {});
 }
 
-module.exports = {
+module.exports = { setWoman,
   init, broadcast, messages, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
   liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, setHome, driverState, markPush, updateDriverVehicle, ACTIVE,
   driversSnapshot: () => [...drivers.values()],

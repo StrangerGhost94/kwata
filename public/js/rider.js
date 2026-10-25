@@ -671,6 +671,7 @@
         <button class="pill-opt ${S.passenger ? 'on' : ''}" id="whoBtn">${K.ic('person', 'sm')}<span>${S.passenger ? K.esc(K.first(S.passenger.name)) : 'For me'}</span>${K.ic('chevDown', 'sm')}</button>
         <button class="pill-opt ${S.promoCode ? 'on' : ''}" id="promoBtn">${K.ic('tag', 'sm')}<span>${S.promoCode ? K.esc(S.promoCode) : 'Promo'}</span></button>
       </div>
+      <button class="payrow" id="womanBtn" role="switch" aria-checked="${!!S.womanDriver}"><span class="paylogo note-ic">${K.ic('shield', 'sm')}</span><span class="grow">Woman driver<span class="tiny muted" style="display:block;font-weight:500">${S.womanDriver ? 'Only women drivers get your request' : 'Ask only women drivers'}</span></span><span class="set-switch${S.womanDriver ? ' on' : ''}" aria-hidden="true"><i></i></span></button>
       <button class="payrow" id="payRow">${P.logo}<span class="grow">${P.name}${p === 'wallet' ? ` · ${K.ugx(S.user.walletBalance)}` : ''}${['mtn', 'airtel'].includes(p) ? `<span class="tiny muted" style="display:block;font-weight:500">${prettyPhone(S.user.payPhone)}</span>` : ''}</span>${K.ic('chev', 'sm')}</button>
       <div class="sheet-foot"><p class="tiny muted" style="margin:0;text-align:center">Upfront price · you pay what you see · <button class="link-btn tiny" id="whyPrice">How it’s priced</button></p><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
       <button class="btn btn-primary btn-block btn-lg" id="request">${S.when ? 'Schedule' : 'Request'} ${K.esc(svcName(sel.id))} · ${K.ugx(payOf(sel))}</button></div>`;
@@ -684,6 +685,11 @@
     K.$('#whenBtn').onclick = openWhen;
     K.$('#whoBtn').onclick = openWho;
     K.$('#promoBtn').onclick = openPromo;
+    K.$('#womanBtn').onclick = () => {
+      S.womanDriver = !S.womanDriver; K.haptic && K.haptic();
+      if (S.womanDriver) K.toast('We’ll only ask women drivers. It can take a little longer.', 4000);
+      render();
+    };
     K.$('#noteBtn').onclick = openNote;
     K.$('#whyPrice').onclick = () => whyPrice(q, sel);
     if (q.promoError && S.promoCode && !q._shown) { q._shown = true; K.toast(q.promoError, 4500); }
@@ -773,7 +779,7 @@
     btn.disabled = true; btn.textContent = 'Requesting…'; err.textContent = '';
     if (S.pickup.address === 'Finding address…') S.pickup.address = 'Pinned location';
     const opt = S.quote.options.find((o) => o.id === S.service);
-    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined, notes: S.note || undefined };
+    const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined, notes: S.note || undefined, womanDriver: S.womanDriver || undefined };
     if (S.service === 'parcel') body.parcel = S.parcel;
     // A locked wallet needs the rider's fingerprint, face or a code before paying from it.
     if (body.paymentMethod === 'wallet' && S.user.walletLock) {
@@ -871,13 +877,17 @@
     clearRoute();
     sheet.innerHTML = `<div class="grabber"></div>
       <div class="finding"><div class="illu" style="width:110px;height:110px;margin:6px auto 16px"><span style="width:80px;height:54px;display:block">${K.artFor(S.trip ? S.trip.service : S.service)}</span></div>
-      <h2>No ${S.trip ? who(S.trip) : 'driver'}s free right now</h2>
+      ${S.trip && S.trip.womanDriver ? `<h2>No women drivers free right now</h2>
+      <p class="muted">The women drivers nearby are busy. Try again in a minute, or ask any driver.</p></div>
+      <div class="sheet-foot"><button class="btn btn-outline btn-block btn-lg" id="anyDriver" style="margin-bottom:8px">Try any driver</button>`
+      : `<h2>No ${S.trip ? who(S.trip) : 'driver'}s free right now</h2>
       <p class="muted">Everyone nearby is busy. Try again in a minute or choose another ride type.</p></div>
-      <div class="sheet-foot">${(() => { const alt = altService(S.trip ? S.trip.service : S.service); return alt ? `<button class="btn btn-outline btn-block btn-lg" id="alt" style="margin-bottom:8px">Try ${K.esc(svcName(alt))}</button>` : ''; })()}
+      <div class="sheet-foot">${(() => { const alt = altService(S.trip ? S.trip.service : S.service); return alt ? `<button class="btn btn-outline btn-block btn-lg" id="alt" style="margin-bottom:8px">Try ${K.esc(svcName(alt))}</button>` : ''; })()}`}
         <div class="row"><button class="btn fill" id="home">Back</button><button class="btn btn-primary fill" id="again">Try again</button></div></div>`;
     K.$('#home').onclick = reset;
     K.$('#again').onclick = () => prepareQuote();
     const alt = K.$('#alt'); if (alt) alt.onclick = () => switchService(altService(S.trip ? S.trip.service : S.service));
+    const any = K.$('#anyDriver'); if (any) any.onclick = () => { S.womanDriver = false; prepareQuote(); };
   }
 
   function tripMins() {
@@ -1438,7 +1448,7 @@
   function reset() {
     const hadTrip = !!S.trip;
     S.view = 'home'; S.drop = null; S.quote = null; S.route = null; S.trip = null; S.rating = 0; S.parcel = null;
-    S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false;
+    S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false; S.womanDriver = false;
     loadGrowth();
     S.messages = []; S.unread = 0; routedPhase = null; phaseKm = null;
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }

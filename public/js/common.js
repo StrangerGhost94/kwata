@@ -810,6 +810,7 @@
         <label for="mk">Make and model</label><input id="mk" name="vehicleMake" placeholder="Bajaj Boxer / Toyota Premio">
         <label for="lc">Driving permit number</label><input id="lc" name="licenseNo" required>
         <label for="mm">Mobile Money for payouts</label><input id="mm" name="momoNumber" type="tel" placeholder="Same as your phone if empty">
+        <label class="check-row"><input type="checkbox" name="woman" value="1"><span>I’m a woman driver<small>Riders can ask for a woman driver, for example at night. Optional; the Flytte team confirms it with your ID.</small></span></label>
         <p class="error" role="alert"></p>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue" style="margin-top:8px">Continue</button>
       </form>`, phoneStep);
@@ -825,7 +826,7 @@
           [!!draft.phoneToken || (data.password || '').length >= 6, 'pw', 'Your password needs at least 6 characters.'], [(data.plate || '').trim().length >= 4, 'pl', 'Enter the number plate.'], [(data.licenseNo || '').trim(), 'lc', 'Enter your driving permit number.'],
           [!data.momoNumber || K.validPhone(data.momoNumber, K.countryOf(draft.e164).id), 'mm', 'Enter a valid Mobile Money number, or leave it empty.']].find(([ok]) => !ok);
         if (need) { err.textContent = need[2]; f[need[1]].focus(); return; }
-        data.phone = draft.e164;
+        data.phone = draft.e164; data.woman = data.woman === '1';
         if (data.momoNumber) data.momoNumber = K.e164(data.momoNumber, K.countryOf(draft.e164).id);
         busy(f, true);
         try { const out = await K.api('/auth/register', { ...data, role: 'driver' }); K.session.set(out); K.verifyDocs(root, { onDone: () => onDone(out) }); }

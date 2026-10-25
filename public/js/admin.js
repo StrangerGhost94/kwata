@@ -149,7 +149,7 @@
         <td>${K.esc(d.licenseNo)}${expiryTag(d.nextExpiry)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td>
         <td>${d.acceptanceRate == null ? '<span class="muted">—</span>' : `${d.acceptanceRate}% / ${d.cancellationRate ?? 0}%`}</td>
         <td>${d.balance < 0 ? `<span style="color:var(--stop)">${K.ugx(d.balance)}</span><br><span class="tiny muted">owes commission</span>` : K.ugx(d.balance)}</td><td>${badge(d.status)}</td>
-        <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}" data-plate="${K.esc(d.plate)}" data-veh="${K.esc(d.vehicle)}">${d.status === 'pending' ? 'Check & approve' : 'Documents'} (${d.docs || 0}/4)</button>
+        <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}" data-plate="${K.esc(d.plate)}" data-veh="${K.esc(d.vehicle)}" data-woman="${d.woman ? 1 : ''}">${d.status === 'pending' ? 'Check & approve' : 'Documents'} (${d.docs || 0}/4)</button>
         ${d.status !== 'approved' ? `<button class="btn btn-primary btn-sm" data-id="${d.id}" data-s="approved">Approve</button>` : `<button class="btn btn-sm" data-id="${d.id}" data-s="suspended">Suspend</button>`}
         <button class="btn btn-ghost btn-sm" data-pw="${d.id}" data-name="${K.esc(d.name)}">Reset password</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">No drivers yet. Click “Add driver” after you’ve met and checked them.</td></tr>'}
       </tbody></table></div>`;
@@ -159,7 +159,7 @@
     });
     bindReset(main);
     K.$('#addDriver').onclick = addDriver;
-    main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status, { plate: b.dataset.plate, vehicle: b.dataset.veh }));
+    main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status, { plate: b.dataset.plate, vehicle: b.dataset.veh, woman: !!b.dataset.woman }));
   }
 
   function expiryTag(day) {
@@ -279,9 +279,15 @@
         <div class="veh-compare"><div><span class="small muted">Typed at sign-up</span><br><b class="plate-tag">${K.esc(veh.plate || '—')}</b><br><span class="small muted">${K.esc(veh.vehicle || '')}</span></div>
           <div style="flex:1;max-width:260px">${fig(by('vehicle'), 'Vehicle photo')}</div></div>
         <p class="small muted">${status !== 'approved' ? 'Approve only if the photo is clearly the person on the ID and permit, and the plate in the vehicle photo is the one typed. Approving the driver approves their photo and plate.' : 'This driver is approved. Photo and plate changes come to Photo & plate checks.'}</p>
+        <label class="row" style="gap:8px;align-items:flex-start;margin-top:12px;font-weight:600"><input type="checkbox" id="wd" ${veh.woman ? 'checked' : ''} style="width:auto;margin-top:3px">
+          <span>Woman driver<br><span class="small muted" style="font-weight:400">Gets requests from riders who ask for a woman driver. Tick only when the ID confirms it.</span></span></label>
         <div class="row" style="margin-top:14px">
           ${status !== 'approved' ? `<button class="btn btn-danger-soft fill" data-st="rejected">Reject</button><button class="btn btn-primary fill" data-st="approved">Approve driver</button>` : '<button class="btn fill" data-close>Close</button>'}
         </div>`;
+      K.$('#wd', m.el).onchange = async (e) => {
+        try { await K.api(`/admin/drivers/${id}/woman`, { woman: e.target.checked }); K.toast(e.target.checked ? 'Marked as a woman driver' : 'No longer marked as a woman driver'); }
+        catch (err) { e.target.checked = !e.target.checked; K.toast(err.message); }
+      };
       m.el.querySelectorAll('[data-st]').forEach((b) => b.onclick = async () => {
         await K.api(`/admin/drivers/${id}/status`, { status: b.dataset.st });
         m.close(); K.toast(b.dataset.st === 'approved' ? 'Driver approved, with their photo and plate.' : 'Driver rejected'); await refreshCounts(); show();

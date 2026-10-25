@@ -1933,3 +1933,8 @@ html.theme-dark:not(.launch-dark) .sp-icon.sp-gold { background: linear-gradient
 .trust-li.off { color: var(--ink-3); font-weight: 500; }
 .trust-li.off .i { color: var(--ink-3); }
 .face-card .btn { width: 100%; margin-top: 4px; }
+
+/* Optional yes/no on forms (e.g. "I'm a woman driver" at driver sign-up). */
+.check-row { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 4px; font-weight: 600; cursor: pointer; }
+.check-row input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--brand-ink); }
+.check-row small { display: block; font-weight: 400; color: var(--ink-3); margin-top: 2px; line-height: 1.35; }
