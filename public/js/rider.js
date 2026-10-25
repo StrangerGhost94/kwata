@@ -33,7 +33,9 @@
   const pref = () => (PAY[S.user && S.user.payPref] && payOK(S.user.payPref) ? S.user.payPref : 'cash');
   const payOfTrip = (t) => t.paymentMethod === 'momo' ? (S.user.payPref === 'airtel' ? 'airtel' : 'mtn') : t.paymentMethod;
   const prettyPhone = (p) => K.prettyPhone(p);
-  const who = (t) => (t.driver && t.driver.vehicleType === 'car') || ['car', 'comfort', 'airport'].includes(t.service) ? 'driver' : 'rider';
+  // What riders call the person who comes: "driver" (cars and bodas alike), "courier" for parcels.
+  // ("Rider" would clash with riders, the passengers.)
+  const who = (t) => (t && t.service === 'parcel' ? 'courier' : 'driver');
   const svcName = (id) => K.SERVICE_LABEL[id] || id;
 
   async function start() {
@@ -258,6 +260,8 @@
     ({ home: vHome, choose: vChoose, pickup: vPickup, droppin: vDropPin, searching: vSearching, trip: vTrip, done: vDone, none: vNone })[v]();
   }
 
+  // Android Back on the map screens steps back like the on-screen back arrow.
+  K.onRootBack = () => { if (['choose', 'pickup', 'droppin', 'none'].includes(S.view)) { goBack(); return true; } return false; };
   function goBack() {
     if (S.view === 'pickup') { // cancel: the pin was never confirmed
       S.pickup = S.prevPickup || null; S.prevPickup = undefined;
