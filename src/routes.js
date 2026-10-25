@@ -9,6 +9,7 @@ const payments = require('./payments');
 const growth = require('./growth');
 const dtools = require('./drivers');
 const sms = require('./sms');
+const night = require('./nightshare');
 const wa = require('./whatsapp');
 const tg = require('./telegram');
 const { getSettings, updateSettings, quote } = require('./pricing');
@@ -85,6 +86,7 @@ r.get('/config', wrap(async (req, res) => {
     paymentsAvailable: payments.available(),     // Mobile Money / card / top-ups can be used (live or local demo)
     paymentsDemo: payments.demo(),
     smsLogin: sms.enabled() || wa.enabled() || tg.enabled(), // sign in with a one-time code instead of a password
+    nightShareSms: sms.enabled(),                  // night trips are texted automatically (otherwise one tap on WhatsApp)
     emailReceipts: require('./email').enabled(),   // riders can add an email for trip receipts
     codeChannels: [...(wa.enabled() ? ['whatsapp'] : []), ...(tg.enabled() ? ['telegram'] : []), ...(sms.enabled() ? ['sms'] : [])], // where the code can be sent
     commissionPct: s.commissionPct,
@@ -1076,23 +1078,30 @@ r.post('/trips/:id/noshow', auth.requireAuth('driver'), wrap(async (req, res) =>
 }));
 
 // Night-time sharing: when a trip starts late (from the rider's chosen time until 5 am, Kampala time),
-// their emergency contact gets the live link by SMS. Once per trip.
-const inNight = (from, now = new Date()) => {
-  const k = new Date(now.getTime() + 3 * 3600e3), mins = k.getUTCHours() * 60 + k.getUTCMinutes();
-  const [h, m] = String(from || '21:00').split(':').map(Number), start = h * 60 + m;
-  return mins >= start || mins < 5 * 60;
-};
+// their emergency contact gets the driver, plate and live link. Once per trip, never when the switch is
+// off or there's no emergency contact. By SMS when it's set up; if SMS isn't available or fails, the
+// rider is told straight away (toast, trip card, lock-screen alert) and can send it on WhatsApp in one tap.
+const { inNight } = night;
 async function nightShare(tripId) {
   const t = await rt.loadTrip(tripId);
-  if (!t || t.night_shared) return;
+  if (!t || t.night_shared) return null;
   const u = await db.one('SELECT name, emergency_contact, night_share FROM users WHERE id = $1', [t.rider_id]);
   let ns = null; try { ns = JSON.parse(u.night_share || 'null'); } catch {}
-  if (!ns || !ns.on || !u.emergency_contact || !inNight(ns.from)) return;
+  if (!ns || !ns.on || !u.emergency_contact || !inNight(ns.from)) return null;
   const done = await db.one('UPDATE trips SET night_shared = TRUE WHERE id = $1 AND night_shared = FALSE RETURNING id', [tripId]);
-  if (!done || !sms.enabled()) return;
-  const ride = ['car', 'comfort', 'airport'].includes(t.service) ? 'car' : 'boda';
-  const link = `${process.env.PUBLIC_URL || 'https://flytte.co'}/t/${t.share_token}`;
-  await sms.send(u.emergency_contact, `${String(u.name).split(' ')[0]} is on a Flytte ${ride} (${t.plate || ''}, driver ${String(t.driver_name || '').split(' ')[0]}) to ${String(t.drop_address).split(',')[0]}. Follow live: ${link}`);
+  if (!done) return null;
+  let status = 'failed', reason = null;
+  try {
+    if (!sms.enabled()) { status = 'whatsapp'; reason = 'not_set_up'; }
+    else {
+      try { await sms.send(u.emergency_contact, night.message(t)); status = 'sms'; }
+      catch (e) { console.error('night share SMS:', e.message); status = 'whatsapp'; reason = 'sms_error'; }
+    }
+  } catch (e) { console.error('night share:', e.message); status = 'failed'; reason = 'error'; }
+  await db.query('UPDATE trips SET night_share_status = $1, night_share_reason = $2, night_share_at = NOW() WHERE id = $3', [status, reason, tripId]);
+  const fresh = await rt.broadcast(tripId);                    // the trip card updates on screen
+  if (status !== 'sms' && fresh) rt.nightShareAlert(fresh);   // and a lock-screen alert if Flytte isn't open
+  return status;
 }
 
 r.post('/trips/:id/start', auth.requireAuth('driver'), wrap(async (req, res) => {
@@ -1102,7 +1111,22 @@ r.post('/trips/:id/start', auth.requireAuth('driver'), wrap(async (req, res) => 
   if (String((req.body || {}).pin || '').trim() !== t.pin) return bad(res, 'Wrong PIN. Ask the rider for the 4-digit PIN in their app.');
   await db.query("UPDATE trips SET status = 'in_progress', started_at = NOW() WHERE id = $1", [t.id]);
   await rt.broadcast(t.id);
-  nightShare(t.id).catch((e) => console.error('night share:', e.message));
+  nightShare(t.id).catch(async (e) => {
+    console.error('night share:', e.message);
+    // Claimed but not recorded: mark it failed so the rider still gets the WhatsApp card.
+    await db.query("UPDATE trips SET night_share_status = 'failed', night_share_reason = 'error', night_share_at = NOW() WHERE id = $1 AND night_shared = TRUE AND night_share_status IS NULL", [t.id]).catch(() => {});
+    rt.broadcast(t.id).catch(() => {});
+  });
+  res.json({ ok: true });
+}));
+
+// The rider tapped "Send on WhatsApp" for their night trip: noted for the trip screen and admin counts.
+r.post('/trips/:id/night-share/opened', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'rider');
+  if (!t) return;
+  if (!t.night_share_status || t.night_share_status === 'sms') return bad(res, 'This trip was already shared.');
+  await db.query('UPDATE trips SET night_share_opened_at = COALESCE(night_share_opened_at, NOW()) WHERE id = $1', [t.id]);
+  await rt.broadcast(t.id);
   res.json({ ok: true });
 }));
 
@@ -1465,6 +1489,19 @@ r.get('/admin/stats', admin, wrap(async (req, res) => {
     pendingChanges: (await q("SELECT COUNT(*)::int n FROM driver_changes WHERE status = 'pending'")).n,
     openReports: (await q('SELECT COUNT(*)::int n FROM driver_reports WHERE resolved = FALSE')).n,
     byService: (await db.query("SELECT service, COUNT(*)::int trips, COALESCE(SUM(fare),0)::int gmv FROM trips WHERE status = 'completed' GROUP BY service ORDER BY trips DESC")).rows,
+    // Night-trip sharing: is SMS set up, and what went out since Monday (Kampala time).
+    nightShare: {
+      sms: sms.configured() ? 'live' : sms.demo() ? 'demo' : 'off',
+      senderId: sms.configured() ? !!process.env.EGOSMS_SENDER : null,
+      week: await (async () => {
+        const w = (await db.one(`SELECT COUNT(*) FILTER (WHERE night_share_status = 'sms')::int sms,
+            COUNT(*) FILTER (WHERE night_share_status = 'whatsapp')::int whatsapp,
+            COUNT(*) FILTER (WHERE night_share_status <> 'sms' AND night_share_opened_at IS NOT NULL)::int opened,
+            COUNT(*) FILTER (WHERE night_share_status = 'failed')::int failed
+          FROM trips WHERE night_share_at >= $1`, [night.weekStart()])) || {};
+        return { sms: w.sms || 0, whatsapp: w.whatsapp || 0, opened: w.opened || 0, failed: w.failed || 0 };
+      })(),
+    },
   });
 }));
 

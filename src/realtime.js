@@ -7,6 +7,7 @@ const db = require('./db');
 const auth = require('./auth');
 const { getSettings, haversineKm } = require('./pricing');
 const dtools = require('./drivers');
+const night = require('./nightshare');
 const AWAY_MS = 15 * 60e3; // a locked phone with ride alerts stays online this long
 
 let io;
@@ -19,7 +20,7 @@ const ACTIVE = ['accepted', 'arrived', 'in_progress'];
 async function loadTrip(id) {
   return db.one(`
     SELECT t.*,
-      r.name AS rider_name, r.phone AS rider_phone, r.rating_sum AS r_rs, r.rating_count AS r_rc,
+      r.name AS rider_name, r.phone AS rider_phone, r.emergency_contact AS rider_ec, r.rating_sum AS r_rs, r.rating_count AS r_rc,
       d.name AS driver_name, d.phone AS driver_phone, d.rating_sum AS d_rs, d.rating_count AS d_rc,
       dv.plate, dv.vehicle_make, dv.vehicle_color, dv.vehicle_type,
       (SELECT COUNT(*)::int FROM trips x WHERE x.driver_id = t.driver_id AND x.status = 'completed') AS d_trips,
@@ -97,6 +98,7 @@ function view(t, role) {
     v.dropCode = t.drop_code || null; v.pointsEarned = t.points_earned || 0;
     v.split = t.split_token ? { people: t.split_people, paid: t.split_paid, share: t.split_share, token: t.split_token } : null;
     if (v.driver && live2) v.driver.phone = t.driver_phone;
+    v.nightShare = nightView(t);
   }
   if (role === 'driver') {
     v.commission = t.commission; v.earning = t.fare - t.commission; v.driverRated = t.driver_rating != null;
@@ -111,6 +113,19 @@ function view(t, role) {
     v.rider.phone = t.rider_phone; if (v.driver) v.driver.phone = t.driver_phone;
   }
   return v;
+}
+
+// Night-time sharing as the rider sees it on the trip screen: how it went, and the same message ready
+// to send on WhatsApp in one tap when it wasn't texted.
+function nightView(t) {
+  if (!t.night_share_status) return null;
+  const contact = t.rider_ec || null;
+  const out = { status: t.night_share_status, reason: t.night_share_reason || null, at: t.night_share_at || null, opened: !!t.night_share_opened_at, contact };
+  if (t.night_share_status !== 'sms' && contact && ACTIVE.includes(t.status)) {
+    out.text = night.message(t);
+    out.whatsapp = night.waLink(contact, out.text);
+  }
+  return out;
 }
 
 // ---------- Rider alerts ----------
@@ -138,10 +153,13 @@ function riderAlert(t, moment) {
     completed: [t.service === 'parcel' ? 'Parcel delivered' : 'You’ve arrived', 'Thanks for riding with Flytte. Tap to rate your trip.'],
     driver_cancelled: [`Your ${who} cancelled`, 'Open Flytte to request again.'],
     no_drivers: ['No drivers available', 'Open Flytte to try again.'],
+    night_share: [`Send your trip to ${night.pretty(t.rider_ec)}`, 'It wasn’t texted. Tap to send your driver, plate and live link on WhatsApp.'],
   }[moment];
   if (!msg) return;
   dtools.push(t.rider_id, { app: 'rider', type: moment, tag: `trip-${t.id}`, title: msg[0], body: msg[1], tripId: t.id }, { ttl: moment === 'completed' ? 3600 : 600, urgency: 'high' }).catch(() => {});
 }
+
+function nightShareAlert(t) { riderAlert(t, 'night_share'); }
 
 async function broadcast(tripId) {
   const t = await loadTrip(tripId);
@@ -506,7 +524,7 @@ function forceOffline(driverId) {
   notify(driverId, 'driver:forced_offline', {});
 }
 
-module.exports = { setWoman,
+module.exports = { setWoman, nightShareAlert,
   init, broadcast, messages, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
   liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, setHome, driverState, markPush, updateDriverVehicle, ACTIVE,
   driversSnapshot: () => [...drivers.values()],
