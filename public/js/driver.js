@@ -191,7 +191,7 @@
         </nav>
       </div>`;
     sheet = K.$('#sheet');
-    K.draggableSheet(sheet);
+    K.draggableSheet(sheet); K.smoothSheet(sheet);
     map = K.map('map');
     map.on('click', (e) => {
       if (S.pickHome) { S.pickHome = false; setHome({ lat: e.latlng.lat, lng: e.latlng.lng, address: 'Pinned place' }); return; }
@@ -811,7 +811,7 @@
     if (!S.earnings || fresh) await loadEarnings();
     else loadEarnings().then(() => { if (el.isConnected && !el._refreshed) { el._refreshed = true; drawEarnings(el, false); } });
     const e = S.earnings;
-    if (!e) { el.innerHTML = '<p class="error">Couldn’t load earnings. Check your connection.</p>'; return; }
+    if (!e) { K.failed(el, 'Couldn’t load your earnings. Check your connection.', () => drawEarnings(el, true)); return; }
     const max = Math.max(1, ...e.days.map((d) => d.net));
     const today = e.days[e.days.length - 1].day;
     const dayName = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-UG', { weekday: 'short' }).slice(0, 3);
