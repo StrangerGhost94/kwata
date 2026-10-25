@@ -159,9 +159,13 @@
         let diff = ((b - rot + 540) % 360) - 180; rot = rot + diff; setRot();
       }
       cancelAnimationFrame(raf);
-      const from = { ...cur }, t0 = performance.now(), dur = dist > 0.02 ? 0 : 1000;
+      // Glide for about the time until the next position arrives, easing in and out, so cars drive
+      // smoothly instead of hopping; a far jump (a new driver) is placed straight away.
+      const now = performance.now(), gap = m._last ? Math.min(4000, Math.max(800, now - m._last)) : 1000; m._last = now;
+      const from = { ...cur }, t0 = now, dur = dist > 0.02 || K.reduced() ? 0 : gap * 0.95;
+      const ease = (x) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
       const step = (t) => {
-        const k = dur ? Math.min(1, (t - t0) / dur) : 1;
+        const k = dur ? ease(Math.min(1, (t - t0) / dur)) : 1;
         cur = { lat: from.lat + (to.lat - from.lat) * k, lng: from.lng + (to.lng - from.lng) * k };
         m.setLatLng([cur.lat, cur.lng]);
         if (k < 1) raf = requestAnimationFrame(step);
@@ -291,6 +295,7 @@
   // ---------- connection status ----------
   // A calm banner while the phone has no connection; it disappears by itself when it's back.
   K.netBanner = (on, text) => {
+    document.documentElement.classList.toggle('is-offline', !!on && navigator.onLine === false);
     let el = document.getElementById('netBanner');
     if (!on) { if (el) { el.classList.add('out'); setTimeout(() => el.remove(), 250); } return; }
     if (!el) { el = document.createElement('div'); el.id = 'netBanner'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
@@ -546,7 +551,20 @@
     // register (a split-second flash looks like a glitch), a little longer on the first open of the day.
     if (quick) sp.classList.add('repeat');
     const wait = Math.max(0, (quick ? 450 : 700) - (performance.now() - T0));
-    setTimeout(() => requestAnimationFrame(() => { sp.classList.add('out'); setTimeout(() => sp.remove(), 650); }), wait);
+    // Wait (up to ~1.4 s) for the map to draw, so the app never opens onto a blank map.
+    const mapOk = Promise.race([K.mapReady, new Promise((r) => setTimeout(r, Math.max(0, 1400 - (performance.now() - T0))))]);
+    Promise.all([mapOk, new Promise((r) => setTimeout(r, wait))]).then(() => requestAnimationFrame(() => {
+      const icon = sp.querySelector('.sp-icon'), target = document.querySelector('.hello-chip .avatar, .trip-banner .tb-face');
+      const leave = () => { sp.classList.add('out'); setTimeout(() => sp.remove(), 650); };
+      if (!icon || !target || K.reduced() || !icon.animate) return leave();
+      // The logo flies into the greeting (or the driver's face on a trip): the app opens into itself.
+      const a = icon.getBoundingClientRect(), b = target.getBoundingClientRect();
+      if (!a.width || !b.width) return leave();
+      const dx = (b.left + b.width / 2) - (a.left + a.width / 2), dy = (b.top + b.height / 2) - (a.top + a.height / 2);
+      icon.animate([{ transform: 'none', opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${b.width / a.width})`, opacity: 0.15 }], { duration: 560, easing: 'cubic-bezier(.32,.72,0,1)', fill: 'forwards' });
+      sp.querySelectorAll('.sp-name, .sp-tag, .sp-load').forEach((e) => e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' }));
+      setTimeout(leave, 220);
+    }));
   };
 
   // Signed out: the launch photo becomes the sign-in page. The page is drawn underneath in the same
@@ -1372,6 +1390,8 @@
   const webgl = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })();
   // Crisp vector streets (OpenFreeMap, free, no API key). Falls back to plain
   // OpenStreetMap tiles on old phones without WebGL.
+  // Resolves once the first map has drawn its streets, so the launch screen can wait for it (briefly).
+  let mapReadyDone; K.mapReady = new Promise((r) => { mapReadyDone = r; });
   K.map = function (id, center = K.KAMPALA, zoom = 16) {
     const m = L.map(id, { zoomControl: false, attributionControl: true, zoomSnap: 0.25 }).setView([center.lat, center.lng], zoom);
     const osm = () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(m);
@@ -1382,10 +1402,10 @@
           attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © OpenStreetMap',
         }).addTo(m);
         const glMap = gl.getMaplibreMap && gl.getMaplibreMap();
-        if (glMap) (K._maps = K._maps || []).push(glMap);
+        if (glMap) { (K._maps = K._maps || []).push(glMap); glMap.once('load', () => mapReadyDone()); }
         if (glMap) glMap.on('error', (e) => { if (!m._fellBack && /style|Failed to fetch/i.test(String(e && e.error && e.error.message))) { m._fellBack = true; m.removeLayer(gl); osm(); } });
       } catch { osm(); }
-    } else osm();
+    } else { osm(); setTimeout(() => mapReadyDone(), 600); }
     m.attributionControl.setPrefix(false);
     // Keep the map filling its box when the screen rotates or the window resizes.
     const box = document.getElementById(id);
@@ -1663,6 +1683,28 @@
     if (kind === 'title-list') return `${line('46%', 30, 6)}${line('58%', 34, 16)}${Array.from({ length: n }, card).join('')}`;
     if (kind === 'earnings') return `${line('44%', 30, 6)}${line('52%', 34, 16)}${line('60%', 34, 18)}<div class="sk-chart">${[40, 65, 30, 80, 55, 20, 90].map((h) => `<i class="sk" style="height:${h}%"></i>`).join('')}</div>${Array.from({ length: 3 }, () => line('100%', 14, 18)).join('')}`;
     return Array.from({ length: n }, card).join('');
+  };
+
+  // A small drawing of a trip's route (pickup → stops → destination) for lists, without loading a map.
+  // Points are fitted into the box; each leg bends a little so it reads as a road, not a ruler line.
+  K.routeThumb = function (pts, { w = 64, h = 64, pad = 12 } = {}) {
+    const P = pts.filter((p) => p && Number.isFinite(+p.lat) && Number.isFinite(+p.lng));
+    if (P.length < 2) return `<svg class="rthumb" viewBox="0 0 ${w} ${h}" aria-hidden="true"></svg>`;
+    const lats = P.map((p) => +p.lat), lngs = P.map((p) => +p.lng);
+    const minX = Math.min(...lngs), maxX = Math.max(...lngs), minY = Math.min(...lats), maxY = Math.max(...lats);
+    const span = Math.max(maxX - minX, maxY - minY, 0.002), sc = (Math.min(w, h) - pad * 2) / span;
+    const ox = (w - (maxX - minX) * sc) / 2, oy = (h - (maxY - minY) * sc) / 2;
+    const xy = P.map((p) => [ox + (+p.lng - minX) * sc, h - (oy + (+p.lat - minY) * sc)]);
+    let d = `M${xy[0][0].toFixed(1)},${xy[0][1].toFixed(1)}`;
+    for (let i = 1; i < xy.length; i++) {
+      const [x0, y0] = xy[i - 1], [x1, y1] = xy[i], mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      const bend = i % 2 ? 0.22 : -0.22;
+      d += ` Q${(mx - (y1 - y0) * bend).toFixed(1)},${(my + (x1 - x0) * bend).toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
+    }
+    const [sx, sy] = xy[0], [ex, ey] = xy[xy.length - 1];
+    const mids = xy.slice(1, -1).map(([x, y]) => `<circle class="rt-stop" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6"/>`).join('');
+    return `<svg class="rthumb" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path class="rt-grid" d="M0 ${h * .3}H${w}M0 ${h * .7}H${w}M${w * .35} 0V${h}M${w * .72} 0V${h}"/>
+      <path class="rt-line-bg" d="${d}"/><path class="rt-line" d="${d}"/>${mids}<circle class="rt-a" cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="3.6"/><rect class="rt-b" x="${(ex - 3.4).toFixed(1)}" y="${(ey - 3.4).toFixed(1)}" width="6.8" height="6.8" rx="1.4"/></svg>`;
   };
 
   K.SERVICE_LABEL = { boda: 'Boda', car: 'Car', comfort: 'Comfort', parcel: 'Parcel', airport: 'Airport' };

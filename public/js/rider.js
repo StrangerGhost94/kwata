@@ -59,22 +59,37 @@
     K.draggableSheet(sheet); K.smoothSheet(sheet);
     map = K.map('map');
     map.on('moveend', onPinMove);
-    map.on('dragstart', () => { if (S.view === 'home') S.mapTouched = true; });
+    let tuckTimer;
+    map.on('dragstart', () => {
+      if (S.view !== 'home') return;
+      S.mapTouched = true; clearTimeout(tuckTimer);
+      if (sheet.snapTo && sheet.snap && sheet.snap() !== 'peek' && innerWidth < 760) { sheet._tucked = sheet.snap(); sheet.snapTo('peek'); }
+    });
+    map.on('moveend', () => {
+      if (S.view !== 'home' || !sheet._tucked) return;
+      clearTimeout(tuckTimer);
+      tuckTimer = setTimeout(() => { if (S.view === 'home' && sheet._tucked && sheet.snapTo) { sheet.snapTo(sheet._tucked); sheet._tucked = null; } }, 1100);
+    });
     root.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => openTab(b.dataset.tab));
 
     // Fresh data from the server. If we have last-known data for this account, draw the
     // app with it straight away and let these update it in the background.
     const fresh = Promise.all([K.api('/me'), K.api('/config'), K.api('/trips/active'), K.api('/trips/history').catch(() => null)]);
     const cMe = K.cache.get('me'), cCfg = K.cache.get('config');
-    const keep = (me, config, hist) => { K.cache.set('me', me); K.cache.set('config', config); if (hist) K.cache.set('hist', hist.slice(0, 30)); };
+    // A trip in progress is saved too, so opening the app goes straight back into it.
+    const LIVE = ['requested', 'accepted', 'arrived', 'in_progress'];
+    const keep = (me, config, hist, active) => { K.cache.set('me', me); K.cache.set('config', config); if (hist) K.cache.set('hist', hist.slice(0, 30)); K.cache.set('active', active && LIVE.includes(active.status) ? active : null); };
     if (cMe && cCfg) {
       await null; // let the rest of this file finish loading before we draw
-      boot(cMe, cCfg, null, K.cache.get('hist') || null);
+      const cAct = K.cache.get('active');
+      boot(cMe, cCfg, cAct && LIVE.includes(cAct.status) ? cAct : null, K.cache.get('hist') || null);
       fresh.then(([me, config, active, hist]) => {
-        keep(me, config, hist);
+        keep(me, config, hist, active);
         S.user = me.user; S.config = config;
         if (hist) { S.history = hist; buildRecent(hist); patchHome('quick'); }
-        if (active) onTrip(active); else { patchHome('forYou'); }
+        if (active) onTrip(active);
+        else if (S.trip && LIVE.includes(S.trip.status)) reset();   // the saved trip ended meanwhile
+        else { patchHome('forYou'); }
       }).catch(() => {}); // offline: keep showing what we have; the banner explains
       return;
     }
@@ -267,11 +282,12 @@
         <div id="upHost"></div>
         <div id="locHost">${locHtml()}</div>
         <div class="where">
-          <button class="where-go" id="whereBtn">${K.ic('search')}<span>Where to?</span></button>
+          <button class="where-go" id="whereBtn">${K.ic('search')}<span class="on-txt">Where to?</span><span class="off-txt">No connection</span></button>
           <button class="when-pill ${S.when ? 'on' : ''}" id="homeWhen" aria-label="Pickup time">${K.ic('clock', 'sm')}<span>${S.when ? K.esc(whenLabel(S.when)) : 'Now'}</span>${K.ic('chevDown', 'sm')}</button>
         </div>
+        <div id="suggHost"></div>
         <div class="quick" id="quickHost">${quickHtml()}</div>
-        <div class="svc-strip${main.length <= 5 ? ' fit' : ''}" id="svcStrip">${main.map((id) => `<button class="svc-t" data-svc="${id}"><span class="tile">${K.ART[id]}</span><b>${svcName(id)}</b><small data-eta="${id}">&nbsp;</small></button>`).join('')}</div>
+        <div class="svc-strip${main.length <= 5 ? ' fit' : ''}" id="svcStrip">${main.map((id) => `<button class="svc-t" data-svc="${id}"><span class="tile">${K.ART[id]}</span><b>${svcName(id)}</b><small data-eta="${id}">&nbsp;</small><small class="tile-price" data-price="${id}"></small></button>`).join('')}</div>
         <div id="foldMark"></div>
         <div id="forYou">${forYouHtml()}</div>
         <div id="installHost"></div>
@@ -281,7 +297,7 @@
     K.$('#whereBtn').onclick = () => openSearch();
     K.$('#homeWhen').onclick = () => openWhen(() => openSearch());
     sheet.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { setService(b.dataset.svc); openSearch(b.dataset.svc === 'airport' ? { preset: K.PLACES[0] } : {}); });
-    bindQuick(); bindForYou(); paintEtas();
+    bindQuick(); bindForYou(); paintEtas(); paintSuggestion();
     homeSheet();
   }
 
@@ -332,7 +348,7 @@
     if (part === 'up') upHtml();
     if (part === 'forYou') { K.$('#forYou').innerHTML = forYouHtml(); bindForYou(); }
     if (part === 'quick') { K.$('#quickHost').innerHTML = quickHtml(); bindQuick(); }
-    if (part === 'loc') { K.$('#locHost').innerHTML = locHtml(); bindLoc(); }
+    if (part === 'loc') { K.$('#locHost').innerHTML = locHtml(); bindLoc(); paintSuggestion(); }
     sheet._keep = false;
   }
 
@@ -354,6 +370,46 @@
     if (sp) sp.onclick = () => openSearch({ pickFirst: true });
     if (cp) cp.onclick = () => openSearch({ pickFirst: true });
     if (rl) rl.onclick = () => { S.loc = 'finding'; patchHome('loc'); locate(true); };
+  }
+
+  // A suggestion for right now: work on weekday mornings, home in the evening, otherwise the last place
+  // you went. It shows the price and time before you tap, and the same prices appear on the ride tiles.
+  function suggestion() {
+    if (!S.pickup || !S.user) return null;
+    const sp = S.user.savedPlaces || {}, k = new Date(Date.now() + 3 * 3600e3), h = k.getUTCHours(), wd = k.getUTCDay() >= 1 && k.getUTCDay() <= 5;
+    const far = (p) => p && K.km(S.pickup, p) > 0.4;
+    if (wd && h >= 5 && h < 11 && far(sp.work)) return { label: 'To work', icon: 'work', place: { name: 'Work', address: sp.work.address, lat: sp.work.lat, lng: sp.work.lng } };
+    if ((h >= 16 || h < 2) && far(sp.home)) return { label: 'Head home', icon: 'home', place: { name: 'Home', address: sp.home.address, lat: sp.home.lat, lng: sp.home.lng } };
+    const r = (S.recent || []).find(far);
+    return r ? { label: 'Go again', icon: 'clock', place: { name: r.name, address: r.name, lat: r.lat, lng: r.lng } } : null;
+  }
+  const suggCache = {};
+  async function paintSuggestion() {
+    const host = K.$('#suggHost'); if (!host) return;
+    const sg = suggestion();
+    if (!sg) { host.innerHTML = ''; return; }
+    const key = `${sg.place.lat.toFixed(4)},${sg.place.lng.toFixed(4)}|${S.pickup.lat.toFixed(3)},${S.pickup.lng.toFixed(3)}`;
+    const draw = (q) => {
+      const o = q && (q.options.find((x) => x.id === S.service) || q.options[0]);
+      host.innerHTML = `<button class="sugg" id="sugg"><span class="sugg-ic">${K.ic(sg.icon, 'sm')}</span>
+        <span class="grow"><small>${sg.label}</small><b class="ellipsis">${K.esc(shortName(sg.place.address || sg.place.name))}</b>
+        <span class="sugg-meta">${o ? `${K.esc(svcName(o.id))} · ${K.ugx(o.payable ?? o.fare)} · about ${o.durationMin} min` : 'Checking prices…'}</span></span>
+        <span class="sugg-go" aria-hidden="true">${K.ic('chev', 'sm')}</span></button>`;
+      K.$('#sugg', host).onclick = () => chooseDrop(sg.place);
+      sheet.querySelectorAll('[data-price]').forEach((el) => {
+        const x = q && q.options.find((y) => y.id === el.dataset.price);
+        el.textContent = x ? K.ugx(x.payable ?? x.fare).replace(/,000$/, 'k').replace(/,(\d)00$/, '.$1k') : '';
+      });
+    };
+    const hit = suggCache[key];
+    if (hit && Date.now() - hit.at < 120e3) { draw(hit.q); return; }
+    draw(null);
+    try {
+      const r = await K.route(S.pickup, sg.place);
+      const q = await K.api('/fare/estimate', { pickup: S.pickup, drop: { ...sg.place, address: sg.place.address || sg.place.name }, distanceKm: r.km, durationMin: r.freeMin, peek: true });
+      suggCache[key] = { at: Date.now(), q };
+      if (S.view === 'home' && K.$('#suggHost')) draw(q);
+    } catch { host.innerHTML = ''; }
   }
 
   // Live "2 min" under each service from the cars and bodas around you
@@ -1244,15 +1300,22 @@
   function tripDetails(t) {
     const d = t.driver || {};
     const P = PAY[payOfTrip(t)] || PAY.cash;
-    const dm = K.modal(`<h2>Trip details</h2>
-      <p class="small muted">${K.when(t.createdAt)}</p>
+    // What happened when: requested → accepted → arrived → started → dropped off.
+    const at = (x) => (x ? K.clock(new Date(x)) : null);
+    const steps = [['Requested', t.createdAt], [`${d.name ? K.first(d.name) : 'Driver'} accepted`, t.acceptedAt], ['Arrived at pickup', t.arrivedAt], ['Trip started', t.startedAt],
+      [t.service === 'parcel' ? 'Delivered' : 'Dropped off', t.completedAt]].filter(([, x]) => x);
+    if (['cancelled', 'no_drivers'].includes(t.status)) steps.push([t.status === 'no_drivers' ? 'No driver found' : `Cancelled${t.cancelledBy === 'driver' ? ' by the driver' : ''}`, null]);
+    const dm = K.modal(`<div class="td-map" id="tdMap" aria-label="Map of the route"></div>
+      <h2>${K.esc(shorten(t.drop.address, 40))}</h2>
+      <p class="small muted">${K.when(t.completedAt || t.createdAt)} · ${K.esc(svcName(t.service))}${t.distanceKm ? ` · ${Number(t.distanceKm).toFixed(1)} km` : ''}</p>
+      ${steps.length > 1 ? `<ol class="timeline">${steps.map(([l, x], i) => `<li class="${i === steps.length - 1 ? 'last' : ''}"><b>${K.esc(l)}</b>${at(x) ? `<span>${at(x)}</span>` : ''}</li>`).join('')}</ol>` : ''}
       <div class="stops">
         <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>From</small><b>${K.esc(t.pickup.address)}</b></span></div>
         ${stopRows(t)}
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b>${K.esc(t.drop.address)}</b></span></div>
       </div>
       <div class="kv"><span>Service</span><b>${svcName(t.service)}</b></div>
-      ${d.name ? `<div class="kv"><span>${who(t) === 'rider' ? 'Rider' : 'Driver'}</span><b>${K.esc(d.name)} · ${K.esc(d.plate || '')}</b></div>` : ''}
+      ${d.name ? `<div class="kv"><span>${t.service === 'parcel' ? 'Courier' : 'Driver'}</span><b>${K.esc(d.name)} · ${K.esc(d.plate || '')}</b></div>` : ''}
       ${t.distanceKm ? `<div class="kv"><span>Distance</span><b>${Number(t.distanceKm).toFixed(1)} km</b></div>` : ''}
       <div class="kv"><span>Payment</span><b>${P.name}${t.paymentStatus === 'paid' ? ' · Paid' : t.paymentStatus === 'pending' && t.paymentMethod !== 'cash' ? ' · Not paid' : ''}</b></div>
       ${t.scheduledFor ? `<div class="kv"><span>Scheduled for</span><b>${whenLabel(t.scheduledFor)}</b></div>` : ''}
@@ -1263,6 +1326,7 @@
       <div class="big-total"><span class="bold">You paid</span><b>${K.ugx(t.payable + (t.tip || 0))}</b></div>
       <div class="trip-acts">
         ${t.service !== 'parcel' && ['completed', 'cancelled', 'no_drivers'].includes(t.status) ? `<button class="trip-act" data-again>${K.ic('refresh')}<span>Book again</span></button>` : ''}
+        ${t.service !== 'parcel' && t.status === 'completed' ? `<button class="trip-act" data-return>${K.ic('back')}<span>Book the return</span></button>` : ''}
         ${t.status === 'completed' ? `<button class="trip-act" data-receipt>${K.ic('receipt')}<span>Receipt</span></button>` : ''}
         ${t.driver ? `<button class="trip-act" data-help>${K.ic('help')}<span>Get help</span></button>` : ''}
       </div>
@@ -1270,6 +1334,22 @@
       <button class="btn btn-block" style="margin-top:14px" data-close>Close</button>`);
     const box = dm.el, close = dm.close;
     const again = box.querySelector('[data-again]'); if (again) again.onclick = () => { close(); bookAgain(t); };
+    const ret = box.querySelector('[data-return]'); if (ret) ret.onclick = () => { close(); bookAgain(t, true); };
+    // The route on a real map (still, no dragging), in the app's light or dark style.
+    setTimeout(async () => {
+      if (!box.isConnected || !K.$('#tdMap', box)) return;
+      try {
+        const mm = K.map('tdMap', t.pickup, 14);
+        ['dragging', 'touchZoom', 'scrollWheelZoom', 'doubleClickZoom', 'boxZoom', 'keyboard'].forEach((h) => mm[h] && mm[h].disable());
+        const r = await K.route(t.pickup, t.drop, t.stops || []);
+        if (!box.isConnected) return;
+        const line = K.drawRoute(mm, r.coords, { animate: !K.reduced() });
+        L.marker(r.coords[0], { icon: K.divIcon('<div class="pin-ci"></div>', [18, 18]) }).addTo(mm);
+        L.marker(r.coords[r.coords.length - 1], { icon: K.divIcon('<div class="pin-sq"></div>', [18, 18]) }).addTo(mm);
+        (t.stops || []).forEach((x, i) => L.marker([x.lat, x.lng], { icon: K.divIcon(`<div class="pin-stop">${i + 1}</div>`, [20, 20]) }).addTo(mm));
+        mm.fitBounds(line.bounds(), { padding: [26, 26], maxZoom: 16 });
+      } catch {}
+    }, 60);
     const rc = box.querySelector('[data-receipt]'); if (rc) rc.onclick = () => receipt(t);
     const hp = box.querySelector('[data-help]'); if (hp) hp.onclick = () => { close(); tripHelp(t); };
     // Earlier reports on this trip, with the Flytte team's reply.
@@ -1293,12 +1373,15 @@
     } catch {}
   }
 
-  function bookAgain(t) {
+  // Book again, or the return trip (destination becomes the pickup), with the same ride type.
+  function bookAgain(t, back = false) {
     if (S.trip && ['requested', 'accepted', 'arrived', 'in_progress'].includes(S.trip.status)) { K.toast('Finish your current trip first'); return; }
     openTab('home');
-    S.pickup = { lat: t.pickup.lat, lng: t.pickup.lng, address: t.pickup.address, short: shortName(t.pickup.address), manual: true };
+    const from = back ? t.drop : t.pickup, to = back ? t.pickup : t.drop;
+    S.pickup = { lat: from.lat, lng: from.lng, address: from.address, short: shortName(from.address), manual: true };
     if (S.config.services.some((x) => x.id === t.service)) setService(t.service);
-    chooseDrop({ lat: t.drop.lat, lng: t.drop.lng, name: t.drop.address });
+    S.stops = back ? [] : (t.stops || []).map((x) => ({ lat: x.lat, lng: x.lng, address: x.address }));
+    chooseDrop({ lat: to.lat, lng: to.lng, name: to.address });
   }
 
   // A clean receipt: share it, or save it as a PDF from the print dialog.
@@ -1377,6 +1460,7 @@
 
   // ---------- trip events ----------
   function onTrip(t) {
+    try { K.cache.set('active', t && ['requested', 'accepted', 'arrived', 'in_progress'].includes(t.status) ? t : null); } catch {}
     if (!t) return;
     if (S.trip && t.id < S.trip.id) return;
     const prev = S.trip && S.trip.status;
@@ -1649,7 +1733,7 @@
     if (old.some((p) => p.dataset.tabpage === tab)) { old.filter((p) => p.dataset.tabpage !== tab).forEach((p) => p.remove()); return; }
     const page = document.createElement('div');
     page.className = 'page tab-swap grouped'; page.dataset.tabpage = tab;
-    page.innerHTML = `<div class="page-inner">${K.skeleton('title-list')}</div>`;
+    page.innerHTML = `<div class="page-inner">${tab === 'activity' && !S.history ? tripSkeleton() : K.skeleton('title-list')}</div>`;
     root.querySelector('#app').insertBefore(page, K.$('#tabs'));
     (tab === 'activity' ? drawActivity : drawAccount)(page.firstElementChild);
     old.forEach((p) => p.remove());                 // only after the new page is in place: no gap to see through
@@ -1674,25 +1758,53 @@
     try { S.history = await K.api('/trips/history'); }
     catch (e) {
       el.innerHTML = `<div class="page-title">Activity</div><div class="state-box" role="alert"><b>Couldn’t load your trips</b><span>${K.esc(e.message)}</span><button class="btn btn-sm" id="again">Try again</button></div>`;
-      K.$('#again', el).onclick = () => { el.innerHTML = `<div class="page-title">Activity</div>${K.skeleton('list', 4)}`; drawActivity(el, filter, true); };
+      K.$('#again', el).onclick = () => { el.innerHTML = tripSkeleton(); drawActivity(el, filter, true); };
       return;
     }
     paintActivity(el, filter, S.history);
   }
+  // Activity: trips grouped as Upcoming, This week, then by month (with the month's total), each card
+  // with a drawing of its route, the driver and the stars you gave.
+  const tripSkeleton = (n = 4) => `<div class="page-title">Activity</div><i class="sk" style="width:70%;height:34px;border-radius:12px;margin:2px 0 14px"></i>${Array.from({ length: n }, () => `<div class="tc sk-tc"><i class="sk tc-map"></i><span class="grow"><i class="sk" style="width:64%;height:14px"></i><i class="sk" style="width:42%;height:11px;margin-top:8px"></i><i class="sk" style="width:30%;height:11px;margin-top:8px"></i></span></div>`).join('')}`;
+  const monthKey = (d) => { const k = new Date(new Date(d).getTime() + 3 * 3600e3); return `${k.getUTCFullYear()}-${String(k.getUTCMonth() + 1).padStart(2, '0')}`; };
   function paintActivity(el, filter, list) {
     el.dataset.filter = filter;
-    const shown = list.filter((t) => filter === 'all' || (filter === 'parcel' ? t.service === 'parcel' : t.service !== 'parcel'));
-    const st = (t) => (t.status === 'scheduled' ? [`Scheduled · ${whenLabel(t.scheduledFor)}`, 'warn'] : { completed: ['Completed', 'ok'], cancelled: ['Cancelled', 'bad'], no_drivers: ['No driver found', 'bad'] }[t.status] || [t.status.replace('_', ' '), 'warn']);
+    const live = ['requested', 'accepted', 'arrived', 'in_progress'];
+    const keep = (t) => filter === 'all' ? !['cancelled', 'no_drivers'].includes(t.status) || t.cancelFee || t.noShowFee
+      : filter === 'cancelled' ? ['cancelled', 'no_drivers'].includes(t.status)
+      : (filter === 'parcel' ? t.service === 'parcel' : t.service !== 'parcel') && !['cancelled', 'no_drivers'].includes(t.status);
+    const shown = list.filter(keep);
+    const st = (t) => (t.status === 'scheduled' ? [`Scheduled · ${whenLabel(t.scheduledFor)}`, 'warn'] : live.includes(t.status) ? ['Now', 'warn'] : { cancelled: ['Cancelled', 'bad'], no_drivers: ['No driver found', 'bad'] }[t.status] || null);
+    const groups = [], weekAgo = Date.now() - 7 * 86400e3;
+    const push = (key, title, t) => { let g = groups.find((x) => x.key === key); if (!g) { g = { key, title, trips: [] }; groups.push(g); } g.trips.push(t); };
+    for (const t of shown) {
+      if (t.status === 'scheduled' || live.includes(t.status)) push('up', 'Upcoming', t);
+      else if (new Date(t.completedAt || t.createdAt).getTime() > weekAgo) push('week', 'This week', t);
+      else { const mk = monthKey(t.completedAt || t.createdAt); push(mk, new Date(mk + '-01T12:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }), t); }
+    }
+    const total = (g) => g.trips.filter((t) => t.status === 'completed').reduce((a, t) => a + (t.payable ?? t.fare) + (t.tip || 0), 0);
+    const card = (t, i) => {
+      const d = t.driver || {}, s = st(t);
+      return `<button class="tc" data-t="${i}" style="--i:${Math.min(i, 8)}">
+        <span class="tc-map">${K.routeThumb([t.pickup, ...(t.stops || []), t.drop])}</span>
+        <span class="grow"><b class="ellipsis">${K.esc(shorten(t.drop.address, 34))}</b>
+          <small class="ellipsis">From ${K.esc(shorten(t.pickup.address, 28))}</small>
+          <small class="ellipsis">${K.when(t.completedAt || t.createdAt)} · ${K.esc(svcName(t.service))}${d.name ? ` · ${K.esc(K.first(d.name))}` : ''}</small>
+          ${s ? `<span class="badge ${s[1]}">${s[0]}</span>` : ''}</span>
+        <span class="tc-p">${t.status === 'completed' ? K.ugx((t.payable ?? t.fare) + (t.tip || 0)) : t.cancelFee || t.noShowFee ? K.ugx(t.cancelFee || t.noShowFee) : ''}${t.myStars ? `<span class="tc-stars" aria-label="You gave ${t.myStars} stars">★ ${t.myStars}</span>` : ''}${d.photo ? `<img class="tc-face" src="${K.esc(d.photo)}" alt="">` : ''}</span></button>`;
+    };
+    let idx = 0; const flat = [];
     el.innerHTML = `<div class="page-title">Activity</div>
-      <div class="seg-tabs">${[['all', 'All'], ['ride', 'Rides'], ['parcel', 'Deliveries']].map(([k, l]) => `<button data-f="${k}" aria-pressed="${k === filter}">${l}</button>`).join('')}</div>
-      ${shown.length ? shown.map((t, i) => `<button class="trip-card" data-t="${i}" style="width:100%;cursor:pointer;text-align:left">
-        <span class="ic">${K.artFor(t.service)}</span>
-        <span class="grow"><span class="t ellipsis" style="display:block">${K.esc(shorten(t.drop.address, 34))}</span>
-          <span class="s" style="display:block">${K.when(t.createdAt)}</span><span class="badge ${st(t)[1]}" style="margin-top:4px">${st(t)[0]}</span></span>
-        <span class="p">${K.ugx(t.payable ?? t.fare)}</span></button>`).join('')
-      : `<div class="empty"><div class="illu">${K.ART[filter === 'parcel' ? 'parcel' : 'boda']}</div><h3>No ${filter === 'parcel' ? 'deliveries' : 'trips'} yet</h3><p class="small">Your ${filter === 'parcel' ? 'deliveries' : 'rides and deliveries'} will show here.</p><button class="btn btn-primary" id="first">${filter === 'parcel' ? 'Send a parcel' : 'Book a ride'}</button></div>`}`;
+      <div class="seg-tabs">${[['all', 'All'], ['ride', 'Rides'], ['parcel', 'Deliveries'], ['cancelled', 'Cancelled']].map(([k, l]) => `<button data-f="${k}" aria-pressed="${k === filter}">${l}</button>`).join('')}</div>
+      ${shown.length ? groups.map((g) => {
+        const sum = total(g), n = g.trips.filter((t) => t.status === 'completed').length;
+        return `<div class="act-h"><b>${K.esc(g.title)}</b>${n && g.key !== 'up' ? `<button class="link-btn small" data-month="${/^\d{4}-\d{2}$/.test(g.key) ? g.key : ''}">${n} trip${n > 1 ? 's' : ''} · ${K.ugx(sum)}</button>` : ''}</div>`
+          + g.trips.map((t) => { flat.push(t); return card(t, idx++); }).join('');
+      }).join('')
+      : `<div class="empty"><div class="illu">${K.ART[filter === 'parcel' ? 'parcel' : 'boda']}</div><h3>${filter === 'cancelled' ? 'No cancelled trips' : `No ${filter === 'parcel' ? 'deliveries' : 'trips'} yet`}</h3><p class="small">${filter === 'cancelled' ? 'Trips you or a driver cancel show here.' : `Your ${filter === 'parcel' ? 'deliveries' : 'rides and deliveries'} will show here.`}</p>${filter === 'cancelled' ? '' : `<button class="btn btn-primary" id="first">${filter === 'parcel' ? 'Send a parcel' : 'Book a ride'}</button>`}</div>`}`;
     el.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => paintActivity(el, b.dataset.f, S.history || []));
-    el.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => tripDetails(shown[+b.dataset.t]));
+    el.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => tripDetails(flat[+b.dataset.t]));
+    el.querySelectorAll('[data-month]').forEach((b) => b.onclick = () => openSummary(null, b.dataset.month || undefined));
     const f = K.$('#first', el); if (f) f.onclick = () => { openTab('home'); if (filter === 'parcel') setService('parcel'); openSearch(); };
   }
 
@@ -1903,9 +2015,9 @@
   }
 
   // Monthly summary with a statement to download.
-  async function openSummary(onBack) {
+  async function openSummary(onBack, startMonth) {
     const sp = subPage('Monthly summary', onBack);
-    let month = (S.summary && S.summary.month) || null;
+    let month = startMonth || (S.summary && S.summary.month) || null;
     const shift = (ym, d) => { const [y, m] = ym.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1 + d, 1)); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`; };
     const label = (ym) => new Date(ym + '-01T12:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     const load = async () => {

@@ -651,7 +651,8 @@ r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   const rt0 = route(req.body || {}, res);
   if (!rt0) return;
   const { pickup, drop, stops } = rt0;
-  surge.recordLook(req.user.id, pickup.lat, pickup.lng);   // someone checking prices = demand signal
+  // Someone checking prices = demand signal; the home screen's own suggestion ("peek") doesn't count.
+  if (!req.body.peek) surge.recordLook(req.user.id, pickup.lat, pickup.lng);
   const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin, stops);
   // How far is the nearest free driver for each ride type?
   for (const o of q.options) {

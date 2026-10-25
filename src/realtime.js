@@ -93,7 +93,7 @@ function view(t, role) {
   // Phone numbers are only shared while the trip is live.
   const live2 = ACTIVE.includes(t.status);
   if (role === 'rider') {
-    v.pin = t.pin; v.shareToken = t.share_token; v.riderRated = t.rider_rating != null;
+    v.pin = t.pin; v.shareToken = t.share_token; v.riderRated = t.rider_rating != null; v.myStars = t.rider_rating || null;
     v.dropCode = t.drop_code || null; v.pointsEarned = t.points_earned || 0;
     v.split = t.split_token ? { people: t.split_people, paid: t.split_paid, share: t.split_share, token: t.split_token } : null;
     if (v.driver && live2) v.driver.phone = t.driver_phone;
