@@ -124,7 +124,7 @@
     'Woman driver': 'Omuvuzi omukazi', 'Only women drivers get your request': 'Abavuzi abakazi bokka be bafuna okusaba kwo', 'Ask only women drivers': 'Saba bavuzi bakazi bokka', 'No women drivers free right now': 'Tewali bavuzi bakazi ba bwereere kati', 'Try any driver': 'Gezaako omuvuzi yenna',
     'The women drivers nearby are busy. Try again in a minute, or ask any driver.': 'Abavuzi abakazi abali okumpi balina emirimu. Ddamu ogezeeko mu ddakiika emu, oba saba omuvuzi yenna.',
     'We’ll only ask women drivers. It can take a little longer.': 'Tujja kubuuza bavuzi bakazi bokka. Kiyinza okutwala akaseera katono.',
-    'Send arrival time': 'Weereza essaawa gy’onootuukirako', 'Share trip status': 'Gabana olugendo lwo',
+    'Send arrival time': 'Weereza essaawa', 'Share trip status': 'Gabana olugendo lwo',
     'ID & permit checked': 'Endagamuntu ne layisinsi bikeberebwa', 'ID checked': 'Endagamuntu ekeberebwa', 'Permit valid': 'Layisinsi ekola', 'National ID checked by Flytte': 'Endagamuntu ekeberebwa Flytte', 'ID not checked yet': 'Endagamuntu tennakeberebwa',
     'Driving permit on file and valid': 'Layisinsi y’okuvuga eriwo era ekola', 'Driving permit not confirmed': 'Layisinsi y’okuvuga tennakakasibwa', 'Make sure the face and plate match before you get on.': 'Kakasa nti ffeesi ne namba pulati bikwatagana nga tonnalinnya.', 'Looks right': 'Kituufu',
     'Welcome to Flytte': 'Tukwanirizza ku Flytte', 'Drive with Flytte': 'Vuga ne Flytte',

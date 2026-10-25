@@ -1152,7 +1152,7 @@
       sheet.innerHTML = `
         <div class="grabber"></div>
         <div class="driver-card">${facePhoto(d)}
-          <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))} · <span class="plate-chip">${K.esc(d.plate)}</span></span>${trustRow(d)}</span>
+          <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))}</span><span class="plate-chip plate-inline">${K.esc(d.plate)}</span>${trustRow(d)}</span>
           ${callBtn('round go')}<button class="round brand" id="chatBtn" aria-label="Message">${K.ic('msg')}</button></div>
         <button class="link-report" data-report>Driver or plate doesn’t match?</button>
         ${nightCard(t)}
@@ -1165,7 +1165,7 @@
         ${extrasHtml(t)}
         <div class="fare-row"><span class="muted">Total fare</span><b>${fareHtml(t)}</b></div>
         ${splitRow(t)}
-        <div class="sheet-foot"><div class="row"><button class="btn fill" id="share">${K.ic('send', 'sm')} Send arrival time</button><button class="btn btn-danger-soft fill" id="sos" style="margin-top:0">${K.ic('sos', 'sm')} SOS</button></div></div>`;
+        <div class="sheet-foot"><div class="row trip-acts-row"><button class="btn fill" id="share">${K.ic('send', 'sm')} Send arrival time</button><button class="btn btn-danger-soft sos-btn" id="sos" style="margin-top:0">${K.ic('sos', 'sm')} SOS</button></div></div>`;
       K.$('#share').onclick = shareEta;
       K.$('#sos').onclick = sos;
       const nw = K.$('#nsWa'); if (nw) nw.onclick = () => sendNightWhatsApp(t);
