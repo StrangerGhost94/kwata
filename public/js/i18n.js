@@ -1,12 +1,141 @@
-// Kiswahili for the rider and driver apps.
+// Kiswahili and Luganda for the rider and driver apps.
 // Only exact interface phrases are swapped, so names, addresses and places are never touched.
 // Loaded on every page; does nothing unless Kiswahili is chosen in Settings.
 (function () {
   let lang = 'en';
   try { lang = localStorage.getItem('flytte_lang') || 'en'; } catch {}
   window.FLYTTE_LANG = lang;
-  if (lang !== 'sw') return;
-  document.documentElement.lang = 'sw';
+  if (lang !== 'sw' && lang !== 'lg') return;
+  document.documentElement.lang = lang;
+
+  // Luganda. Familiar words stay as people say them in Kampala: boda, Mobile Money, PIN, WhatsApp, SMS.
+  const LG = {
+    'Notifications': 'Obubaka', 'Trip alerts': 'Obubaka bw’olugendo', 'Trip alerts are on': 'Obubaka bw’olugendo bukoleddwa', 'Know when your driver arrives': 'Manya ng’omuvuzi wo atuuse',
+    'Get a notification when your driver is close and when they’ve arrived, even with your phone locked.': 'Funa obubaka ng’omuvuzi wo ali kumpi ne bw’atuuka, ne bwe kiba nti essimu yo nsibe.',
+    'Turn on trip alerts': 'Koleeza obubaka bw’olugendo', 'Not now': 'Si kati', 'Book again': 'Ddamu obuke', 'Receipt': 'Lisiiti', 'Get help': 'Funa obuyambi',
+    'Your reports': 'Ebyo by’oloopye', 'In review': 'Bikyetegerezebwa', 'Resolved': 'Kigonjoddwa', 'Flytte support': 'Obuyambi bwa Flytte', 'We usually reply within a few hours.': 'Tutera okuddamu mu ssaawa ntono.',
+    'I lost an item': 'Nabuze ekintu', 'I was charged the wrong amount': 'Bansasuzza ssente ezitali ntuufu', 'The route was longer than it should be': 'Ekkubo lyali ddene okusinga bwe lyandibadde',
+    'Driver behaviour': 'Empisa z’omuvuzi', 'Safety concern': 'Ensonga y’obukuumi', 'Something else': 'Ekirala', 'Send to Flytte': 'Sindika eri Flytte', 'Report sent': 'Lipoota esindikiddwa',
+    'Call support': 'Kubira obuyambi', 'What happened?': 'Kiki ekyabaddewo?', 'What did you leave, and where in the vehicle?': 'Kiki kye walese, era kyali wa mu kidduka?',
+    'Share': 'Gabana', 'Save as PDF': 'Tereka nga PDF', 'Total': 'Awamu', 'Trip fare': 'Ssente z’olugendo', 'Pickup note': 'Obubaka eri omuvuzi', 'Save note': 'Tereka obubaka', 'Remove': 'Ggyawo',
+    'Your pickup note': 'Obubaka bwo eri omuvuzi', 'At the main gate': 'Ku mulyango omunene', 'Call me when you arrive': 'Nkubira ng’otuuse', 'Opposite the petrol station': 'Okwolekera ppampu y’amafuta', 'At the stage': 'Ku siteegi',
+    'How it’s priced': 'Ebbeeyi bw’ebalibwa', 'Base fare': 'Ssente ez’okutandika', 'Minimum fare': 'Ssente ezisinga obutono', 'Busy-time pricing': 'Ebbeeyi mu biseera ebirimu abantu abangi', 'You pay': 'Osasula',
+    'Taking longer than usual': 'Kitwala ekiseera okusinga bulijjo', 'Drivers nearby are busy. We’re still asking.': 'Abavuzi abali okumpi balina emirimu. Tukyabuuza.', 'Shown after you accept': 'Kirabika ng’okkirizza',
+    'Trip help': 'Obuyambi ku lugendo', 'A rider left an item': 'Omusaabaze yalese ekintu', 'I wasn’t paid for this trip': 'Sasasulwa ku lugendo luno', 'Rider behaviour': 'Empisa z’omusaabaze', 'Per trip': 'Ku buli lugendo',
+    'Wallet lock': 'Kkufulu y’ensawo', 'Wallet lock is on': 'Kkufulu y’ensawo ekoleddwa', 'Wallet lock is off': 'Kkufulu y’ensawo ejjiddwako', 'Confirm it’s you': 'Kakasa nti ggwe', 'Use a code instead': 'Kozesa koodi mu kifo ky’ekyo',
+    'Turn off wallet lock?': 'Ggyako kkufulu y’ensawo?', 'Your Flytte Wallet is locked.': 'Ensawo yo eya Flytte nsibe.', 'Use Face ID or Touch ID': 'Kozesa Face ID oba Touch ID', 'Use fingerprint or face unlock': 'Kozesa engalo oba ffeesi yo',
+    'Confirm': 'Kakasa', 'Not confirmed. Try again, or use a code.': 'Tekikakasiddwa. Ddamu ogezeeko, oba kozesa koodi.',
+    'Add your email': 'Yongerako email yo', 'Stay in the loop with your trips and your Flytte account.': 'Manya ebikwata ku ngendo zo n’akawunti yo eya Flytte.', 'Skip for now': 'Buuka kati', 'Check your email': 'Kebera email yo',
+    'Confirm email': 'Kakasa email', 'Use a different email': 'Kozesa email endala', 'Email': 'Email', 'Trip receipts': 'Lisiiti z’engendo', 'Emailed a few minutes after each paid trip': 'Esindikibwa ku email oluvannyuma lw’eddakiika ntono buli lugendo lwe wasasulidde',
+    'Change email': 'Kyusa email', 'Remove email': 'Ggyawo email', 'Email removed': 'Email ejjiddwawo', 'Email confirmed': 'Email ekakasiddwa', 'Enter a valid email address.': 'Wandiika email entuufu.',
+    'Report a mismatch': 'Loopa ekitakwatagana', 'Report received': 'Lipoota efuniddwa', 'Parcel delivered': 'Pakeeti etuusiddwa', 'You’ve arrived': 'Otuuse', 'Your package has been handed over': 'Pakeeti yo ekwasiddwa',
+    'Thanks for riding with Flytte': 'Webale okutambulira ku Flytte', 'Promo applied': 'Promo essiddwako', 'Tip sent. Thank you.': 'Akasiimo kasindikiddwa. Webale.', 'Payment received': 'Ssente zifuniddwa', 'Commission paid': 'Komisoni esasuddwa',
+    'You’ve reached the pickup': 'Otuuse w’okukimira omusaabaze', 'You’ve reached the destination': 'Otuuse gy’ogenda', 'You’ve reached the drop-off': 'Otuuse w’okukwasa', 'Navigate': 'Laga ekkubo',
+    'Rating is optional': 'Okuwa obubonero si kya buwaze', 'Done': 'Kiwedde',
+    'Split the fare': 'Gabana ssente z’olugendo', 'Friends pay their share by Mobile Money': 'Mikwano gisasula ekitundu kyabwe ku Mobile Money', 'How many people, including you?': 'Abantu bameka, naawe nga mw’oli?', 'Send the link on WhatsApp': 'Sindika link ku WhatsApp', 'Copy link': 'Koppa link',
+    'Cancellation fee': 'Ssente z’okusazaamu', 'Add a stop': 'Yongerako ekiyimiriro', 'Search for your stop': 'Noonya ekiyimiriro kyo',
+    'Woman driver': 'Omuvuzi omukazi', 'Only women drivers get your request': 'Abavuzi abakazi bokka be bafuna okusaba kwo', 'Ask only women drivers': 'Saba bavuzi bakazi bokka', 'No women drivers free right now': 'Tewali bavuzi bakazi ba bwereere kati', 'Try any driver': 'Gezaako omuvuzi yenna',
+    'The women drivers nearby are busy. Try again in a minute, or ask any driver.': 'Abavuzi abakazi abali okumpi balina emirimu. Ddamu ogezeeko mu ddakiika emu, oba saba omuvuzi yenna.',
+    'We’ll only ask women drivers. It can take a little longer.': 'Tujja kubuuza bavuzi bakazi bokka. Kiyinza okutwala akaseera katono.',
+    'Send arrival time': 'Weereza essaawa gy’onootuukirako', 'Share trip status': 'Gabana olugendo lwo',
+    'ID checked': 'Endagamuntu ekeberebwa', 'Permit valid': 'Layisinsi ekola', 'National ID checked by Flytte': 'Endagamuntu ekeberebwa Flytte', 'ID not checked yet': 'Endagamuntu tennakeberebwa',
+    'Driving permit on file and valid': 'Layisinsi y’okuvuga eriwo era ekola', 'Driving permit not confirmed': 'Layisinsi y’okuvuga tennakakasibwa', 'Make sure the face and plate match before you get on.': 'Kakasa nti ffeesi ne namba pulati bikwatagana nga tonnalinnya.', 'Looks right': 'Kituufu',
+    'Welcome to Flytte': 'Tukwanirizza ku Flytte', 'Drive with Flytte': 'Vuga ne Flytte',
+    'Sign in or create an account with your mobile number.': 'Yingira oba ggulawo akawunti ng’okozesa ennamba y’essimu yo.', 'Sign in, or apply to drive, with your mobile number.': 'Yingira, oba saba okuvuga, ng’okozesa ennamba y’essimu yo.',
+    'Mobile number': 'Ennamba y’essimu', 'Mobile number. You can start with 0.': 'Ennamba y’essimu. Osobola okutandika ne 0.', 'Phone number': 'Ennamba y’essimu', 'Country': 'Eggwanga', 'Country code': 'Koodi y’eggwanga',
+    'Sign In': 'Yingira', 'Sign in': 'Yingira', 'Log In': 'Yingira', 'Continue': 'Weyongereyo', 'Please wait…': 'Lindako…',
+    'We’ll send a one-time code to verify your number.': 'Tujja kukusindikira koodi okukakasa ennamba yo.', 'We’ll send a one-time code to verify your number. New drivers are reviewed before their first trip.': 'Tujja kukusindikira koodi okukakasa ennamba yo. Abavuzi abapya bakeberebwa nga tebannatwala lugendo lwabwe olusooka.',
+    'By continuing, you agree to Flytte’s': 'Bw’oweyongerayo, okkiriza', 'Terms of Service': 'Amateeka ga Flytte', 'Privacy Policy': 'Enkola y’ebyama', 'and': 'ne',
+    'Verify your number': 'Kakasa ennamba yo', 'Choose how to receive your 6-digit code for': 'Londa engeri gy’onoofunamu koodi ey’ennamba 6 eya', 'We’ll send a 6-digit code to': 'Tujja kusindika koodi ey’ennamba 6 ku',
+    'Works on Wi-Fi or mobile data': 'Ekola ku Wi-Fi oba data', 'Delivered in the Telegram app': 'Etuuka mu Telegram', 'Standard text message': 'Obubaka obwa bulijjo (SMS)', 'Enter your code': 'Wandiika koodi yo',
+    'Sent by SMS to': 'Esindikiddwa ku SMS eri', 'Sent on WhatsApp to': 'Esindikiddwa ku WhatsApp eri', 'Sent in Telegram to': 'Esindikiddwa ku Telegram eri', '6-digit code': 'Koodi ey’ennamba 6', 'Change': 'Kyusa', 'Didn’t receive it?': 'Togifunye?',
+    'Send by SMS': 'Sindika ku SMS', 'Send on WhatsApp': 'Sindika ku WhatsApp', 'Send in Telegram': 'Sindika ku Telegram', 'Resend code': 'Ddamu osindike koodi', 'Code resent': 'Koodi eddamiddwa okusindikibwa',
+    'Use WhatsApp': 'Kozesa WhatsApp', 'Use Telegram': 'Kozesa Telegram', 'Use SMS': 'Kozesa SMS', 'Enter all 6 digits.': 'Wandiika ennamba zonna 6.',
+    'Create your account': 'Ggulawo akawunti yo', 'Add your name to finish setting up.': 'Wandiika erinnya lyo omaliriza.', 'Full name': 'Amannya gonna', 'e.g. Grace Nalubega': 'okugeza Grace Nalubega', 'Create account': 'Ggulawo akawunti',
+    'Have an invite code?': 'Olina koodi y’okuyitibwa?', 'Invite code': 'Koodi y’okuyitibwa', 'e.g. GRACE123': 'okugeza GRACE123', 'Your details': 'Ebikukwatako', 'These are verified before your first trip.': 'Bino bikakasibwa nga tonnatwala lugendo lwo olusooka.',
+    'What do you drive?': 'Ovuga ki?', 'Boda boda (motorcycle)': 'Boda boda (pikipiki)', 'Car': 'Mmotoka', 'Number plate': 'Namba pulati', 'Colour': 'Langi', 'Make and model': 'Kika kyayo', 'Driving permit number': 'Ennamba ya layisinsi',
+    'Mobile Money for payouts': 'Mobile Money w’okusasulirwa', 'Same as your phone if empty': 'Bw’oleka awo, ekozesa ennamba y’essimu yo', 'Welcome back': 'Tukwanirizza nate', 'Enter your password to continue.': 'Wandiika ekigambo kyo eky’ekyama oweyongereyo.',
+    'Password': 'Ekigambo eky’ekyama', 'Forgot password?': 'Weerabidde ekigambo eky’ekyama?',
+    'Home': 'Awaka', 'Activity': 'Ebyafaayo', 'Account': 'Akawunti', 'Earnings': 'Ssente z’ofunye', 'Profile': 'Ebikukwatako', 'Back': 'Ddayo', 'Close': 'Ggalawo', 'Save': 'Tereka', 'Add': 'Yongerako', 'Manage': 'Teekateeka', 'Upload': 'Teekako',
+    'Default': 'Ekya bulijjo', 'Not set': 'Tekiteereddwawo', 'optional': 'si kya buwaze', 'New': 'Mupya', 'Now': 'Kati', 'Today': 'Leero', 'This week': 'Wiiki eno', 'All': 'Byonna', 'Map': 'Maapu', 'Settings': 'Enteekateeka', 'Log out': 'Fuluma',
+    'Help & Support': 'Obuyambi', 'Driver support': 'Obuyambi bw’abavuzi', 'Where to?': 'Olaga wa?', 'Where are you going?': 'Ogenda wa?', 'Good morning,': 'Wasuze otya,', 'Good afternoon,': 'Osiibye otya,', 'Good evening,': 'Osiibye otya,',
+    'Boda': 'Boda', 'Comfort': 'Comfort', 'Parcel': 'Pakeeti', 'Airport': 'Ekisaawe', 'Rides': 'Engendo', 'Deliveries': 'Okutuusa ebintu', 'Book a ride': 'Buka olugendo', 'Send a package': 'Weereza pakeeti', 'Airport transfer': 'Okugenda ku kisaawe',
+    'Flying out of Entebbe?': 'Obuuka okuva Entebbe?', 'Picked up and delivered across Kampala': 'Kikimibwa ne kituusibwa wonna mu Kampala', 'Book now, or schedule ahead at the regular price': 'Buka kati, oba teekateeka ng’ekiseera tekinnatuuka ku bbeeyi eya bulijjo',
+    'Set your pickup point': 'Londa w’okukimirwa', 'Pickup point': 'W’okukimirwa', 'Destination': 'Gy’olaga', 'Set destination on map': 'Londa gy’olaga ku maapu', 'Pickup time': 'Essaawa y’okukimirwa', 'Centre on me': 'Ndaga we ndi', 'Go to my location': 'Genda we ndi', 'Resize sheet': 'Kyusa obunene',
+    'Work': 'Ku mulimu', 'For you': 'Bibyo', 'Welcome offer': 'Ekirabo eky’okukwaniriza', '50% off your first ride': '50% ku lugendo lwo olusooka', 'No trips yet': 'Tonnatambula lugendo', 'Your rides and deliveries will show here.': 'Engendo zo n’ebintu by’oweerezza bijja kulabikira wano.',
+    'Trips': 'Engendo', 'Trip history': 'Ebyafaayo by’engendo', '★ New rider rating': '★ Obubonero bw’omusaabaze omupya', 'Invite friends': 'Yita mikwano gyo', 'Flytte Rewards': 'Ebirabo bya Flytte', 'Payment methods': 'Engeri z’okusasula', 'Saved places': 'Ebifo by’otereka',
+    'Flytte Wallet': 'Ensawo ya Flytte', 'Safety': 'Obukuumi', 'Add an emergency contact': 'Yongerako omuntu ow’okukubira mu bwangu', 'Emergency contact': 'Omuntu ow’okukubira mu bwangu', 'Appearance, language, privacy': 'Endabika, olulimi, ebyama',
+    'Your default is used for every trip. Change it any time.': 'Ekya bulijjo kikozesebwa ku buli lugendo. Kikyuse essaawa yonna.', 'Default payment method': 'Engeri y’okusasula eya bulijjo', 'Cash': 'Ssente enkalu', 'Card': 'Kaadi',
+    'Pay your rider or driver directly': 'Sasula omuvuzi butereevu', 'Visa or Mastercard, paid at the end': 'Visa oba Mastercard, osasula ku nkomerero', 'MTN Mobile Money': 'MTN Mobile Money', 'Airtel Money': 'Airtel Money', 'Change Mobile Money number': 'Kyusa ennamba ya Mobile Money',
+    'Top up once with Mobile Money and pay for trips in one tap.': 'Teekamu ssente omulundi gumu ku Mobile Money, osasule engendo nga okonya omulundi gumu.', 'Add money to wallet': 'Teeka ssente mu nsawo', 'Amount (UGX)': 'Omuwendo (UGX)',
+    'If you press SOS during a trip, we’ll help you alert this person with your live location.': 'Bw’onyiga SOS ng’oli ku lugendo, tujja kukuyamba okutegeeza omuntu ono n’ekifo w’oli.',
+    'Share your code. When a friend signs up with it and takes their first trip, you both get Flytte Wallet credit.': 'Gabana koodi yo. Mukwano gwo bw’agiyingiza n’atwala olugendo lwe olusooka, mwembi mufuna ssente mu Nsawo ya Flytte.',
+    'Your invite code': 'Koodi yo ey’okuyita', 'Share my invite': 'Gabana koodi yange', 'How it works': 'Bwe kikola', 'Friends joined': 'Mikwano egyegasse', 'Took a trip': 'Batambudde', 'You earned': 'Ofunye',
+    'Credit arrives in your wallet automatically and pays for your next trips. One reward per new friend.': 'Ssente zijja mu nsawo yo zokka era zisasulira engendo zo eziddako. Ekirabo kimu ku buli mukwano omupya.',
+    'Redeem': 'Kozesa', 'points': 'pointi', 'Bronze member': 'Memba wa Ekikomo', 'Next level: Silver': 'Eddaala eriddako: Ffeeza', '1 point for every UGX 1,000 you pay': 'Pointi 1 ku buli UGX 1,000 z’osasula', 'Your level': 'Eddaala lyo', 'How you earn': 'Bw’ofuna',
+    'Recent points': 'Pointi ezisembyeyo', 'to reward': 'okutuuka ku kirabo', 'Ride or send a parcel': 'Tambula oba weereza pakeeti', 'Points arrive when the trip ends': 'Pointi zijja ng’olugendo luwedde', 'On every completed trip, any payment method': 'Ku buli lugendo oluwedde, ne bw’osasula otya',
+    'Swap for wallet credit': 'Waanyisa ofune ssente mu nsawo', 'Points from your trips will appear here.': 'Pointi okuva ku ngendo zo zijja kulabikira wano.',
+    'Lifetime points count every point you’ve earned, so your level never drops when you swap points.': 'Pointi zonna z’ofunye zibalibwa, n’olwekyo eddaala lyo terikka bw’owaanyisa pointi.',
+    'Bronze': 'Ekikomo', 'Silver': 'Ffeeza', 'Gold': 'Zaabu', 'Rewards are paused right now. Your points are safe.': 'Ebirabo biyimiriddemu kati. Pointi zo tezirina buzibu.',
+    'Appearance': 'Endabika', 'Automatic': 'Kyokka', 'Light': 'Ekitangaala', 'Dark': 'Ekizikiza', 'Follows your phone’s light or dark setting.': 'Kigoberera essimu yo bw’eteereddwa.', 'Easier on the eyes at night.': 'Kyangu ku maaso ekiro.', 'The classic Flytte look.': 'Endabika ya Flytte eya bulijjo.',
+    'Language': 'Olulimi', 'Legal': 'Amateeka', 'Delete my account': 'Sazaamu akawunti yange', 'Delete your account?': 'Sazaamu akawunti yo?', 'This can’t be undone.': 'Kino tekiddizibwayo.', 'Delete account': 'Sazaamu akawunti', 'Keep my account': 'Kuuma akawunti yange', 'Delete anyway': 'Sazaamu',
+    'Past trips and payments are kept only as anonymous records, as the law requires.': 'Engendo n’ensasula ez’edda zikuumibwa awatali mannya, nga amateeka bwe galagira.', 'You can sign up again later with the same number.': 'Osobola okuddamu okwewandiisa oluvannyuma n’ennamba y’emu.',
+    'Any Flytte Wallet balance and Rewards points are lost.': 'Ssente zonna mu Nsawo ya Flytte ne pointi z’ebirabo zibula.', 'You’ll stop getting requests straight away.': 'Ojja kulekera awo okufuna emirimu amangu ago.', 'Your account has been deleted.': 'Akawunti yo esaziddwamu.',
+    'Your name, phone number, saved places and emergency contact are erased.': 'Erinnya lyo, ennamba y’essimu, ebifo by’otereka n’omuntu ow’okukubira mu bwangu bisaziddwamu.',
+    'Your name, phone number, documents, photos, saved places and emergency contact are erased.': 'Erinnya lyo, ennamba y’essimu, ebiwandiiko, ebifaananyi, ebifo by’otereka n’omuntu ow’okukubira mu bwangu bisaziddwamu.', 'Deleting…': 'Kisazibwamu…',
+    'Go Online': 'Tandika okukola', 'Go Offline': 'Lekera awo okukola', 'Offline': 'Tokola', 'Online': 'Okola', 'Go online to get your first trip.': 'Tandika okukola ofune olugendo lwo olusooka.', 'Today’s earnings': 'Ssente z’ofunye leero', 'Trips today': 'Engendo za leero', 'Rating': 'Obubonero',
+    'Balance (UGX)': 'Ssente ezisigaddewo (UGX)', 'You keep 88% of every fare.': 'Otwala 88% ku buli lugendo.', 'Verified driver': 'Omuvuzi akakasiddwa', 'Acceptance': 'Okukkiriza', 'Cancellation': 'Okusazaamu', 'Requests': 'Emirimu egyakusabiddwa',
+    'Last 30 days. Missed requests count as not accepted. No-shows don’t count as cancellations.': 'Ennaku 30 eziyise. Emirimu gy’otaddamu gibalibwa ng’agitakkiriziddwa. Abasaabaze abatajja tebabalibwa ng’okusazaamu.',
+    'Photo & vehicle': 'Ekifaananyi n’ekidduka', 'Profile photo, vehicle and number plate': 'Ekifaananyi kyo, ekidduka ne namba pulati', 'Documents': 'Ebiwandiiko', 'ID, driving permit, insurance, vehicle, photo': 'Endagamuntu, layisinsi, yinsuwa, ekidduka, ekifaananyi',
+    'Ride alerts': 'Obubaka bw’emirimu', 'Off · turn on to get requests when your phone is locked': 'Bujjiddwako · bukoleeze ofune emirimu ng’essimu yo nsibe', 'Set position on map': 'Londa w’oli ku maapu', 'For testing without GPS': 'Okugezesa awatali GPS',
+    'Profile photo': 'Ekifaananyi kyo', 'Change photo': 'Kyusa ekifaananyi', 'Change vehicle or number plate': 'Kyusa ekidduka oba namba pulati',
+    'This is what riders see when you pick them up. Changes are checked by the Flytte team first, so riders always see details that match you and your vehicle.': 'Kino abasaabaze kye balaba ng’obakima. Enkyukakyuka zisooka kukeberebwa ttiimu ya Flytte, abasaabaze balabe ebikwatagana naawe n’ekidduka kyo.',
+    'National ID': 'Endagamuntu', 'Driving permit': 'Layisinsi y’okuvuga', 'Insurance sticker': 'Sitika ya yinsuwa', 'Vehicle photo': 'Ekifaananyi ky’ekidduka', 'Not uploaded': 'Tekiteekeddwako', 'Expiry date': 'Olunaku lw’okuggwaako',
+    'We remind you on your home screen before your driving permit or insurance runs out. Keep them current to stay on the road.': 'Tukujjukiza nga layisinsi yo oba yinsuwa tennaggwaako. Bikuume nga bikola osigale ng’ovuga.',
+    'Earnings for the last 7 days': 'Ssente z’ofunye mu nnaku 7 eziyise', 'Last 7 days': 'Ennaku 7 eziyise', '7 days': 'Ennaku 7', '30 days': 'Ennaku 30', 'Earned (UGX)': 'Ofunye (UGX)', 'Fares': 'Ssente z’engendo', 'Flytte commission': 'Komisoni ya Flytte', 'Commission': 'Komisoni',
+    'Tips, fees & bonuses': 'Obusiimo, ebisale ne bonaasi', 'Cash collected': 'Ssente enkalu z’ofunye', 'Balance you can cash out': 'Ssente z’osobola okuggyayo', 'Cash out': 'Ggyayo ssente', 'Completed trips': 'Engendo eziwedde', 'Statement': 'Lipoota', 'Download CSV': 'Wanula CSV',
+    'Complete your first trip to see earnings here.': 'Maliriza olugendo lwo olusooka olabe ssente z’ofunye wano.', 'No trips in this period yet.': 'Tewali ngendo mu kiseera kino.',
+    'Mon': 'Bbal', 'Tue': 'Lw2', 'Wed': 'Lw3', 'Thu': 'Lw4', 'Fri': 'Lw5', 'Sat': 'Lw6', 'Sun': 'Ssab',
+  };
+  const LG_DAYS = { Mon: 'Bbal', Tue: 'Lw2', Wed: 'Lw3', Thu: 'Lw4', Fri: 'Lw5', Sat: 'Lw6', Sun: 'Ssab' };
+  const LG_LEVEL = { Bronze: 'Ekikomo', Silver: 'Ffeeza', Gold: 'Zaabu' };
+  const LG_PAT = [
+    [/^Try (.+) instead$/, (m) => `Gezaako ${m[1]}`],
+    [/^Pickup note from (.+)$/, (m) => `Obubaka okuva eri ${m[1]}`],
+    [/^(.+) is here · look for$/, (m) => `${m[1]} atuuse · noonya`],
+    [/^Resend code in 0:(\d+)$/, (m) => `Ddamu osindike mu 0:${m[1]}`],
+    [/^Get UGX ([\d,]+) for each friend$/, (m) => `Funa UGX ${m[1]} ku buli mukwano`],
+    [/^Get UGX ([\d,]+) per friend$/, (m) => `Funa UGX ${m[1]} ku buli mukwano`],
+    [/^Give UGX ([\d,]+), get UGX ([\d,]+)$/, (m) => `Waayo UGX ${m[1]}, ofune UGX ${m[2]}`],
+    [/^They get UGX ([\d,]+) after their first trip$/, (m) => `Bafuna UGX ${m[1]} oluvannyuma lw’olugendo lwabwe olusooka`],
+    [/^Balance UGX ([\d,]+)$/, (m) => `Ezisigaddewo UGX ${m[1]}`],
+    [/^Cash out to (.+)$/, (m) => `Ggyayo ssente ku ${m[1]}`],
+    [/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun): (.+)$/, (m) => `${LG_DAYS[m[1]]}: ${m[2]}`],
+    [/^([\d,]+) points · (\w+)$/, (m) => `Pointi ${m[1]} · ${LG_LEVEL[m[2]] || m[2]}`],
+    [/^(\d+) trips?$/, (m) => (m[1] === '1' ? 'Olugendo 1' : `Engendo ${m[1]}`)],
+    [/^Redeem ([\d,]+) points for UGX ([\d,]+)$/, (m) => `Kozesa pointi ${m[1]} ofune UGX ${m[2]}`],
+    [/^([\d,]+) points = UGX ([\d,]+) wallet credit$/, (m) => `Pointi ${m[1]} = UGX ${m[2]} mu nsawo`],
+    [/^([\d,]+) more points for UGX ([\d,]+)$/, (m) => `Pointi ${m[1]} endala ofune UGX ${m[2]}`],
+    [/^Up to UGX ([\d,]+) · applied automatically$/, (m) => `Okutuuka ku UGX ${m[1]} · kissibwako kyokka`],
+    [/^Test mode \(no (\w+) set up\): your code is (\d+)$/, (m) => `Mu kugezesa: koodi yo ye ${m[2]}`],
+    [/^Code sent (by SMS|on WhatsApp|in Telegram)$/, (m) => `Koodi esindikiddwa ku ${({ 'by SMS': 'SMS', 'on WhatsApp': 'WhatsApp', 'in Telegram': 'Telegram' })[m[1]]}`],
+    [/^Enter a valid (.+) mobile number, e\.g\. (.+)\.$/, (m) => `Wandiika ennamba y’essimu entuufu, okugeza ${m[2]}.`],
+    [/^You can request a new code in (\d+)s\.$/, (m) => `Osobola okusaba koodi empya oluvannyuma lwa sekondi ${m[1]}.`],
+    [/^Call (.+)$/, (m) => `Kuba ${m[1]}`],
+    [/^(Bronze|Silver|Gold) member$/, (m) => `Memba wa ${LG_LEVEL[m[1]]}`],
+    [/^Ready to swap for (UGX [\d,]+)$/, (m) => `Weetegefu okuwaanyisa ofune ${m[1]}`],
+    [/^Swap (\d+) points for (UGX [\d,]+)$/, (m) => `Waanyisa pointi ${m[1]} ofune ${m[2]}`],
+    [/^Swap at (\d+) points$/, (m) => `Waanyisa ng’otuuse ku pointi ${m[1]}`],
+    [/^Swapped for (UGX [\d,]+)$/, (m) => `Biwaanyisiddwa, ofunye ${m[1]}`],
+    [/^(\d+) points? for every UGX 1,000 you pay$/, (m) => `Pointi ${m[1]} ku buli UGX 1,000 z’osasula`],
+    [/^(\d+) points = (UGX [\d,]+), spent on your next trips$/, (m) => `Pointi ${m[1]} = ${m[2]}, ku ngendo zo eziddako`],
+    [/^([\d,]+) more points for (UGX [\d,]+)$/, (m) => `Pointi ${m[1]} endala ofune ${m[2]}`],
+    [/^Stop (\d)$/, (m) => `Ekiyimiriro ${m[1]}`],
+    [/^Stop (\d) · done$/, (m) => `Ekiyimiriro ${m[1]} · kiwedde`],
+    [/^Done at stop (\d) · continue$/, (m) => `Mmaze ku kiyimiriro ${m[1]} · weyongereyo`],
+    [/^UGX ([\d,]+) per stop, plus the extra distance$/, (m) => `UGX ${m[1]} ku buli kiyimiriro, n’olugendo olwongezeddwako`],
+  ];
+
 
   const SW = {
     // sign in
@@ -16,6 +145,15 @@
     'Report a mismatch': 'Ripoti tofauti', 'Report received': 'Ripoti imepokelewa', 'Parcel delivered': 'Kifurushi kimefikishwa', 'You’ve arrived': 'Umefika', 'Your package has been handed over': 'Kifurushi chako kimekabidhiwa', 'Thanks for riding with Flytte': 'Asante kwa kusafiri na Flytte', 'Promo applied': 'Ofa imetumika', 'Tip sent. Thank you.': 'Bakshishi imetumwa. Asante.', 'Payment received': 'Malipo yamepokelewa', 'Commission paid': 'Kamisheni imelipwa',
     'You’ve reached the pickup': 'Umefika mahali pa kuchukua', 'You’ve reached the destination': 'Umefika unakoenda', 'You’ve reached the drop-off': 'Umefika mahali pa kukabidhi', 'Navigate': 'Ongoza njia',
     'Rating is optional': 'Kukadiria si lazima', 'Done': 'Imekamilika',
+    'Split the fare': 'Gawanya nauli', 'Friends pay their share by Mobile Money': 'Marafiki hulipa sehemu yao kwa Mobile Money', 'How many people, including you?': 'Watu wangapi, pamoja na wewe?', 'Send the link on WhatsApp': 'Tuma kiungo kwa WhatsApp', 'Copy link': 'Nakili kiungo',
+    'Cancellation fee': 'Ada ya kughairi', 'Add a stop': 'Ongeza kituo', 'Search for your stop': 'Tafuta kituo chako',
+    'Woman driver': 'Dereva mwanamke', 'Only women drivers get your request': 'Madereva wanawake pekee watapata ombi lako', 'Ask only women drivers': 'Omba madereva wanawake pekee', 'No women drivers free right now': 'Hakuna madereva wanawake walio huru sasa', 'Try any driver': 'Jaribu dereva yeyote',
+    'The women drivers nearby are busy. Try again in a minute, or ask any driver.': 'Madereva wanawake walio karibu wana kazi. Jaribu tena baada ya dakika moja, au omba dereva yeyote.',
+    'We’ll only ask women drivers. It can take a little longer.': 'Tutawauliza madereva wanawake tu. Inaweza kuchukua muda kidogo zaidi.',
+    'Send arrival time': 'Tuma muda wa kufika', 'Share trip status': 'Shiriki hali ya safari',
+    'ID checked': 'Kitambulisho kimekaguliwa', 'Permit valid': 'Leseni ni halali', 'National ID checked by Flytte': 'Kitambulisho cha taifa kimekaguliwa na Flytte',
+    'ID not checked yet': 'Kitambulisho bado hakijakaguliwa', 'Driving permit on file and valid': 'Leseni ya udereva ipo na ni halali', 'Driving permit not confirmed': 'Leseni ya udereva haijathibitishwa',
+    'Make sure the face and plate match before you get on.': 'Hakikisha sura na namba ya gari vinalingana kabla ya kupanda.', 'Looks right': 'Ni sahihi',
     'Welcome to Flytte': 'Karibu Flytte',
     'Drive with Flytte': 'Endesha na Flytte',
     'Sign in or create an account with your mobile number.': 'Ingia au fungua akaunti kwa namba yako ya simu.',
@@ -174,10 +312,15 @@
     [/^(\d+) points? for every UGX 1,000 you pay$/, (m) => `Pointi ${m[1]} kwa kila UGX 1,000 unayolipa`],
     [/^(\d+) points = (UGX [\d,]+), spent on your next trips$/, (m) => `Pointi ${m[1]} = ${m[2]}, kwa safari zako zijazo`],
     [/^([\d,]+) more points for (UGX [\d,]+)$/, (m) => `Pointi ${m[1]} zaidi kupata ${m[2]}`],
+    [/^Stop (\d)$/, (m) => `Kituo ${m[1]}`],
+    [/^Stop (\d) · done$/, (m) => `Kituo ${m[1]} · kimekamilika`],
+    [/^Done at stop (\d) · continue$/, (m) => `Nimemaliza kituo ${m[1]} · endelea`],
+    [/^UGX ([\d,]+) per stop, plus the extra distance$/, (m) => `UGX ${m[1]} kwa kila kituo, pamoja na umbali wa ziada`],
   ];
+  const DICT = lang === 'lg' ? LG : SW, PATS = lang === 'lg' ? LG_PAT : PAT;
   const tr = (t) => {
-    if (SW[t]) return SW[t];
-    for (const [re, f] of PAT) { const m = re.exec(t); if (m) return f(m); }
+    if (DICT[t]) return DICT[t];
+    for (const [re, f] of PATS) { const m = re.exec(t); if (m) return f(m); }
     return null;
   };
   const doText = (n) => {

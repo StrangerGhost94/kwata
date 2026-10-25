@@ -1914,3 +1914,36 @@ html.theme-dark:not(.launch-dark) .sp-icon.sp-gold { background: linear-gradient
 .email-flow .fine { text-align: center; margin-top: 14px; }
 .email-skip { display: block; margin: 16px auto 0; font-weight: 600; color: var(--ink-2); }
 .email-modal .email-flow h1 { font-size: 1.4rem; letter-spacing: -.02em; }
+
+/* Driver checks before pickup: badges on the driver card and a full-size photo to compare faces. */
+.trust-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.trust-b { display: inline-flex; align-items: center; gap: 3px; font-size: .74rem; font-weight: 700; color: var(--go); background: var(--surface); border-radius: var(--r-pill); padding: 2px 8px 2px 5px; }
+.trust-b .i { width: 13px; height: 13px; }
+.photo-btn { padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; flex: none; position: relative; }
+.photo-btn::after { content: ''; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--brand); }
+.face-card { text-align: center; display: grid; justify-items: center; gap: 6px; }
+.face-big { width: 168px; height: 168px; border-radius: 50%; object-fit: cover; background: var(--surface-2); margin: 4px 0 6px; }
+.face-none { display: grid; place-items: center; font-size: 3rem; font-weight: 800; color: var(--ink); }
+.face-card h2 { margin: 0; }
+.face-plate { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; }
+.face-plate .plate-chip { font-size: 1.15rem; padding: 4px 12px; }
+.trust-list { width: 100%; text-align: left; display: grid; gap: 8px; margin: 6px 0; padding: 12px; background: var(--surface); border-radius: var(--r); }
+.trust-li { display: flex; gap: 8px; align-items: center; font-size: .9rem; font-weight: 600; }
+.trust-li .i { color: var(--go); flex: none; }
+.trust-li.off { color: var(--ink-3); font-weight: 500; }
+.trust-li.off .i { color: var(--ink-3); }
+.face-card .btn { width: 100%; margin-top: 4px; }
+
+/* Optional yes/no on forms (e.g. "I'm a woman driver" at driver sign-up). */
+.check-row { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 4px; font-weight: 600; cursor: pointer; }
+.check-row input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--brand-ink); }
+.check-row small { display: block; font-weight: 400; color: var(--ink-3); margin-top: 2px; line-height: 1.35; }
+
+/* Extra stops on a trip: numbered markers on the map and numbered rows in the trip lists. */
+.pin-stop, .dot-stop, .stop-num { display: grid; place-items: center; border-radius: 50%; font-weight: 800; font-size: .7rem; line-height: 1; }
+.pin-stop { width: 20px; height: 20px; background: var(--ink); color: var(--bg); border: 2px solid var(--bg); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.dot-stop { width: 16px; height: 16px; background: var(--ink-2); color: var(--bg); }
+.stop.done b { color: var(--ink-3); }
+.stop.done .dot-stop { background: var(--go); }
+.stop-num { width: 22px; height: 22px; margin: 0 9px 0 6px; background: var(--ink); color: var(--bg); flex: none; }
+.stop-row { cursor: default; }

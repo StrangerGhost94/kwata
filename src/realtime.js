@@ -24,15 +24,34 @@ async function loadTrip(id) {
       dv.plate, dv.vehicle_make, dv.vehicle_color, dv.vehicle_type,
       (SELECT COUNT(*)::int FROM trips x WHERE x.driver_id = t.driver_id AND x.status = 'completed') AS d_trips,
       (SELECT COUNT(*)::int FROM trips x WHERE x.rider_id = t.rider_id AND x.status = 'completed') AS r_trips,
-      (SELECT dd.created_at FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'photo') AS d_photo
+      (SELECT dd.created_at FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'photo') AS d_photo,
+      EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'national_id') AS d_has_id,
+      EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'license') AS d_has_permit,
+      (SELECT dd.expires_on FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'license') AS d_permit_exp,
+      dv.status AS d_status, dv.created_at AS d_since,
+      fs.people AS split_people, fs.paid AS split_paid, fs.share AS split_share, fs.token AS split_token
     FROM trips t
     JOIN users r ON r.id = t.rider_id
     LEFT JOIN users d ON d.id = t.driver_id
     LEFT JOIN drivers dv ON dv.user_id = t.driver_id
+    LEFT JOIN fare_splits fs ON fs.trip_id = t.id
     WHERE t.id = $1`, [id]);
 }
 
 const rating = (s, c) => (c ? Math.round((s / c) * 10) / 10 : null);
+
+// What riders are shown about a driver's checks. "ID checked": a National ID is on file and the Flytte
+// team approved the driver. "Permit valid": a driving permit is on file and its expiry date hasn't passed.
+function driverChecks(t) {
+  const approved = t.d_status === 'approved';
+  const exp = t.d_permit_exp ? new Date(t.d_permit_exp) : null;
+  const today = new Date(new Date().toISOString().slice(0, 10));
+  return {
+    id: approved && !!t.d_has_id,
+    permit: approved && !!t.d_has_permit && (!exp || exp >= today),
+    since: t.d_since ? new Date(t.d_since).toISOString().slice(0, 7) : null,   // "2026-10"
+  };
+}
 
 // role: 'rider' | 'driver' | 'admin' | 'public'
 function view(t, role) {
@@ -42,30 +61,32 @@ function view(t, role) {
     id: t.id, service: t.service, status: t.status,
     pickup: { lat: t.pickup_lat, lng: t.pickup_lng, address: t.pickup_address },
     drop: { lat: t.drop_lat, lng: t.drop_lng, address: t.drop_address },
+    stops: t.stops ? JSON.parse(t.stops) : [],
     distanceKm: t.distance_km, durationMin: t.duration_min,
     fare: t.fare, paymentMethod: t.payment_method, paymentStatus: t.payment_status,
     parcel: t.parcel ? JSON.parse(t.parcel) : null, notes: t.notes,
     createdAt: t.created_at, acceptedAt: t.accepted_at, startedAt: t.started_at, completedAt: t.completed_at,
-    cancelledBy: t.cancelled_by, cancelReason: t.cancel_reason === 'no_show' ? 'no_show' : undefined, noShowFee: t.no_show_fee || 0,
+    cancelledBy: t.cancelled_by, cancelReason: t.cancel_reason === 'no_show' ? 'no_show' : undefined, noShowFee: t.no_show_fee || 0, cancelFee: t.cancel_fee || 0,
     arrivedAt: t.arrived_at || null,
     discount: t.discount || 0, payable: t.fare - (t.discount || 0), promoLabel: t.promo_label || null,
     tip: t.tip || 0, tipMethod: t.tip_method || null,
-    scheduledFor: t.scheduled_for || null,
+    scheduledFor: t.scheduled_for || null, womanDriver: !!t.woman_driver,
     passenger: t.passenger ? JSON.parse(t.passenger) : null,
     driver: t.driver_id ? {
       id: t.driver_id, name: t.driver_name, rating: rating(t.d_rs, t.d_rc), trips: t.d_trips,
       photo: t.d_photo ? `/api/drivers/${t.driver_id}/photo?v=${new Date(t.d_photo).getTime()}` : null, // a newly approved photo shows straight away
       plate: t.plate, vehicle: [t.vehicle_color, t.vehicle_make].filter(Boolean).join(' '), vehicleType: t.vehicle_type,
       location: live && live.lat ? { lat: live.lat, lng: live.lng, heading: live.heading } : null,
+      checks: driverChecks(t),
     } : null,
   };
   if (role === 'public') {
     v.rider = { name: (t.rider_name || '').split(' ')[0] };
     delete v.fare; delete v.paymentMethod; delete v.paymentStatus; delete v.parcel; delete v.notes;
-    delete v.discount; delete v.payable; delete v.promoLabel; delete v.tip; delete v.tipMethod; delete v.noShowFee;
+    delete v.discount; delete v.payable; delete v.promoLabel; delete v.tip; delete v.tipMethod; delete v.noShowFee; delete v.cancelFee;
     if (v.passenger) v.rider = { name: String(v.passenger.name).split(' ')[0] };
     delete v.passenger;
-    if (v.driver) v.driver = { name: t.driver_name, plate: t.plate, vehicle: v.driver.vehicle, vehicleType: t.vehicle_type, photo: v.driver.photo, location: v.driver.location };
+    if (v.driver) v.driver = { name: t.driver_name, plate: t.plate, vehicle: v.driver.vehicle, vehicleType: t.vehicle_type, photo: v.driver.photo, location: v.driver.location, checks: v.driver.checks };
     return v;
   }
   v.rider = { id: t.rider_id, name: t.rider_name, rating: rating(t.r_rs, t.r_rc), trips: t.r_trips };
@@ -74,6 +95,7 @@ function view(t, role) {
   if (role === 'rider') {
     v.pin = t.pin; v.shareToken = t.share_token; v.riderRated = t.rider_rating != null;
     v.dropCode = t.drop_code || null; v.pointsEarned = t.points_earned || 0;
+    v.split = t.split_token ? { people: t.split_people, paid: t.split_paid, share: t.split_share, token: t.split_token } : null;
     if (v.driver && live2) v.driver.phone = t.driver_phone;
   }
   if (role === 'driver') {
@@ -154,6 +176,7 @@ async function candidates(trip, tried) {
   for (const [id, d] of drivers) {
     if (!d.online || !d.lat || tried.has(id) || id === trip.rider_id) continue;
     if (!d.services.includes(trip.service)) continue;
+    if (trip.woman_driver && !d.woman) continue;   // the rider asked for a woman driver
     const connected = !!io.sockets.adapter.rooms.get(`user:${id}`);
     // Phone locked or app in the background: still reachable through a ride alert, for a while.
     const reachable = connected || (d.away && d.push && d.updatedAt && Date.now() - d.updatedAt < AWAY_MS);
@@ -366,7 +389,7 @@ function init(server) {
       }
       const d = drivers.get(u.id);
       d.services = dv ? dv.services.split(',') : [];
-      d.name = u.name; d.plate = dv && dv.plate; d.vehicle = dv && dv.vehicle_type;
+      d.name = u.name; d.plate = dv && dv.plate; d.vehicle = dv && dv.vehicle_type; d.woman = !!(dv && dv.woman);
       if (active) { d.busy = true; d.tripId = active.id; d.tripStatus = active.status; d.queuedTripId = actives[1] ? actives[1].id : null; }
       d.away = false; d.visible = true; clearTimeout(d.awayTimer);
       dtools.hasPush(u.id).then((v) => { d.push = v; }).catch(() => {});
@@ -468,6 +491,8 @@ function setHome(driverId, place) {
   const d = drivers.get(driverId);
   if (d) d.home = place ? { lat: place.lat, lng: place.lng, address: place.address } : null;
 }
+function setWoman(driverId, woman) { const d = drivers.get(driverId); if (d) d.woman = !!woman; }
+
 function driverState(driverId) {
   const d = drivers.get(driverId);
   return d ? { online: d.online, home: d.home || null, push: !!d.push } : { online: false, home: null, push: false };
@@ -481,7 +506,7 @@ function forceOffline(driverId) {
   notify(driverId, 'driver:forced_offline', {});
 }
 
-module.exports = {
+module.exports = { setWoman,
   init, broadcast, messages, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
   liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, setHome, driverState, markPush, updateDriverVehicle, ACTIVE,
   driversSnapshot: () => [...drivers.values()],

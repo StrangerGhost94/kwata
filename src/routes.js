@@ -29,14 +29,22 @@ function point(p) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return null;
   return { lat, lng, address: clean(p.address, 200) || 'Pinned location' };
 }
-// Pickup and destination must be real, different places.
+// Pickup and destination must be real, different places. Up to MAX_STOPS stops in between.
+const MAX_STOPS = 2;
 function route(body, res) {
   const pickup = point(body.pickup), drop = point(body.drop);
   if (!pickup) { bad(res, 'Set your pickup point first.'); return null; }
   if (!drop) { bad(res, 'Choose where you’re going.'); return null; }
   if (haversine(pickup, drop) < 0.05) { bad(res, 'Your pickup and destination are the same place. Choose a different destination.'); return null; }
-  return { pickup, drop };
+  const raw = Array.isArray(body.stops) ? body.stops : [];
+  if (raw.length > MAX_STOPS) { bad(res, `You can add up to ${MAX_STOPS} stops.`); return null; }
+  const stops = raw.map(point);
+  if (stops.some((x) => !x)) { bad(res, 'One of your stops isn’t a valid place. Remove it and add it again.'); return null; }
+  const pts = [pickup, ...stops, drop];
+  for (let i = 1; i < pts.length; i++) if (haversine(pts[i - 1], pts[i]) < 0.05) { bad(res, 'Two places in a row are the same. Remove the extra stop.'); return null; }
+  return { pickup, drop, stops };
 }
+const sameStops = (a = [], b = []) => a.length === b.length && a.every((x, i) => haversine(x, b[i]) < 0.15);
 
 // Tiny in-memory rate limiter for login / register.
 // A local test server allows 20x more, so a full `npm test` run doesn't hit the sign-up limit.
@@ -80,8 +88,9 @@ r.get('/config', wrap(async (req, res) => {
     commissionPct: s.commissionPct,
     supportPhone: supportPhone(s),
     minWithdrawal: s.minWithdrawal,
+    stopFee: s.stopFee || 0,
     growth: { firstRide: s.growth.firstRide, referral: s.growth.referral, rewards: s.growth.rewards },
-    drivers: { freeWaitMin: s.drivers.freeWaitMin, noShowFee: s.drivers.noShowFee, cashDebtLimit: s.drivers.cashDebtLimit, headingHomePerDay: s.drivers.headingHomePerDay },
+    drivers: { freeWaitMin: s.drivers.freeWaitMin, noShowFee: s.drivers.noShowFee, cancelFee: s.drivers.cancelFee, cancelGraceMin: s.drivers.cancelGraceMin, cashDebtLimit: s.drivers.cashDebtLimit, headingHomePerDay: s.drivers.headingHomePerDay },
   });
 }));
 
@@ -116,6 +125,7 @@ async function createAccount(body, role, { approved = false } = {}) {
       vehicleType, services: services.join(','), plate: clean(plate, 12).toUpperCase(),
       vehicleMake: clean(vehicleMake, 60), vehicleColor: clean(vehicleColor, 30),
       licenseNo: clean(licenseNo, 40), momo: auth.normalizePhone(momoNumber, auth.ccOf(p)) || p,
+      woman: body.woman === true,   // for riders who ask for a woman driver; the team confirms it against the ID
     };
   }
 
@@ -124,9 +134,9 @@ async function createAccount(body, role, { approved = false } = {}) {
     const u = await t.one('INSERT INTO users(name, phone, email, password_hash, role) VALUES ($1,$2,$3,$4,$5) RETURNING *',
       [clean(name, 80), p, email ? String(email).trim().slice(0, 120) : null, hash, role]);
     if (driverInfo) {
-      await t.query(`INSERT INTO drivers(user_id, vehicle_type, services, plate, vehicle_make, vehicle_color, license_no, momo_number, status)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [u.id, driverInfo.vehicleType, driverInfo.services, driverInfo.plate, driverInfo.vehicleMake, driverInfo.vehicleColor, driverInfo.licenseNo, driverInfo.momo, approved ? 'approved' : 'pending']);
+      await t.query(`INSERT INTO drivers(user_id, vehicle_type, services, plate, vehicle_make, vehicle_color, license_no, momo_number, status, woman)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [u.id, driverInfo.vehicleType, driverInfo.services, driverInfo.plate, driverInfo.vehicleMake, driverInfo.vehicleColor, driverInfo.licenseNo, driverInfo.momo, approved ? 'approved' : 'pending', driverInfo.woman]);
     }
     return u;
   });
@@ -540,9 +550,9 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
 r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   const rt0 = route(req.body || {}, res);
   if (!rt0) return;
-  const { pickup, drop } = rt0;
+  const { pickup, drop, stops } = rt0;
   surge.recordLook(req.user.id, pickup.lat, pickup.lng);   // someone checking prices = demand signal
-  const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin);
+  const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin, stops);
   // How far is the nearest free driver for each ride type?
   for (const o of q.options) {
     const near = rt.nearbyDrivers(pickup.lat, pickup.lng, o.id)[0];
@@ -557,7 +567,7 @@ r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   }
   q.promoCode = code;
   // Lock these prices for 2 minutes: booking within that time pays exactly this.
-  q.quoteId = surge.saveQuote({ userId: req.user.id, pickup, drop, km: q.distanceKm, promoCode: code, options: q.options.map((o) => ({ id: o.id, fare: o.fare, regularFare: o.regularFare, durationMin: o.durationMin, surge: o.surge })) });
+  q.quoteId = surge.saveQuote({ userId: req.user.id, pickup, drop, stops, km: q.distanceKm, promoCode: code, options: q.options.map((o) => ({ id: o.id, fare: o.fare, regularFare: o.regularFare, durationMin: o.durationMin, surge: o.surge })) });
   q.lockedForSec = 120;
   res.json(q);
 }));
@@ -593,7 +603,8 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const { service, paymentMethod = 'cash', distanceKm, durationMin, parcel, notes } = req.body || {};
   const rt0 = route(req.body || {}, res);
   if (!rt0) return;
-  const { pickup, drop } = rt0;
+  const { pickup, drop, stops } = rt0;
+  if (stops.length && service === 'parcel') return bad(res, 'Parcels go straight to one address. Remove the stops, or book a ride instead.');
   const s = await getSettings();
   const svc = typeof service === 'string' && Object.prototype.hasOwnProperty.call(s.services, service) ? s.services[service] : null;
   if (!svc || !svc.enabled) return bad(res, 'That ride type is not available.');
@@ -629,10 +640,10 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   // otherwise price it now and make sure the rider isn't surprised by a jump.
   let km, min, fare;
   const locked = surge.getQuote(req.body.quoteId, req.user.id);
-  const lockedOpt = locked && haversine(locked.pickup, pickup) < 0.15 && haversine(locked.drop, drop) < 0.15 && locked.options.find((o) => o.id === service);
+  const lockedOpt = locked && haversine(locked.pickup, pickup) < 0.15 && haversine(locked.drop, drop) < 0.15 && sameStops(locked.stops, stops) && locked.options.find((o) => o.id === service);
   if (lockedOpt) { km = locked.km; min = lockedOpt.durationMin; fare = scheduledFor ? lockedOpt.regularFare : lockedOpt.fare; }
   else {
-    const q = await quote(pickup, drop, distanceKm, durationMin);
+    const q = await quote(pickup, drop, distanceKm, durationMin, stops);
     const o = q.options.find((x) => x.id === service);
     km = q.distanceKm; min = o.durationMin; fare = scheduledFor ? o.regularFare : o.fare; // scheduled rides never surge
     const expected = Number(req.body.expectedFare);
@@ -661,11 +672,11 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await db.one(`
     INSERT INTO trips(rider_id, service, pickup_lat, pickup_lng, pickup_address, drop_lat, drop_lng, drop_address,
       distance_km, duration_min, fare, payment_method, pin, share_token, parcel, notes,
-      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
+      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver, stops)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING id`,
   [req.user.id, service, pickup.lat, pickup.lng, pickup.address, drop.lat, drop.lng, drop.address,
     km, min, fare, paymentMethod, pin, share, parcelJson, notes ? clean(notes, 200) || null : null,
-    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested']);
+    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true, stops.length ? JSON.stringify(stops.map((x) => ({ lat: x.lat, lng: x.lng, address: x.address }))) : null]);
 
   if (req.body.quoteId) surge.dropQuote(req.body.quoteId);
   if (!scheduledFor) { surge.recordRequest(service, pickup.lat, pickup.lng); rt.dispatch(t.id).catch(console.error); }
@@ -707,6 +718,17 @@ async function ownTrip(req, res, role) {
   return t;
 }
 
+// The fee a rider owes for cancelling now: once the grace period after the driver accepted has passed.
+// Never when the driver has been on the way for LATE_MIN minutes without arriving (the delay is theirs).
+const CANCEL_LATE_MIN = 15;
+function cancelFeeDue(t, d, now = Date.now()) {
+  if (!d.cancelFee || !t.driver_id || !t.accepted_at || !['accepted', 'arrived'].includes(t.status)) return 0;
+  const mins = (now - new Date(t.accepted_at).getTime()) / 60000;
+  if (mins < d.cancelGraceMin) return 0;
+  if (t.status === 'accepted' && mins >= CANCEL_LATE_MIN) return 0;
+  return d.cancelFee;
+}
+
 r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req, res) => {
   const role = req.user.role;
   const t = await ownTrip(req, res, role);
@@ -725,15 +747,33 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
     rt.dispatch(t.id, req.user.id).catch(console.error);
     return res.json({ ok: true });
   }
-  await db.query("UPDATE trips SET status = 'cancelled', cancelled_by = $1, cancel_reason = $2 WHERE id = $3",
-    [role, clean((req.body || {}).reason, 200), t.id]);
+  // A late cancel pays the driver for their time (see cancelFeeDue), from the wallet when it covers it.
+  const s = await getSettings();
+  const due = cancelFeeDue(t, s.drivers);
+  let fee = 0, done = false;
+  await db.tx(async (tx) => {
+    const fresh = await tx.one("UPDATE trips SET status = 'cancelled', cancelled_by = $1, cancel_reason = $2 WHERE id = $3 AND status = $4 RETURNING id",
+      [role, clean((req.body || {}).reason, 200), t.id, t.status]);
+    if (!fresh) return;
+    done = true;
+    if (!due || !t.driver_id) return;
+    const rider = await tx.one('SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE', [t.rider_id]);
+    if (!rider || rider.wallet_balance < due) return;
+    fee = due;
+    await tx.query('UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id = $2', [fee, t.rider_id]);
+    await tx.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'cancel_fee',$2,$3,'Cancellation fee: the driver was already on the way')", [t.rider_id, -fee, t.id]);
+    await tx.query('UPDATE drivers SET earnings_balance = earnings_balance + $1 WHERE user_id = $2', [fee, t.driver_id]);
+    await tx.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'cancel_fee',$2,$3,'Cancellation fee from the rider')", [t.driver_id, fee, t.id]);
+    await tx.query('UPDATE trips SET cancel_fee = $1 WHERE id = $2', [fee, t.id]);
+  });
+  if (!done) return bad(res, 'This trip has already changed. Pull down to refresh.');
   rt.clearOffer(t.id);
   if (t.driver_id) {
     rt.setDriverFree(t.driver_id, t.id);
-    if (['accepted', 'arrived'].includes(t.status)) dtools.push(t.driver_id, { type: 'cancelled', tag: `trip-${t.id}`, title: 'Trip cancelled', body: 'The rider cancelled. You’re free for the next request.' }, { ttl: 300 }).catch(() => {});
+    if (['accepted', 'arrived'].includes(t.status)) dtools.push(t.driver_id, { type: 'cancelled', tag: `trip-${t.id}`, title: 'Trip cancelled', body: fee ? `The rider cancelled. UGX ${fee.toLocaleString()} cancellation fee added to your balance.` : 'The rider cancelled. You’re free for the next request.' }, { ttl: 300 }).catch(() => {});
   }
   await rt.broadcast(t.id);
-  res.json({ ok: true });
+  res.json({ ok: true, fee });
 }));
 
 r.post('/trips/:id/rate', auth.requireAuth('rider', 'driver'), wrap(async (req, res) => {
@@ -835,6 +875,19 @@ r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
   res.json(out);
 }));
 
+// Pay a Mobile Money / card trip from the Flytte Wallet instead (friends' split shares land there).
+r.post('/trips/:id/pay-wallet', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'rider');
+  if (!t) return;
+  if (walletlock.needsPass(req.user, (req.body || {}).walletPass)) return walletLocked(res);
+  let out;
+  await db.tx(async (tx) => { out = await ledger.payFromWallet(tx, t.id); });
+  if (out.error) return bad(res, out.error);
+  if (t.driver_id) rt.notify(t.driver_id, 'toast', { text: `Trip #${t.id} paid from the rider’s Flytte Wallet` });
+  await rt.broadcast(t.id);
+  res.json({ ok: true });
+}));
+
 // Mobile Money / card didn't work out: the rider pays the driver in cash instead.
 r.post('/trips/:id/pay-cash', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'rider');
@@ -867,6 +920,21 @@ r.post('/trips/:id/arrived', auth.requireAuth('driver'), wrap(async (req, res) =
 
 // The rider didn't come out. After the free waiting time the driver can leave; the no-show
 // fee goes to the driver from the rider's wallet when the wallet covers it.
+// Multi-stop trips: the driver marks each stop done, in order, then drives on to the next one.
+r.post('/trips/:id/stop', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'driver');
+  if (!t) return;
+  if (t.status !== 'in_progress') return bad(res, 'Start the trip first.');
+  const stops = t.stops ? JSON.parse(t.stops) : [];
+  const i = stops.findIndex((x) => !x.doneAt);
+  if (i < 0) return bad(res, 'There are no more stops on this trip.');
+  stops[i].doneAt = new Date().toISOString();
+  const ok = await db.one('UPDATE trips SET stops = $1 WHERE id = $2 AND stops = $3 RETURNING id', [JSON.stringify(stops), t.id, t.stops]);
+  if (!ok) return bad(res, 'This trip has just changed. Try again.');
+  await rt.broadcast(t.id);
+  res.json({ ok: true, done: i + 1, left: stops.length - i - 1 });
+}));
+
 r.post('/trips/:id/noshow', auth.requireAuth('driver'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'driver');
   if (!t) return;
@@ -1030,24 +1098,78 @@ r.post('/wallet/topup', auth.requireAuth('rider'), wrap(async (req, res) => {
 }));
 
 // ---------- Payments (Flutterwave) ----------
+const paidText = (p) => p.purpose === 'split'
+  ? `${p.payer_name || 'A friend'} paid their share. UGX ${Number(p.amount).toLocaleString()} is in your Flytte Wallet.` : 'Payment received ✅';
+
+// ---------- Split the fare ----------
+// The rider shares a link; each friend pays an equal share by Mobile Money, which lands in the rider's
+// Flytte Wallet. The trip itself is paid as usual, so the driver is never waiting on several people.
+const splitShare = (amount, people) => Math.ceil(amount / people / 100) * 100;
+r.post('/trips/:id/split', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'rider');
+  if (!t) return;
+  if (!payments.available()) return bad(res, 'Splitting needs Mobile Money, which isn’t available yet.', 503);
+  if (!['accepted', 'arrived', 'in_progress', 'completed'].includes(t.status) || t.payment_status === 'paid') return bad(res, 'This trip can’t be split now.');
+  const people = Math.round(Number((req.body || {}).people));
+  if (!(people >= 2 && people <= 4)) return bad(res, 'Split between 2 and 4 people.');
+  const old = await db.one('SELECT * FROM fare_splits WHERE trip_id = $1', [t.id]);
+  if (old && people - 1 < old.paid) return bad(res, `${old.paid} friend${old.paid > 1 ? 's have' : ' has'} already paid. Split between at least ${old.paid + 1} people.`);
+  const share = old && old.paid ? old.share : splitShare(t.fare - (t.discount || 0), people);   // never change a share someone already paid
+  const token = old ? old.token : crypto.randomBytes(12).toString('base64url');
+  await db.query(`INSERT INTO fare_splits(trip_id, rider_id, token, people, share) VALUES ($1,$2,$3,$4,$5)
+    ON CONFLICT (trip_id) DO UPDATE SET people = EXCLUDED.people, share = EXCLUDED.share`, [t.id, req.user.id, token, people, share]);
+  await rt.broadcast(t.id);
+  res.json({ token, url: `${baseUrl(req)}/split/${token}`, people, share, paid: old ? old.paid : 0 });
+}));
+async function splitByToken(token) {
+  return db.one(`SELECT fs.*, t.status AS trip_status, t.service, t.pickup_address, t.drop_address, t.payment_status, u.name AS rider_name
+    FROM fare_splits fs JOIN trips t ON t.id = fs.trip_id JOIN users u ON u.id = fs.rider_id WHERE fs.token = $1`, [String(token || '').slice(0, 40)]);
+}
+const splitOpen = (sp) => sp.paid < sp.people - 1 && !['cancelled', 'no_drivers'].includes(sp.trip_status);
+r.get('/split/:token', wrap(async (req, res) => {
+  const sp = await splitByToken(req.params.token);
+  if (!sp) return bad(res, 'This link isn’t valid any more.', 404);
+  res.json({ name: String(sp.rider_name || '').split(' ')[0], service: sp.service, from: sp.pickup_address, to: sp.drop_address,
+    share: sp.share, people: sp.people, paid: sp.paid, open: splitOpen(sp), payments: payments.available() });
+}));
+r.post('/split/:token/pay', limit(10, 10 * 60e3), wrap(async (req, res) => {
+  const sp = await splitByToken(req.params.token);
+  if (!sp) return bad(res, 'This link isn’t valid any more.', 404);
+  if (!splitOpen(sp)) return bad(res, 'Everyone has already paid their share. Thank you.');
+  const name = clean((req.body || {}).name, 60), phone = auth.normalizePhone((req.body || {}).phone);
+  if (name.length < 2) return bad(res, 'Enter your name.');
+  if (!phone) return bad(res, 'Enter your Mobile Money number, e.g. 0772 123456.');
+  const rider = await db.one('SELECT * FROM users WHERE id = $1', [sp.rider_id]);
+  let out;
+  try { out = await payments.createCheckout({ user: rider, amount: sp.share, purpose: 'split', tripId: sp.trip_id, method: 'momo', baseUrl: baseUrl(req), payer: { name, phone } }); }
+  catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
+  if (out.demo) { rt.notify(sp.rider_id, 'toast', { text: paidText({ purpose: 'split', payer_name: name, amount: sp.share }) }); await rt.broadcast(sp.trip_id); }
+  res.json(out);
+}));
+
 r.get('/payments/callback', wrap(async (req, res) => {
   const ref = String(req.query.tx_ref || '').slice(0, 80);
-  const result = /^(?:FLY|KWT)-(TOP|TRP|DBT)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
+  const result = /^(?:FLY|KWT)-(TOP|TRP|DBT|SPL)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
   const p = ref && await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
   if (p && p.trip_id && result.ok) await rt.broadcast(p.trip_id);
-  if (p && result.ok) rt.notify(p.user_id, 'toast', { text: 'Payment received ✅' });
-  res.redirect(`${p && p.purpose === 'debt' ? '/driver' : '/'}?payment=${result.ok ? 'success' : (result.reason === 'unreachable' ? 'pending' : 'failed')}`);
+  if (p && result.ok) rt.notify(p.user_id, 'toast', { text: paidText(p) });
+  const outcome = result.ok ? 'success' : (result.reason === 'unreachable' ? 'pending' : 'failed');
+  if (p && p.purpose === 'split') {
+    const sp = await db.one('SELECT token FROM fare_splits WHERE trip_id = $1', [p.trip_id]);
+    return res.redirect(`/split/${sp ? sp.token : ''}?payment=${outcome}`);
+  }
+  res.redirect(`${p && p.purpose === 'debt' ? '/driver' : '/'}?payment=${outcome}`);
 }));
 
 r.post('/payments/webhook', wrap(async (req, res) => {
   if (!payments.webhookAuthentic(req)) return res.status(401).end();
   const ref = req.body && req.body.data && String(req.body.data.tx_ref || '');
-  if (ref && /^(?:FLY|KWT)-(TOP|TRP|DBT)-\d+-[0-9a-f]{8}$/.test(ref)) {
+  if (ref && /^(?:FLY|KWT)-(TOP|TRP|DBT|SPL)-\d+-[0-9a-f]{8}$/.test(ref)) {
     const result = await payments.verifyAndApply(ref);
     const p = await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
     if (p && result.ok) {
       if (p.trip_id) await rt.broadcast(p.trip_id);
-      rt.notify(p.user_id, 'toast', { text: 'Payment received ✅' });
+      rt.notify(p.user_id, 'toast', { text: paidText(p) });
     }
   }
   res.status(200).end();
@@ -1133,10 +1255,10 @@ r.post('/driver/home', auth.requireAuth('driver'), wrap(async (req, res) => {
 r.get('/driver/trips', auth.requireAuth('driver'), wrap(async (req, res) => {
   const days = [1, 7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
   const since = days === 1 ? new Date(Date.parse(todayKla() + 'T00:00:00Z') - 3 * 3600e3) : new Date(Date.now() - days * 86400e3);
-  const { rows } = await db.query(`SELECT id, service, payment_method, fare, discount, commission, tip, tip_method, no_show_fee, status, cancel_reason,
+  const { rows } = await db.query(`SELECT id, service, payment_method, fare, discount, commission, tip, tip_method, no_show_fee, cancel_fee, status, cancel_reason,
       pickup_address, drop_address, distance_km, completed_at, created_at
     FROM trips WHERE driver_id = $1 AND (
-      (status = 'completed' AND completed_at >= $2) OR (status = 'cancelled' AND cancel_reason = 'no_show' AND created_at >= $2))
+      (status = 'completed' AND completed_at >= $2) OR (status = 'cancelled' AND (cancel_reason = 'no_show' OR cancel_fee > 0) AND created_at >= $2))
     ORDER BY COALESCE(completed_at, created_at) DESC LIMIT 300`, [req.user.id, since]);
   const { rows: bon } = await db.query("SELECT amount, note, created_at FROM transactions WHERE user_id = $1 AND type = 'bonus' AND created_at >= $2 ORDER BY id DESC", [req.user.id, since]);
   const trips = rows.map((x) => {
@@ -1146,13 +1268,14 @@ r.get('/driver/trips', auth.requireAuth('driver'), wrap(async (req, res) => {
       id: x.id, at: x.completed_at || x.created_at, service: x.service, method: x.payment_method, noShow,
       from: x.pickup_address, to: x.drop_address, km: x.distance_km,
       fare: noShow ? 0 : x.fare, discount: noShow ? 0 : x.discount, commission: noShow ? 0 : x.commission,
-      tip: x.tip || 0, tipMethod: x.tip_method, noShowFee: x.no_show_fee || 0,
-      earning: noShow ? x.no_show_fee : x.fare - x.commission + walletTip,
+      tip: x.tip || 0, tipMethod: x.tip_method, noShowFee: x.no_show_fee || 0, cancelFee: x.cancel_fee || 0,
+      feeKind: noShow ? (x.cancel_reason === 'no_show' ? 'no_show' : 'cancel') : null,
+      earning: noShow ? (x.no_show_fee || 0) + (x.cancel_fee || 0) : x.fare - x.commission + walletTip,
     };
   });
   const sum = (k) => trips.reduce((a, t) => a + (t[k] || 0), 0);
   const bonusTotal = bon.reduce((a, b) => a + b.amount, 0);
-  res.json({ days, since, trips, bonuses: bon, totals: { trips: trips.filter((t) => !t.noShow).length, fare: sum('fare'), commission: sum('commission'), discount: sum('discount'), tips: sum('tip'), noShowFees: sum('noShowFee'), bonuses: bonusTotal, earning: sum('earning') + bonusTotal } });
+  res.json({ days, since, trips, bonuses: bon, totals: { trips: trips.filter((t) => !t.noShow).length, fare: sum('fare'), commission: sum('commission'), discount: sum('discount'), tips: sum('tip'), noShowFees: sum('noShowFee'), cancelFees: sum('cancelFee'), bonuses: bonusTotal, earning: sum('earning') + bonusTotal } });
 }));
 
 // Pay the commission owed on cash trips by Mobile Money.
@@ -1248,7 +1371,7 @@ r.get('/admin/drivers', admin, wrap(async (req, res) => {
     id: x.id, name: x.name, phone: x.phone, status: x.status, vehicleType: x.vehicle_type, plate: x.plate,
     vehicle: [x.vehicle_color, x.vehicle_make].filter(Boolean).join(' '), licenseNo: x.license_no, momoNumber: x.momo_number,
     balance: x.earnings_balance, trips: x.trips, rating: x.rating_count ? Math.round((x.rating_sum / x.rating_count) * 10) / 10 : null,
-    createdAt: x.created_at, docs: x.docs,
+    createdAt: x.created_at, docs: x.docs, woman: !!x.woman,
     nextExpiry: x.next_expiry ? (x.next_expiry instanceof Date ? x.next_expiry.toISOString() : String(x.next_expiry)).slice(0, 10) : null,
     acceptanceRate: x.ev_acc + x.ev_rej ? Math.round((x.ev_acc / (x.ev_acc + x.ev_rej)) * 100) : null,
     cancellationRate: x.ev_acc ? Math.round((x.ev_can / x.ev_acc) * 100) : null,
@@ -1372,6 +1495,14 @@ r.post('/admin/users/:id/password', admin, wrap(async (req, res) => {
   const u = await db.one("UPDATE users SET password_hash = $1 WHERE id = $2 AND role <> 'admin' RETURNING id", [await bcrypt.hash(pw, 10), Number(req.params.id)]);
   if (!u) return bad(res, 'User not found.', 404);
   res.json({ ok: true });
+}));
+
+// Woman driver: offered requests from riders who ask for one. Set at sign-up, confirmed by the team.
+r.post('/admin/drivers/:id/woman', admin, wrap(async (req, res) => {
+  const d = await db.one('UPDATE drivers SET woman = $1 WHERE user_id = $2 RETURNING user_id, woman', [req.body.woman === true, Number(req.params.id)]);
+  if (!d) return bad(res, 'Driver not found.', 404);
+  rt.setWoman(d.user_id, d.woman);
+  res.json({ ok: true, woman: d.woman });
 }));
 
 r.post('/admin/drivers/:id/status', admin, wrap(async (req, res) => {

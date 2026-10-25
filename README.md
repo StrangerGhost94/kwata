@@ -133,6 +133,16 @@ Fares are upfront and calibrated to Kampala (about 8–10% below Bolt's publishe
 - **Locked quotes** – every price shown is locked for 2 minutes; riders pay exactly what they accepted. If a lock expires and the price has risen more than 5%, the rider is shown the new price before booking.
 - **Admin → Pricing** – edit rates, fixed boost, surge on/off, sensitivity, caps, rain boost, and see live conditions.
 
+## Rider features added in October 2026
+
+- **Driver checks before pickup.** The driver card shows "ID checked" (National ID on file, driver approved) and "Permit valid" (permit on file and not expired). Tapping the photo shows it full size with the plate and the month the driver joined.
+- **Send arrival time.** During a trip, one tap opens WhatsApp with "I'll arrive at about 6:40 pm" and the live link.
+- **Luganda.** Settings → Language now offers Luganda next to English and Kiswahili (`public/js/i18n.js`). It should be checked by a native speaker.
+- **Rider cancellation fee.** If a rider cancels more than 2 minutes after a driver accepts, the driver gets UGX 1,000 from the rider's wallet (only if the wallet covers it). It's free if the driver has been on the way for 15+ minutes. Amounts are in Admin → Driver rules.
+- **Woman driver.** Riders can ask for a woman driver on the ride options. Drivers say so at sign-up, and the team confirms it with the checkbox in the driver's documents.
+- **Multiple stops.** Up to 2 stops per ride (not parcels). The fare covers the distance through every stop plus a per-stop fee (Admin → Pricing), and drivers tap "Done at stop" to go on.
+- **Split the fare.** Riders send a link and friends pay their share by Mobile Money without an account. The money lands in the rider's Flytte Wallet, and Mobile Money/card trips can be paid from the wallet at the end.
+
 ## Place search
 
 Riders search through Flytte's server (`/api/places/search`, `src/places.js`), which lists:

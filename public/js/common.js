@@ -810,6 +810,7 @@
         <label for="mk">Make and model</label><input id="mk" name="vehicleMake" placeholder="Bajaj Boxer / Toyota Premio">
         <label for="lc">Driving permit number</label><input id="lc" name="licenseNo" required>
         <label for="mm">Mobile Money for payouts</label><input id="mm" name="momoNumber" type="tel" placeholder="Same as your phone if empty">
+        <label class="check-row"><input type="checkbox" name="woman" value="1"><span>I’m a woman driver<small>Riders can ask for a woman driver, for example at night. Optional; the Flytte team confirms it with your ID.</small></span></label>
         <p class="error" role="alert"></p>
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue" style="margin-top:8px">Continue</button>
       </form>`, phoneStep);
@@ -825,7 +826,7 @@
           [!!draft.phoneToken || (data.password || '').length >= 6, 'pw', 'Your password needs at least 6 characters.'], [(data.plate || '').trim().length >= 4, 'pl', 'Enter the number plate.'], [(data.licenseNo || '').trim(), 'lc', 'Enter your driving permit number.'],
           [!data.momoNumber || K.validPhone(data.momoNumber, K.countryOf(draft.e164).id), 'mm', 'Enter a valid Mobile Money number, or leave it empty.']].find(([ok]) => !ok);
         if (need) { err.textContent = need[2]; f[need[1]].focus(); return; }
-        data.phone = draft.e164;
+        data.phone = draft.e164; data.woman = data.woman === '1';
         if (data.momoNumber) data.momoNumber = K.e164(data.momoNumber, K.countryOf(draft.e164).id);
         busy(f, true);
         try { const out = await K.api('/auth/register', { ...data, role: 'driver' }); K.session.set(out); K.verifyDocs(root, { onDone: () => onDone(out) }); }
@@ -1090,7 +1091,7 @@
   };
 
   // ---------- maps ----------
-  // ---------- language: English or Kiswahili (translations live in i18n.js) ----------
+  // ---------- language: English, Luganda or Kiswahili (translations live in i18n.js) ----------
   K.lang = () => window.FLYTTE_LANG || 'en';
   K.setLang = (l) => { try { localStorage.setItem('flytte_lang', l); } catch {} location.reload(); };
 
@@ -1298,7 +1299,7 @@
           <p class="set-note">${t === 'auto' ? 'Follows your phone’s light or dark setting.' : t === 'dark' ? 'Easier on the eyes at night.' : 'The classic Flytte look.'}</p></div>
         <h3 class="set-h">Language</h3>
         <div class="set-card list" role="radiogroup" aria-label="Language">
-          ${[['en', 'English', 'English'], ['sw', 'Kiswahili', 'Swahili']].map(([k, n, sub]) => `<button class="set-row" role="radio" aria-checked="${l === k}" data-lang="${k}"><span class="grow"><b>${n}</b><small>${sub}</small></span>${l === k ? K.ic('check') : ''}</button>`).join('')}
+          ${[['en', 'English', 'English'], ['lg', 'Luganda', 'Oluganda'], ['sw', 'Kiswahili', 'Swahili']].map(([k, n, sub]) => `<button class="set-row" role="radio" aria-checked="${l === k}" data-lang="${k}"><span class="grow"><b>${n}</b><small>${sub}</small></span>${l === k ? K.ic('check') : ''}</button>`).join('')}
         </div>
         <h3 class="set-h">Legal</h3>
         <div class="set-card list">
@@ -1397,9 +1398,11 @@
   K.label = (html, dir = 'left') => L.divIcon({ className: '', html: `<div class="map-label">${html}</div>`, iconSize: null, iconAnchor: dir === 'left' ? [-14, 18] : [-14, 18] });
   K.vehicleEmoji = (v) => (v === 'car' ? '🚗' : '🏍️');
 
-  K.route = async function (a, b) {
+  // Road route from a to b, through any stops in `via` (in order).
+  K.route = async function (a, b, via = []) {
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+      const pts = [a, ...via, b].map((p) => `${p.lng},${p.lat}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${pts}?overview=full&geometries=geojson`;
       const r = await fetch(url);
       const j = await r.json();
       const rt = j.routes && j.routes[0];
@@ -1408,7 +1411,7 @@
       // `min` is a rough traffic-adjusted figure for ETAs shown on the map.
       return { km: rt.distance / 1000, freeMin: rt.duration / 60, min: (rt.duration / 60) * 1.8, coords: rt.geometry.coordinates.map(([x, y]) => [y, x]) };
     } catch {
-      return { km: null, freeMin: null, min: null, coords: [[a.lat, a.lng], [b.lat, b.lng]] };
+      return { km: null, freeMin: null, min: null, coords: [a, ...via, b].map((p) => [p.lat, p.lng]) };
     }
   };
 
@@ -1455,6 +1458,9 @@
     sock.on('connect', () => { clearTimeout(t); if (navigator.onLine !== false) K.netBanner(false); });
     return sock;
   };
+
+  // "6:40 pm": how people in Kampala say the time.
+  K.clock = (d) => d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/^0/, '');
 
   K.share = async function (url, text) {
     if (navigator.share) { try { await navigator.share({ title: 'Flytte trip', text, url }); return; } catch {} }

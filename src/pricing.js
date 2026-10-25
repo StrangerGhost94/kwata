@@ -22,6 +22,7 @@ const DEFAULTS = {
   commissionPct: 12,      // Bolt 15–20%, SafeBoda 15%, Faras 10%. Low commission = happier drivers.
   dispatchRadiusKm: 8,
   offerTimeoutSec: 20,
+  stopFee: 1000,          // added per extra stop on a trip, for the driver's waiting time (UGX)
   minWithdrawal: 5000,
   supportPhone: '',      // set the real line in Admin → Pricing (or SUPPORT_PHONE). Hidden in the apps until set.
   // Dynamic pricing (see src/surge.js). Caps keep fares affordable in Kampala.
@@ -37,6 +38,8 @@ const DEFAULTS = {
     cashDebtLimit: 30000,   // commission owed (UGX) before new cash trips pause; Mobile Money/wallet trips continue
     freeWaitMin: 5,         // free waiting at pickup before the driver may cancel as a no-show
     noShowFee: 2000,        // paid to the driver from the rider's wallet on a no-show (only if the wallet covers it)
+    cancelFee: 1000,        // paid to the driver from the rider's wallet when the rider cancels late (only if the wallet covers it)
+    cancelGraceMin: 2,      // minutes after a driver accepts during which the rider can cancel for free
     headingHomePerDay: 2,   // how many times a day a driver can switch on "Heading home"
     queueNext: true,        // offer a nearby next trip when the current one is about to finish
     showDestination: true,  // drivers see where the trip goes before accepting (off: only the distance, address after accepting)
@@ -88,7 +91,7 @@ async function getSettings() {
 
 async function updateSettings(patch) {
   const current = await getSettings();
-  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'supportPhone', 'dynamic', 'growth', 'drivers', 'bonuses'];
+  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'stopFee', 'supportPhone', 'dynamic', 'growth', 'drivers', 'bonuses'];
   for (const key of allowed) {
     if (patch[key] === undefined) continue;
     let value = patch[key];
@@ -129,6 +132,8 @@ async function updateSettings(patch) {
         cashDebtLimit: num(c.cashDebtLimit, 0, 1000000, 30000),
         freeWaitMin: num(c.freeWaitMin, 0, 30, 5),
         noShowFee: num(c.noShowFee, 0, 50000, 2000),
+        cancelFee: num(c.cancelFee, 0, 50000, 1000),
+        cancelGraceMin: num(c.cancelGraceMin, 0, 30, 2),
         headingHomePerDay: num(c.headingHomePerDay, 0, 10, 2),
         queueNext: c.queueNext !== false && c.queueNext !== 'false',
         showDestination: c.showDestination !== false && c.showDestination !== 'false',
@@ -174,8 +179,11 @@ function haversineKm(a, b) {
 // Client sends road distance and FREE-FLOW driving time from OSRM; we sanity-check
 // both against the straight line so nobody can fake a cheap fare. Traffic is added
 // on the server (see surge.trafficFactor), so everyone gets the same treatment.
-function trustedDistance(pickup, drop, clientKm, clientFreeMin) {
-  const straight = haversineKm(pickup, drop);
+// With stops, the straight line runs pickup → each stop → destination.
+function trustedDistance(pickup, drop, clientKm, clientFreeMin, stops = []) {
+  const pts = [pickup, ...stops, drop];
+  let straight = 0;
+  for (let i = 1; i < pts.length; i++) straight += haversineKm(pts[i - 1], pts[i]);
   let km = Number(clientKm);
   if (!Number.isFinite(km) || km <= 0) km = straight * 1.35;
   km = Math.min(Math.max(km, straight), straight * 3 + 1);
@@ -200,10 +208,11 @@ function calcFare(svc, km, min, mult) {
 }
 
 // Full upfront quote for every ride type, with live demand, rain and traffic.
-async function quote(pickup, drop, clientKm, clientFreeMin) {
+async function quote(pickup, drop, clientKm, clientFreeMin, stops = []) {
   const surge = require('./surge');
   const s = await getSettings();
-  const { km, min: freeMin } = trustedDistance(pickup, drop, clientKm, clientFreeMin);
+  const { km, min: freeMin } = trustedDistance(pickup, drop, clientKm, clientFreeMin, stops);
+  const stopsFee = stops.length * (s.stopFee || 0);
   const cond = await surge.conditions(pickup.lat, pickup.lng, s.dynamic);
   const options = Object.entries(s.services)
     .filter(([, v]) => v.enabled)
@@ -216,9 +225,9 @@ async function quote(pickup, drop, clientKm, clientFreeMin) {
       return {
         id, name: v.name, icon: v.icon, seats: v.seats, blurb: v.blurb, vehicle: v.vehicle,
         surge: Math.round(mult * 10) / 10, surgeReasons: mult > 1 ? reasons : [],
-        durationMin: mins, fare: calcFare(v, km, mins, mult), regularFare: calcFare(v, km, mins, 1),
+        durationMin: mins, fare: calcFare(v, km, mins, mult) + stopsFee, regularFare: calcFare(v, km, mins, 1) + stopsFee,
         // How the price is made, for "Why this price?"
-        parts: { base: v.base, distance: Math.round(v.perKm * km), time: Math.round(v.perMin * mins), minFare: v.minFare, km: Math.round(km * 10) / 10, min: mins },
+        parts: { base: v.base, distance: Math.round(v.perKm * km), time: Math.round(v.perMin * mins), minFare: v.minFare, km: Math.round(km * 10) / 10, min: mins, stops: stopsFee },
       };
     });
   const car = options.find((o) => surge.CLASS_OF[o.id] === 'car') || options[0];

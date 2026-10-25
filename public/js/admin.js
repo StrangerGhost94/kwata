@@ -149,7 +149,7 @@
         <td>${K.esc(d.licenseNo)}${expiryTag(d.nextExpiry)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td>
         <td>${d.acceptanceRate == null ? '<span class="muted">—</span>' : `${d.acceptanceRate}% / ${d.cancellationRate ?? 0}%`}</td>
         <td>${d.balance < 0 ? `<span style="color:var(--stop)">${K.ugx(d.balance)}</span><br><span class="tiny muted">owes commission</span>` : K.ugx(d.balance)}</td><td>${badge(d.status)}</td>
-        <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}" data-plate="${K.esc(d.plate)}" data-veh="${K.esc(d.vehicle)}">${d.status === 'pending' ? 'Check & approve' : 'Documents'} (${d.docs || 0}/4)</button>
+        <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}" data-plate="${K.esc(d.plate)}" data-veh="${K.esc(d.vehicle)}" data-woman="${d.woman ? 1 : ''}">${d.status === 'pending' ? 'Check & approve' : 'Documents'} (${d.docs || 0}/4)</button>
         ${d.status !== 'approved' ? `<button class="btn btn-primary btn-sm" data-id="${d.id}" data-s="approved">Approve</button>` : `<button class="btn btn-sm" data-id="${d.id}" data-s="suspended">Suspend</button>`}
         <button class="btn btn-ghost btn-sm" data-pw="${d.id}" data-name="${K.esc(d.name)}">Reset password</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">No drivers yet. Click “Add driver” after you’ve met and checked them.</td></tr>'}
       </tbody></table></div>`;
@@ -159,7 +159,7 @@
     });
     bindReset(main);
     K.$('#addDriver').onclick = addDriver;
-    main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status, { plate: b.dataset.plate, vehicle: b.dataset.veh }));
+    main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status, { plate: b.dataset.plate, vehicle: b.dataset.veh, woman: !!b.dataset.woman }));
   }
 
   function expiryTag(day) {
@@ -221,6 +221,8 @@
         <div class="kpis" style="max-width:720px">
           <div><label for="fw">Free waiting at pickup (min)</label><input id="fw" type="number" min="0" max="30" value="${d.freeWaitMin}"></div>
           <div><label for="nf">No-show fee to driver (UGX)</label><input id="nf" type="number" min="0" step="500" value="${d.noShowFee}"></div>
+          <div><label for="cf">Late cancellation fee to driver (UGX)</label><input id="cf" type="number" min="0" step="500" value="${d.cancelFee}"></div>
+          <div><label for="cg">Free cancellation after a driver accepts (minutes)</label><input id="cg" type="number" min="0" max="30" value="${d.cancelGraceMin}"></div>
           <div><label for="dl">Pause cash trips when owed (UGX)</label><input id="dl" type="number" min="0" step="1000" value="${d.cashDebtLimit}"></div>
           <div><label for="hh">Heading home uses per day</label><input id="hh" type="number" min="0" max="10" value="${d.headingHomePerDay}"></div>
           <div><label for="rd">Document reminder (days before)</label><input id="rd" type="number" min="1" max="90" value="${d.docReminderDays}"></div>
@@ -251,7 +253,7 @@
       K.$('#saveR').onclick = async () => {
         read();
         try {
-          const out = await K.api('/admin/settings', { drivers: { freeWaitMin: +K.$('#fw').value, noShowFee: +K.$('#nf').value, cashDebtLimit: +K.$('#dl').value, headingHomePerDay: +K.$('#hh').value, docReminderDays: +K.$('#rd').value, mismatchPauseReports: +K.$('#mp').value, queueNext: K.$('#qn').checked, showDestination: K.$('#sd').checked }, bonuses }, 'PUT');
+          const out = await K.api('/admin/settings', { drivers: { freeWaitMin: +K.$('#fw').value, noShowFee: +K.$('#nf').value, cancelFee: +K.$('#cf').value, cancelGraceMin: +K.$('#cg').value, cashDebtLimit: +K.$('#dl').value, headingHomePerDay: +K.$('#hh').value, docReminderDays: +K.$('#rd').value, mismatchPauseReports: +K.$('#mp').value, queueNext: K.$('#qn').checked, showDestination: K.$('#sd').checked }, bonuses }, 'PUT');
           Object.assign(d, out.drivers); bonuses.splice(0, bonuses.length, ...out.bonuses);
           K.toast('Driver rules saved.'); draw();
         } catch (e) { K.toast(e.message); }
@@ -277,9 +279,15 @@
         <div class="veh-compare"><div><span class="small muted">Typed at sign-up</span><br><b class="plate-tag">${K.esc(veh.plate || '—')}</b><br><span class="small muted">${K.esc(veh.vehicle || '')}</span></div>
           <div style="flex:1;max-width:260px">${fig(by('vehicle'), 'Vehicle photo')}</div></div>
         <p class="small muted">${status !== 'approved' ? 'Approve only if the photo is clearly the person on the ID and permit, and the plate in the vehicle photo is the one typed. Approving the driver approves their photo and plate.' : 'This driver is approved. Photo and plate changes come to Photo & plate checks.'}</p>
+        <label class="row" style="gap:8px;align-items:flex-start;margin-top:12px;font-weight:600"><input type="checkbox" id="wd" ${veh.woman ? 'checked' : ''} style="width:auto;margin-top:3px">
+          <span>Woman driver<br><span class="small muted" style="font-weight:400">Gets requests from riders who ask for a woman driver. Tick only when the ID confirms it.</span></span></label>
         <div class="row" style="margin-top:14px">
           ${status !== 'approved' ? `<button class="btn btn-danger-soft fill" data-st="rejected">Reject</button><button class="btn btn-primary fill" data-st="approved">Approve driver</button>` : '<button class="btn fill" data-close>Close</button>'}
         </div>`;
+      K.$('#wd', m.el).onchange = async (e) => {
+        try { await K.api(`/admin/drivers/${id}/woman`, { woman: e.target.checked }); K.toast(e.target.checked ? 'Marked as a woman driver' : 'No longer marked as a woman driver'); }
+        catch (err) { e.target.checked = !e.target.checked; K.toast(err.message); }
+      };
       m.el.querySelectorAll('[data-st]').forEach((b) => b.onclick = async () => {
         await K.api(`/admin/drivers/${id}/status`, { status: b.dataset.st });
         m.close(); K.toast(b.dataset.st === 'approved' ? 'Driver approved, with their photo and plate.' : 'Driver rejected'); await refreshCounts(); show();
@@ -365,6 +373,7 @@
         <div><label for="rad">Search radius (km)</label><input id="rad" type="number" min="1" max="30" value="${s.dispatchRadiusKm}"></div>
         <div><label for="to">Seconds to accept</label><input id="to" type="number" min="8" max="60" value="${s.offerTimeoutSec}"></div>
         <div><label for="mw">Min cash out (UGX)</label><input id="mw" type="number" min="0" value="${s.minWithdrawal}"></div>
+        <div><label for="sf">Fee per extra stop (UGX)</label><input id="sf" type="number" min="0" step="500" value="${s.stopFee}"></div>
         <div><label for="sp">Support phone</label><input id="sp" type="tel" value="${K.esc(s.supportPhone || '')}" placeholder="Not set: hidden in the apps"></div>
       </div>
       <h2 style="margin-top:26px">Dynamic pricing</h2>
@@ -400,7 +409,7 @@
         tr.querySelectorAll('[data-f]').forEach((i) => { o[i.dataset.f] = i.type === 'checkbox' ? i.checked : i.type === 'text' ? i.value : +i.value; });
         services[tr.dataset.id] = o;
       });
-      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, supportPhone: K.$('#sp').value,
+      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, stopFee: +K.$('#sf').value, supportPhone: K.$('#sp').value,
         dynamic: { enabled: K.$('#dyn').checked, weather: K.$('#wx').checked, sensitivity: +K.$('#sens').value, maxBoda: +K.$('#mb').value, maxCar: +K.$('#mc').value } }, 'PUT');
       K.toast('Pricing saved. New requests use it right away.');
     };

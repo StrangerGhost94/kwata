@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node test/payments.js && node test/e2e.js && node test/growth.js && node test/flows.js && node test/drivers.js && node test/identity.js && node test/otp.js && node test/account.js && node test/rating.js && node test/ux.js && node test/walletlock.js && node test/email.js && node test/session.js && node test/resilience.js && node test/places.js",
+    "test": "node test/payments.js && node test/e2e.js && node test/growth.js && node test/flows.js && node test/drivers.js && node test/identity.js && node test/otp.js && node test/account.js && node test/rating.js && node test/ux.js && node test/walletlock.js && node test/email.js && node test/session.js && node test/resilience.js && node test/places.js && node test/trust.js && node test/cancelfee.js && node test/woman.js && node test/stops.js && node test/split.js",
     "test:drivers": "node test/drivers.js",
     "test:ui": "node test/ui.js",
     "test:payments": "node test/payments.js",
