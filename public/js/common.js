@@ -99,7 +99,7 @@
   // ---------- vehicle art ----------
   // Flytte's own vehicle illustrations: one side-on style, graphite/silver with a single gold accent.
   // Standard rides are light, Comfort is a black executive sedan, delivery is a parcel, airport a plane.
-  const VEH = { boda: 'Boda boda', car: 'Car', comfort: 'Comfort SUV', parcel: 'Parcel', airport: 'Airport transfer' };
+  const VEH = { boda: 'Boda boda', car: 'Car', comfort: 'Comfort SUV', parcel: 'Parcel', errand: 'Errand', airport: 'Airport transfer' };
   K.ART = Object.fromEntries(Object.entries(VEH).map(([k, alt]) => [k, `<img class="art-img" src="/img/vehicles/${k}.svg" alt="" data-alt="${alt}" decoding="async">`]));
   Object.keys(VEH).forEach((k) => { const i = new Image(); i.src = `/img/vehicles/${k}.svg`; });
   K.artFor = (service, vehicleType) => K.ART[service] || (vehicleType === 'car' ? K.ART.car : K.ART.boda);
@@ -1757,7 +1757,7 @@
       <path class="rt-line-bg" d="${d}"/><path class="rt-line" d="${d}"/>${mids}<circle class="rt-a" cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="3.6"/><rect class="rt-b" x="${(ex - 3.4).toFixed(1)}" y="${(ey - 3.4).toFixed(1)}" width="6.8" height="6.8" rx="1.4"/></svg>`;
   };
 
-  K.SERVICE_LABEL = { boda: 'Boda', car: 'Car', comfort: 'Comfort', parcel: 'Parcel', airport: 'Airport' };
+  K.SERVICE_LABEL = { boda: 'Boda', car: 'Car', comfort: 'Comfort', parcel: 'Parcel', errand: 'Errand', airport: 'Airport' };
   K.PAY_LABEL = { cash: 'Cash', wallet: 'Flytte Wallet', momo: 'Mobile Money', card: 'Card' };
   K.PAY_ICON = { cash: 'cash', wallet: 'wallet', momo: 'momo', card: 'card' };
 

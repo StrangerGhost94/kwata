@@ -391,6 +391,8 @@
         <div><label for="to">Seconds to accept</label><input id="to" type="number" min="8" max="60" value="${s.offerTimeoutSec}"></div>
         <div><label for="mw">Min cash out (UGX)</label><input id="mw" type="number" min="0" value="${s.minWithdrawal}"></div>
         <div><label for="sf">Fee per extra stop (UGX)</label><input id="sf" type="number" min="0" step="500" value="${s.stopFee}"></div>
+        <div><label for="ef">Errand shopping fee (UGX)</label><input id="ef" type="number" min="0" step="500" value="${(s.errand || {}).shopFee ?? 2000}"></div>
+        <div><label for="eb">Most a courier spends on one errand (UGX)</label><input id="eb" type="number" min="5000" step="5000" value="${(s.errand || {}).maxBudget ?? 200000}"></div>
         <div><label for="sp">Support phone</label><input id="sp" type="tel" value="${K.esc(s.supportPhone || '')}" placeholder="Not set: hidden in the apps"></div>
       </div>
       <h2 style="margin-top:26px">Dynamic pricing</h2>
@@ -426,7 +428,7 @@
         tr.querySelectorAll('[data-f]').forEach((i) => { o[i.dataset.f] = i.type === 'checkbox' ? i.checked : i.type === 'text' ? i.value : +i.value; });
         services[tr.dataset.id] = o;
       });
-      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, stopFee: +K.$('#sf').value, supportPhone: K.$('#sp').value,
+      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, stopFee: +K.$('#sf').value, errand: { shopFee: +K.$('#ef').value, maxBudget: +K.$('#eb').value }, supportPhone: K.$('#sp').value,
         dynamic: { enabled: K.$('#dyn').checked, weather: K.$('#wx').checked, sensitivity: +K.$('#sens').value, maxBoda: +K.$('#mb').value, maxCar: +K.$('#mc').value } }, 'PUT');
       K.toast('Pricing saved. New requests use it right away.');
     };
