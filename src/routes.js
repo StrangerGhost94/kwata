@@ -84,7 +84,8 @@ r.get('/config', wrap(async (req, res) => {
   const s = await getSettings();
   res.json({
     services: Object.entries(s.services).filter(([, v]) => v.enabled).map(([id, v]) => ({ id, name: v.name, icon: v.icon, vehicle: v.vehicle, seats: v.seats, blurb: v.blurb })),
-    paymentsLive: payments.enabled(),            // real Flutterwave payments
+    paymentsLive: payments.enabled() || payments.relworx(),   // real payments (Relworx Mobile Money and/or Flutterwave)
+    cardPayments: payments.cards(),              // cards need Flutterwave
     paymentsAvailable: payments.available(),     // Mobile Money / card / top-ups can be used (live or local demo)
     paymentsDemo: payments.demo(),
     smsLogin: sms.enabled() || wa.enabled() || tg.enabled(), // sign in with a one-time code instead of a password
@@ -742,6 +743,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
     if (!c || c.kind !== 'merchant' || service !== 'parcel') return bad(res, 'Shop deliveries are sent from a Flytte for Shops account.');
     merchant = true;
   }
+  if (paymentMethod === 'card' && !payments.cards()) return bad(res, 'Card payments aren’t available yet. Choose Mobile Money, cash or your Flytte wallet.');
   if (['momo', 'card'].includes(paymentMethod) && !payments.available()) return bad(res, 'Mobile Money and card payments aren’t available yet. Choose cash or your Flytte wallet.');
 
   // Scheduled ride: between 20 minutes and 7 days ahead.
@@ -1386,6 +1388,45 @@ r.post('/wallet/topup', auth.requireAuth('rider'), wrap(async (req, res) => {
 // ---------- Payments (Flutterwave) ----------
 const paidText = (p) => p.purpose === 'pass' ? 'Flytte Pass is on ✨ Enjoy your rides.' : p.purpose === 'split'
   ? `${p.payer_name || 'A friend'} paid their share. UGX ${Number(p.amount).toLocaleString()} is in your Flytte Wallet.` : 'Payment received ✅';
+// A Mobile Money payment just went through: update the trip and tell the person.
+async function paymentSettled(p) {
+  if (p.trip_id) await rt.broadcast(p.trip_id).catch(() => {});
+  rt.notify(p.user_id, 'toast', { text: paidText(p) });
+  rt.notify(p.user_id, 'payment:update', { txRef: p.tx_ref, status: 'successful', purpose: p.purpose });
+}
+r.paymentSettled = paymentSettled;
+
+// The app (or the split page) waits on this after a Mobile Money prompt is sent. The reference is the
+// secret: it's long and random, and only says how that one payment went. Relworx is asked at most every
+// few seconds per payment.
+const lastCheck = new Map();
+setInterval(() => { const t = Date.now() - 60e3; for (const [k, v] of lastCheck) if (v < t) lastCheck.delete(k); }, 60e3).unref();
+r.get('/payments/:ref/status', limit(120, 10 * 60e3, (req) => 'ref:' + req.params.ref), wrap(async (req, res) => {
+  const ref = String(req.params.ref || '').slice(0, 80);
+  if (!/^FLY-(TOP|TRP|DBT|SPL|PAS|BIZ)-\d+-[0-9a-f]{8}$/.test(ref)) return bad(res, 'Payment not found.', 404);
+  let p = await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
+  if (!p) return bad(res, 'Payment not found.', 404);
+  if (p.status === 'pending' && Date.now() - (lastCheck.get(ref) || 0) > 3000) {
+    lastCheck.set(ref, Date.now());
+    const out = await payments.verifyAndApply(ref);
+    if (out.ok && out.payment && out.payment.newly) await paymentSettled(out.payment);
+    p = await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
+  }
+  const status = p.status === 'successful' ? 'successful' : ['failed', 'expired'].includes(p.status) ? 'failed' : 'pending';
+  res.json({ status, purpose: p.purpose, amount: p.amount,
+    message: status === 'failed' ? (p.status === 'expired' ? 'The prompt wasn’t answered in time. Try again.' : 'The payment didn’t go through. Check your balance and PIN, then try again.') : undefined });
+}));
+
+// Relworx calls this when a payment succeeds or fails. We never trust the body: we look the payment up
+// and ask Relworx ourselves. Always answer 200 so Relworx stops retrying.
+r.post('/payments/relworx/webhook', limit(300, 60e3), wrap(async (req, res) => {
+  const ref = String((req.body || {}).customer_reference || '').slice(0, 80);
+  if (/^FLY-(TOP|TRP|DBT|SPL|PAS|BIZ)-\d+-[0-9a-f]{8}$/.test(ref)) {
+    const out = await payments.verifyAndApply(ref).catch((e) => { console.error('relworx webhook', e.message); return null; });
+    if (out && out.ok && out.payment && out.payment.newly) await paymentSettled(out.payment);
+  }
+  res.json({ ok: true });
+}));
 
 // ---------- Split the fare ----------
 // The rider shares a link; each friend pays an equal share by Mobile Money, which lands in the rider's
@@ -1451,7 +1492,7 @@ r.get('/payments/callback', wrap(async (req, res) => {
 r.post('/payments/webhook', wrap(async (req, res) => {
   if (!payments.webhookAuthentic(req)) return res.status(401).end();
   const ref = req.body && req.body.data && String(req.body.data.tx_ref || '');
-  if (ref && /^(?:FLY|KWT)-(TOP|TRP|DBT|SPL)-\d+-[0-9a-f]{8}$/.test(ref)) {
+  if (ref && /^(?:FLY|KWT)-(TOP|TRP|DBT|SPL|PAS|BIZ)-\d+-[0-9a-f]{8}$/.test(ref)) {
     const result = await payments.verifyAndApply(ref);
     const p = await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
     if (p && result.ok) {

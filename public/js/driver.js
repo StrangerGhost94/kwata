@@ -126,8 +126,9 @@
       const b = ev.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span>Starting payment…';
       try {
         const r = await K.api('/driver/pay-debt', {});
-        if (r.link) { location.href = r.link; return; }
-        m.close(); K.toast('Payment received'); await loadEarnings(); loadOverview();
+        m.close();
+        if ((await K.awaitPayment(r)) !== 'success') return;
+        K.toast('Payment received'); await loadEarnings(); loadOverview();
       } catch (e) { b.disabled = false; b.textContent = 'Try again'; K.$('#perr', m.el).textContent = e.message; }
     };
   }

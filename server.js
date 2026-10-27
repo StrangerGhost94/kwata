@@ -192,6 +192,9 @@ async function activateScheduled() {
   const passNote = (uid, text) => { rt.notify(uid, 'toast', { text }); require('./src/drivers').push(uid, { type: 'pass', title: 'Flytte Pass', body: text }, { ttl: 86400, urgency: 'normal' }).catch(() => {}); };
   setInterval(() => require('./src/pass').renewDue(passNote).catch(console.error), 5 * 60e3);
   setTimeout(() => require('./src/pass').renewDue(passNote).catch(console.error), 8000);
+  // Mobile Money (Relworx): confirm pending payments even when the app was closed.
+  const routes = require('./src/routes');
+  setInterval(() => require('./src/payments').checkPending(routes.paymentSettled).catch(console.error), Number(process.env.RELWORX_POLL_MS) || 20e3);
   // School runs: book the next day and a half of rides.
   setInterval(() => require('./src/school').scheduleDue().catch(console.error), 10 * 60e3);
   setTimeout(() => require('./src/school').scheduleDue().catch(console.error), 6000);

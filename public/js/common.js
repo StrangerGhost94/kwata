@@ -422,6 +422,52 @@
     p.classList.toggle('scrolled', top > 0 && tr.bottom <= barBottom + 2);
   }, true);
 
+  // After a payment is started: a Flutterwave link opens its checkout; a Mobile Money prompt (Relworx)
+  // shows "Check your phone" and waits for the payer to approve. Resolves 'success', 'failed', 'pending'
+  // (still waiting when they closed it) or 'redirect'.
+  K.awaitPayment = function (out) {
+    if (!out) return Promise.resolve('failed');
+    if (out.link) { location.href = out.link; return Promise.resolve('redirect'); }
+    if (!out.pending) return Promise.resolve('success');
+    return new Promise((resolve) => {
+      let done = false, timer = null;
+      const started = Date.now();
+      const m = K.modal(`<div class="momo-wait" aria-live="polite">
+          <div class="momo-phone" aria-hidden="true">${K.ic('phone')}<i></i></div>
+          <h2>Check your phone</h2>
+          <p class="muted">We sent a Mobile Money prompt for <b>${K.ugx(out.amount)}</b> to <b>${K.esc(K.prettyPhone(out.phone))}</b>. Enter your PIN on your phone to approve it.</p>
+          <p class="small muted" id="mwState"><span class="spin"></span> Waiting for you to approve…</p>
+          <p class="tiny faint">No prompt? Dial *165# (MTN) or *185# (Airtel) and check Approvals.</p>
+        </div>
+        <button class="btn btn-block" data-close style="margin-top:6px">Close</button>`, { onClose: () => finish(null) });
+      const finish = (result) => {
+        if (done) return; done = true; clearTimeout(timer);
+        if (result) m.close();
+        resolve(result || 'pending');
+        if (!result) K.toast('We’ll keep checking. The payment updates here as soon as it’s approved.', 5000);
+      };
+      const tick = async () => {
+        if (done) return;
+        let s = null;
+        try { s = await K.api('/payments/' + encodeURIComponent(out.tx_ref) + '/status'); } catch {}
+        if (done) return;
+        if (s && s.status === 'successful') { K.haptic && K.haptic(); return finish('success'); }
+        if (s && s.status === 'failed') {
+          const st = K.$('#mwState', m.el);
+          if (st) st.innerHTML = `<span class="error">${K.esc(s.message || 'The payment didn’t go through.')}</span>`;
+          done = true; resolve('failed'); return;
+        }
+        if (Date.now() - started > 4 * 60e3) {
+          const st = K.$('#mwState', m.el);
+          if (st) st.textContent = 'Still waiting. If you approved it, it will update by itself in a few minutes.';
+          timer = setTimeout(tick, 10000); return;
+        }
+        timer = setTimeout(tick, 3000);
+      };
+      timer = setTimeout(tick, 3000);
+    });
+  };
+
   K.modal = function (html, { drawer = false, onClose } = {}) {
     const ov = document.createElement('div');
     ov.className = 'overlay';

@@ -2244,3 +2244,12 @@ html.theme-dark .fy-card.fy-errand { background: linear-gradient(140deg, #3A3110
 .acct-pill.soon { background: rgba(255,255,255,.16); color: #FFD54A; }
 .pass-soon { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 16px; background: var(--brand-soft); color: var(--ink); }
 .pass-soon span { font-size: .88rem; color: var(--ink-2); }
+
+/* Mobile Money: "Check your phone" while the payer approves the prompt */
+.momo-wait { text-align: center; padding: 8px 4px 4px; }
+.momo-phone { position: relative; width: 72px; height: 72px; margin: 4px auto 10px; border-radius: 22px; background: var(--brand-soft); display: grid; place-items: center; }
+.momo-phone .i { width: 32px; height: 32px; color: var(--ink); }
+.momo-phone i { position: absolute; inset: -6px; border-radius: 26px; border: 2px solid var(--brand); opacity: .6; animation: momoPulse 1.6s ease-out infinite; }
+@keyframes momoPulse { from { transform: scale(.9); opacity: .7; } to { transform: scale(1.25); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .momo-phone i { animation: none; } }
+.momo-wait .spin { vertical-align: -2px; margin-right: 6px; }
