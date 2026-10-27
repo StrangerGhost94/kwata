@@ -8,6 +8,9 @@ const db = require('./db');
 // (12% vs Bolt's 15–20%) means drivers still take home about the same per trip.
 //   fare = max(minFare, base + perKm × road km + perMin × trip minutes) × surge
 const PRICING_VERSION = 2;
+// The longest trip (road km) each service takes. Beyond it the option isn't offered: a boda to Mbarara
+// is a mistake (usually a pin dropped in the wrong place), not a ride.
+const MAX_KM = { boda: 45, car: 150, comfort: 150, parcel: 45, errand: 30, airport: 150 };
 const DEFAULT_SERVICES = {
   boda:    { name: 'Flytte Boda',    icon: '🏍️', vehicle: 'boda', seats: 1, base: 700,  perKm: 570,  perMin: 26, minFare: 2000,  surge: 1, enabled: true, blurb: 'Beat the traffic on a motorbike.' },
   car:     { name: 'Flytte Car',     icon: '🚗', vehicle: 'car',  seats: 4, base: 3800, perKm: 1650, perMin: 75, minFare: 6000,  surge: 1, enabled: true, blurb: 'Affordable everyday rides.' },
@@ -78,7 +81,7 @@ async function getSettings() {
   s.growth = { firstRide: { ...DEFAULTS.growth.firstRide, ...(g.firstRide || {}) }, referral: { ...DEFAULTS.growth.referral, ...(g.referral || {}) }, rewards: { ...DEFAULTS.growth.rewards, ...(g.rewards || {}) } };
   // make sure new default services appear even if older settings were saved
   for (const [k, v] of Object.entries(DEFAULT_SERVICES)) {
-    s.services[k] = { ...v, ...(s.services[k] || {}) };
+    s.services[k] = { maxKm: MAX_KM[k], ...v, ...(s.services[k] || {}) };
     // Earlier placeholder descriptions made promises nobody had confirmed; show the neutral one instead.
     if (OLD_BLURBS.includes(s.services[k].blurb)) s.services[k].blurb = v.blurb;
     // The app was renamed to Flytte: service names saved under the old name follow the new one.
@@ -110,6 +113,7 @@ async function updateSettings(patch) {
       for (const [id, svc] of Object.entries(patch.services)) {
         if (!value[id]) continue;
         const clean = {};
+        if (svc.maxKm !== undefined) clean.maxKm = Math.min(500, Math.max(1, Math.round(Number(svc.maxKm) || 1)));
         for (const f of ['base', 'perKm', 'perMin', 'minFare', 'surge']) {
           if (svc[f] !== undefined) clean[f] = Math.max(0, Number(svc[f]) || 0);
         }
@@ -246,7 +250,7 @@ async function quote(pickup, drop, clientKm, clientFreeMin, stops = []) {
       const mult = Math.min(5, Math.max(dyn, manual));
       const reasons = manual > dyn ? ['busy'] : cond[cls].reasons;
       return {
-        id, name: v.name, icon: v.icon, seats: v.seats, blurb: v.blurb, vehicle: v.vehicle,
+        id, name: v.name, icon: v.icon, seats: v.seats, blurb: v.blurb, vehicle: v.vehicle, maxKm: v.maxKm, tooFar: v.maxKm > 0 && km > v.maxKm,
         surge: Math.round(mult * 10) / 10, surgeReasons: mult > 1 ? reasons : [],
         durationMin: mins, fare: calcFare(v, km, mins, mult) + stopsFee + (id === 'errand' ? shopFee : 0), regularFare: calcFare(v, km, mins, 1) + stopsFee + (id === 'errand' ? shopFee : 0),
         // How the price is made, for "Why this price?"

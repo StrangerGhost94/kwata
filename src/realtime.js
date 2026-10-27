@@ -147,6 +147,8 @@ function riderAlert(t, moment) {
   if (!sent) { sent = new Set(); riderSent.set(t.id, sent); }
   if (sent.has(moment)) return;
   sent.add(moment);
+  // School runs: the parent hears every step, even with the app open (they're often not the one riding).
+  if (t.plan_id) return schoolAlert(t, moment);
   if (!riderAway(t.rider_id)) return;
   const who = ['parcel', 'errand'].includes(t.service) ? 'courier' : 'driver';
   const name = firstName(t.driver_name), plate = t.plate ? ` · ${t.plate}` : '';
@@ -163,6 +165,23 @@ function riderAlert(t, moment) {
   dtools.push(t.rider_id, { app: 'rider', type: moment, tag: `trip-${t.id}`, title: msg[0], body: msg[1], tripId: t.id }, { ttl: moment === 'completed' ? 3600 : 600, urgency: 'high' }).catch(() => {});
 }
 
+function schoolAlert(t, moment) {
+  const p = t.passenger ? JSON.parse(t.passenger) : {};
+  const child = p.name || 'Your child', name = firstName(t.driver_name), plate = t.plate ? ` · ${t.plate}` : '';
+  const toSchool = t.plan_leg === 'morning';
+  const msg = {
+    accepted: [`${name} is coming for ${child}`, `${[t.vehicle_color, t.vehicle_make].filter(Boolean).join(' ') || 'School run'}${plate}`],
+    arrived: [`${name} is at the ${toSchool ? 'pickup' : 'school'} for ${child}`, toSchool ? 'Bring them out to the car' : 'The school gives the driver the handover code'],
+    started: [`${child} is on the way ${toSchool ? 'to school' : 'home'}`, `With ${name}${plate}. Tap to follow live.`],
+    completed: [toSchool ? `${child} is at school` : `${child} is home`, toSchool ? `Handed over at ${String(t.drop_address || 'school').split(',')[0]} with the school’s code.` : 'Dropped off with your code. Tap to rate the ride.'],
+    driver_cancelled: [`The driver for ${child} cancelled`, 'We’re finding another vetted driver now.'],
+    no_drivers: [`No driver found for ${child}’s school run`, 'Open Flytte to try again, or call us.'],
+  }[moment];
+  if (!msg) return;
+  notify(t.rider_id, 'toast', { text: `${msg[0]}. ${msg[1]}` });
+  dtools.push(t.rider_id, { app: 'rider', type: moment, tag: `trip-${t.id}`, title: msg[0], body: msg[1], tripId: t.id }, { ttl: 3600, urgency: 'high' }).catch(() => {});
+}
+
 function nightShareAlert(t) { riderAlert(t, 'night_share'); }
 
 async function broadcast(tripId) {
@@ -171,6 +190,7 @@ async function broadcast(tripId) {
   if (t.merchant) { /* a shop's delivery: the shop follows it on its Business page, not as its own trip */ }
   else if (t.status === 'accepted') riderAlert(t, 'accepted');
   else if (t.status === 'arrived') riderAlert(t, 'arrived');
+  else if (t.status === 'in_progress' && t.plan_id) riderAlert(t, 'started');
   else if (t.status === 'completed') riderAlert(t, 'completed');
   else if (t.status === 'no_drivers') riderAlert(t, 'no_drivers');
   else if (t.status === 'cancelled' && t.cancelled_by === 'driver') riderAlert(t, 'driver_cancelled');

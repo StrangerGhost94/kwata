@@ -2241,3 +2241,6 @@ html.theme-dark .fy-card.fy-errand { background: linear-gradient(140deg, #3A3110
 /* Choose a ride: the sheet stays short enough that the route on the map is visible above it
    (the options scroll inside; the Request button is in the sticky footer). */
 @media (max-width: 759px) { .sheet.choosing { max-height: 60vh; max-height: 60dvh; } }
+.acct-pill.soon { background: rgba(255,255,255,.16); color: #FFD54A; }
+.pass-soon { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 16px; background: var(--brand-soft); color: var(--ink); }
+.pass-soon span { font-size: .88rem; color: var(--ink-2); }

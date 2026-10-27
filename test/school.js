@@ -37,6 +37,8 @@ const hhmm = (ms) => new Date(Date.now() + ms + 3 * 3600e3).toISOString().slice(
   };
   const s1 = await online(plain, 'plain'), s2 = await online(vetted, 'vetted');
 
+  const ps = io(BASE, { auth: { token: parent.token } }); await new Promise((r) => ps.on('connect', r));
+  const toasts = []; ps.on('toast', (m) => toasts.push(m.text));
   // Today's day and a time 40 minutes from now, so the morning run is booked straight away.
   const dow = ((new Date(Date.now() + 3 * 3600e3).getUTCDay() + 6) % 7) + 1;
   const p = await api('/school/plans', { child: 'Amani', home, school, days: [dow], morning: hhmm(40 * 60e3), contactName: 'Teacher Grace', contactPhone: '0772' + rnd().slice(0, 6), payment: 'cash' }, parent.token);
@@ -62,6 +64,8 @@ const hhmm = (ms) => new Date(Date.now() + ms + 3 * 3600e3).toISOString().slice(
   ok((await call(`/trips/${t.id}/complete`, { code: '0000' === p.handoverCode ? '1111' : '0000' }, vetted.token)).status === 400, 'the child can’t be dropped without the school’s code');
   await api(`/trips/${t.id}/complete`, { code: p.handoverCode }, vetted.token);
   await sleep(300);
+  ok(toasts.some((x) => /Amani is at school/.test(x)) && toasts.some((x) => /Amani is on the way to school/.test(x)), 'the parent is told when Amani is on the way and when Amani is at school');
+  ok(!toasts.some((x) => /You’ve arrived/.test(x)), 'never “You’ve arrived” for a school run');
   const plans = await api('/school/plans', null, parent.token);
   ok(plans[0].driver && plans[0].driver.id === vetted.id, 'that driver becomes the usual driver');
 
@@ -71,7 +75,7 @@ const hhmm = (ms) => new Date(Date.now() + ms + 3 * 3600e3).toISOString().slice(
   q = await api(`/school/plans/${p.id}`, { newDriver: true }, parent.token, 'PATCH');
   ok(q.driver === null, 'the parent can ask for a different driver');
 
-  s1.close(); s2.close();
+  s1.close(); s2.close(); ps.close();
   console.log(failed ? `${failed} FAILED` : 'all school run checks passed');
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

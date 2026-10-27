@@ -652,6 +652,14 @@ r.post('/feedback', auth.requireAuth(), limit(5, 3600e3, (req) => 'user:' + req.
   res.json({ ok: true });
 }));
 
+// A trip longer than a service takes: say how far it is and what the limit is.
+function tooFarText(q, o) {
+  const km = Math.round(q.distanceKm);
+  if (o) return `This trip is about ${km} km. ${o.name.replace('Flytte ', '')} trips go up to ${o.maxKm} km. Check the destination, or choose a car.`;
+  const most = Math.max(...q.options.map((x) => x.maxKm || 0));
+  return `This trip is about ${km} km, longer than Flytte goes (up to ${most} km). Check that the pin is in the right place.`;
+}
+
 // ---------- Rider ----------
 r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   const rt0 = route(req.body || {}, res);
@@ -660,6 +668,9 @@ r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   // Someone checking prices = demand signal; the home screen's own suggestion ("peek") doesn't count.
   if (!req.body.peek) surge.recordLook(req.user.id, pickup.lat, pickup.lng);
   const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin, stops);
+  const near = q.options.filter((o) => !o.tooFar);
+  if (!near.length) return bad(res, tooFarText(q));
+  q.options = near;
   const myPass = await pass.active(req.user.id);
   if (myPass) {
     q.pass = true;
@@ -770,6 +781,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   else {
     const q = await quote(pickup, drop, distanceKm, durationMin, stops);
     const o = q.options.find((x) => x.id === service);
+    if (o.tooFar) return bad(res, tooFarText(q, o));
     km = q.distanceKm; min = o.durationMin; fare = scheduledFor || myPass ? o.regularFare : o.fare; // scheduled rides and Flytte Pass never surge
     if (myPass && !scheduledFor) surgeSaved = o.fare - o.regularFare;
     const expected = Number(req.body.expectedFare);
