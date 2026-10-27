@@ -18,7 +18,7 @@
 const crypto = require('crypto');
 const { haversineKm } = require('./pricing');
 
-const CLASS_OF = { boda: 'boda', parcel: 'boda', car: 'car', comfort: 'car', airport: 'car' };
+const CLASS_OF = { boda: 'boda', parcel: 'boda', errand: 'boda', car: 'car', comfort: 'car', airport: 'car' };
 const CELL = 0.02;            // degrees, about 2.2 km in Kampala
 const REQUEST_WINDOW = 10 * 60e3;
 const LOOK_WINDOW = 5 * 60e3;

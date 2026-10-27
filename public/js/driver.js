@@ -446,22 +446,23 @@
     el.innerHTML = `
       <svg class="timer" viewBox="0 0 54 54" aria-label="Seconds left"><circle class="bg" cx="27" cy="27" r="24"/><circle class="fg" id="ringFg" cx="27" cy="27" r="24" stroke-dasharray="151" style="stroke-dashoffset:${151 * (1 - o.left / o.expiresIn)}"/>
         <text id="ringTx" x="27" y="33" text-anchor="middle" font-weight="800" font-size="17" fill="#fff">${o.left}</text></svg>
-      <h2>New ${o.service === 'parcel' ? 'delivery' : 'ride'} request</h2>
+      <h2>New ${o.service === 'parcel' ? 'delivery' : o.service === 'errand' ? 'errand' : 'ride'} request</h2>
       <div class="req-card">
         ${o.queued ? `<div class="next-note">${K.ic('clock', 'sm')} Next trip · starts after you drop off your current ${customer(S.trip || o)}</div>` : ''}
         ${routeSketch(o)}
-        <div class="away">${K.ic('nav')}<span class="grow">${pickMin} min to pickup</span><span class="small muted" style="font-weight:600">${o.pickupKm} km</span></div>
+        <div class="away">${K.ic('nav')}<span class="grow">${pickMin} min to ${o.service === 'errand' ? 'the shop' : 'pickup'}</span><span class="small muted" style="font-weight:600">${o.pickupKm} km</span></div>
         <div class="row" style="margin:6px 0 2px"><span class="avatar" style="width:38px;height:38px;font-size:.8rem">${K.initials(o.rider.name)}</span>
           <span class="grow"><b>${K.esc(K.first(o.rider.name))}</b><br><span class="rating"><span class="star-ic">★</span><b>${o.rider.rating || 'New'}</b></span></span>
           <span class="badge" style="background:var(--ink);color:#fff">${K.esc(K.SERVICE_LABEL[o.service])}</span></div>
         <div class="stops">
-          <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(o.pickup.address)}</b></span></div>
+          <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>${o.service === 'errand' ? 'Buy at' : 'Pickup'}</small><b class="ellipsis">${K.esc(o.pickup.address)}</b></span></div>
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination${(o.stops || []).length ? ` · ${o.stops.length} stop${o.stops.length > 1 ? 's' : ''} on the way` : ''} · ${o.distanceKm.toFixed(1)} km, ${Math.round(o.durationMin)} min</small><b class="ellipsis">${o.drop.hidden ? 'Shown after you accept' : K.esc(o.drop.address)}</b></span></div>
         </div>
         ${o.notes ? `<p class="note-line">${K.ic('msg', 'sm')}<span><small>Pickup note</small>${K.esc(o.notes)}</span></p>` : ''}
+        ${o.errand ? `<div class="errand-offer">${K.ic('receipt', 'sm')}<span><b>Buy ${o.errand.items.length} item${o.errand.items.length > 1 ? 's' : ''} · budget ${K.ugx(o.errand.budget)}</b><small>You pay at the shop and get it back in full on delivery</small></span></div>` : ''}
         <div class="est"><div class="est-row"><span><small>You earn</small><b>${K.ugx(o.earning)}</b></span>
           <span class="est-side"><b>${totalMin} min</b><small>in total</small><b>${K.ugx(perKm)}</b><small>per km</small></span></div>
-          <span class="small muted" style="display:block">${o.paymentMethod === 'cash' && o.discount ? `Collect ${K.ugx(o.payable)} cash · Flytte pays the ${K.ugx(o.discount)} discount` : `Fare ${K.ugx(o.fare)} · ${o.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[o.paymentMethod]}`}</span>
+          <span class="small muted" style="display:block">${o.paymentMethod === 'cash' && o.discount ? `Collect ${K.ugx(o.payable)}${o.errand ? ' + the items' : ''} cash · Flytte pays the ${K.ugx(o.discount)} discount` : `Fare ${K.ugx(o.fare)} · ${o.paymentMethod === 'cash' ? 'Cash' : K.PAY_LABEL[o.paymentMethod]}`}</span>
           ${o.bookedBy ? `<span class="small muted" style="display:block">Booked by ${K.esc(K.first(o.bookedBy))} for ${K.esc(o.rider.name)}</span>` : ''}</div>
       </div>
       <div class="spacer" style="flex:1"></div>
@@ -517,6 +518,32 @@
   }
   const stopRowsD = (t) => (t.stops || []).map((x, i) => `<div class="stop${x.doneAt ? ' done' : ''}"><span class="s-ic"><span class="dot-stop">${x.doneAt ? '✓' : i + 1}</span></span><span><small>Stop ${i + 1}${x.doneAt ? ' · done' : ''}</small><b class="ellipsis">${K.esc(x.address)}</b></span></div>`).join('');
 
+  // The shopping list, ticked off on this phone as items go into the bag.
+  const ticked = new Set();
+  function errandCard(t) {
+    const e = t.errand;
+    setTimeout(() => document.querySelectorAll('[data-tick]').forEach((b) => b.onclick = () => {
+      const k = t.id + ':' + b.dataset.tick; ticked.has(k) ? ticked.delete(k) : ticked.add(k);
+      b.classList.toggle('on', ticked.has(k)); b.setAttribute('aria-checked', ticked.has(k));
+    }));
+    return `<div class="errand-card"><div class="row" style="justify-content:space-between;align-items:baseline"><b>Shopping list</b><span class="small muted">${e.substitutes ? 'Substitutes OK' : 'No substitutes'}</span></div>
+      <div class="errand-items">${e.items.map((x, i) => `<button class="errand-item${ticked.has(t.id + ':' + i) ? ' on' : ''}" data-tick="${i}" role="checkbox" aria-checked="${ticked.has(t.id + ':' + i)}"><span class="tickbox">${K.ic('check', 'sm')}</span><span>${K.esc(x)}</span></button>`).join('')}</div>
+      <p class="small" style="margin:8px 0 0">${e.goodsTotal != null ? `Spent <b>${K.ugx(e.goodsTotal)}</b> of ${K.ugx(e.budget)}` : `Budget <b>${K.ugx(e.budget)}</b> · don’t go over it; message the customer if prices are higher`}</p></div>`;
+  }
+  // Receipt photos are shrunk on the phone so they upload quickly on mobile data.
+  function shrinkImage(file, max) {
+    return new Promise((resolve, reject) => {
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.72));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+      img.src = url;
+    });
+  }
+
   function navLink(p) { return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=${S.driver.vehicleType === 'boda' ? 'two-wheeler' : 'driving'}`; }
 
   function updateBanner() {
@@ -524,7 +551,8 @@
     if (!nb || !t || t.status === 'completed') return;
     const target = legTarget(t);
     const km = S.loc ? K.km(S.loc, target) : null;
-    const head = target.stopNo ? `Stop ${target.stopNo}` : t.status === 'in_progress' ? (t.service === 'parcel' ? 'Delivering' : 'On trip') : t.status === 'arrived' ? 'Waiting at pickup' : 'Head to pickup';
+    const errand = t.service === 'errand';
+    const head = target.stopNo ? `Stop ${target.stopNo}` : t.status === 'in_progress' ? (['parcel', 'errand'].includes(t.service) ? 'Delivering' : 'On trip') : t.status === 'arrived' ? (errand ? 'At the shop' : 'Waiting at pickup') : (errand ? 'Head to the shop' : 'Head to pickup');
     nb.innerHTML = `<span class="round" aria-hidden="true">${K.ic('nav')}</span>
       <span class="grow"><b>${head}${km != null && t.status !== 'arrived' ? ` · ${fmtKm(km)}` : ''}</b><small class="ellipsis" style="display:block">${K.esc(String(target.address).split(',')[0])}${km != null && t.status !== 'arrived' ? ` · ${K.etaMin(S.loc, target)} min` : ''}</small></span>
       <button class="btn btn-primary btn-sm" data-nav>Navigate</button>`;
@@ -583,18 +611,25 @@
         <button class="round brand" id="chatBtn" aria-label="Message ${customer(t)}">${K.ic('msg')}${S.unread ? '<span class="dot"></span>' : ''}</button></div>
       ${nextChip}
       ${parcel}
+      ${t.errand ? errandCard(t) : ''}
       ${t.notes && t.status !== 'in_progress' ? `<p class="note-line">${K.ic('msg', 'sm')}<span><small>Pickup note from ${K.esc(K.first(r.name))}</small>${K.esc(t.notes)}</span></p>` : ''}
-      ${t.status === 'arrived' ? '<div class="wait-box" id="wait" role="timer" aria-live="off"></div>' : ''}
+      ${t.status === 'arrived' && t.service !== 'errand' ? '<div class="wait-box" id="wait" role="timer" aria-live="off"></div>' : ''}
       <div class="stops">
-        <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
+        <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>${t.service === 'errand' ? 'Shop' : 'Pickup'}</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
         ${stopRowsD(t)}
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Destination</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
       </div>
       <div class="fare-row"><span class="muted">${t.paymentMethod === 'cash' ? 'Collect in cash' : 'Fare'}</span><b>${K.ugx(t.paymentMethod === 'cash' ? t.payable : t.fare)}</b></div>
       ${t.discount ? `<p class="tiny muted" style="margin:6px 0 0">${t.paymentMethod === 'cash' ? `The ${customer(t)} has a ${K.ugx(t.discount)} discount. Flytte adds it to your balance, so you still earn on the full ${K.ugx(t.fare)}.` : `Promo applied for the ${customer(t)}. You still earn on the full ${K.ugx(t.fare)}.`}</p>` : ''}
-      ${t.status === 'in_progress' && t.needsDropCode ? `<label for="dcode" style="text-align:center">Ask the recipient for the delivery code</label>
+      ${t.goodsTotal ? `<p class="tiny muted" style="margin:6px 0 0">Delivery ${K.ugx(t.payable - t.goodsTotal)} + items ${K.ugx(t.goodsTotal)}${t.paymentMethod === 'cash' ? '' : '. The items come back to your balance in full when the customer pays.'}</p>` : ''}
+      ${t.status === 'in_progress' && t.needsDropCode ? `<label for="dcode" style="text-align:center">Ask the ${t.service === 'errand' ? 'customer' : 'recipient'} for the delivery code</label>
         <input id="dcode" class="pin-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="····" aria-label="Delivery code">` : ''}
-      ${t.status === 'arrived' ? `
+      ${t.status === 'arrived' && t.service === 'errand' && t.errand.goodsTotal == null ? `
+        <label for="gtotal">What did you spend on the items? (UGX)</label>
+        <input id="gtotal" type="number" inputmode="numeric" min="1" max="${t.errand.budget}" placeholder="Up to ${t.errand.budget.toLocaleString()}">
+        <input type="file" id="gphoto" accept="image/*" capture="environment" hidden>
+        <button class="btn btn-block" id="gphotoBtn" style="margin-top:8px">${K.ic('camera', 'sm')} Add a photo of the receipt</button>` : ''}
+      ${t.status === 'arrived' && t.service !== 'errand' ? `
         <label for="pin" style="text-align:center">Ask the ${customer(t)} for their 4-digit PIN</label>
         <input id="pin" class="pin-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="····" aria-label="Trip PIN">` : ''}
       <div class="sheet-foot"><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
@@ -604,7 +639,26 @@
         ${toPickup ? '<button class="btn btn-ghost btn-sm fill" id="cancel" style="color:var(--stop)">Cancel trip</button>' : ''}
       </div></div>`;
     const action = K.$('#action');
-    if (t.status === 'accepted') K.slider(action, { label: 'Slide when you arrive', onDone: () => step('arrived') });
+    if (t.status === 'accepted') K.slider(action, { label: t.service === 'errand' ? 'Slide when you reach the shop' : 'Slide when you arrive', onDone: () => step('arrived') });
+    else if (t.status === 'arrived' && t.service === 'errand') {
+      // At the shop: record what was spent (and the receipt), then head to the customer. No PIN: nobody waits here.
+      let photo = null;
+      action.innerHTML = `<button class="btn btn-primary btn-block btn-lg" id="start">${t.errand.goodsTotal == null ? 'Done shopping · deliver' : 'Start delivery'}</button>`;
+      const pf = K.$('#gphoto'), pb = K.$('#gphotoBtn');
+      if (pb) pb.onclick = () => pf.click();
+      if (pf) pf.onchange = async () => { const f = pf.files && pf.files[0]; if (!f) return; try { photo = await shrinkImage(f, 1280); pb.innerHTML = `${K.ic('check', 'sm')} Receipt photo added`; } catch { K.toast('Couldn’t use that photo. Try again.'); } };
+      K.$('#start').onclick = async (e) => {
+        const btn = e.currentTarget; K.$('#err').textContent = '';
+        if (t.errand.goodsTotal == null) {
+          const total = Math.round(Number(K.$('#gtotal').value));
+          if (!(total > 0)) { K.$('#err').textContent = 'Enter what you spent on the items.'; K.$('#gtotal').focus(); return; }
+          btn.disabled = true;
+          try { await K.api(`/trips/${t.id}/goods`, { total, photo: photo || undefined }); }
+          catch (x) { K.$('#err').textContent = x.message; btn.disabled = false; return; }
+        }
+        btn.disabled = true; await step('start'); btn.disabled = false;
+      };
+    }
     else if (t.status === 'arrived') {
       action.innerHTML = '<button class="btn btn-primary btn-block btn-lg" id="start">Start trip</button>';
       K.$('#start').onclick = () => step('start', { pin: K.$('#pin').value });
@@ -619,7 +673,7 @@
     } });
     K.$('#chatBtn').onclick = openChat;
     K.$('#sos').onclick = safety;
-    if (t.status === 'arrived') {
+    if (t.status === 'arrived' && t.service !== 'errand') {
       // Free waiting time, then the driver may leave and mark a no-show.
       const free = ((S.config.drivers && S.config.drivers.freeWaitMin) ?? 5) * 60;
       const fee = (S.config.drivers && S.config.drivers.noShowFee) || 0;

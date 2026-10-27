@@ -13,6 +13,7 @@ const DEFAULT_SERVICES = {
   car:     { name: 'Flytte Car',     icon: '🚗', vehicle: 'car',  seats: 4, base: 3800, perKm: 1650, perMin: 75, minFare: 6000,  surge: 1, enabled: true, blurb: 'Affordable everyday rides.' },
   comfort: { name: 'Flytte Comfort', icon: '🚙', vehicle: 'car',  seats: 4, base: 4500, perKm: 2050, perMin: 95, minFare: 9000,  surge: 1, enabled: true, blurb: 'A step up from Car, for up to 4.' },
   parcel:  { name: 'Flytte Parcel',  icon: '📦', vehicle: 'boda', seats: 0, base: 1000, perKm: 600,  perMin: 20, minFare: 2500,  surge: 1, enabled: true, blurb: 'Send packages across town.' },
+  errand:  { name: 'Flytte Errand',  icon: '🛍️', vehicle: 'boda', seats: 0, base: 1000, perKm: 600,  perMin: 20, minFare: 3000,  surge: 1, enabled: true, blurb: 'We buy it and bring it to you.' },
   airport: { name: 'Flytte Airport', icon: '✈️', vehicle: 'car',  seats: 4, base: 8000, perKm: 1750, perMin: 50, minFare: 25000, surge: 1, enabled: true, blurb: 'Entebbe & long-distance trips.' },
 };
 
@@ -24,6 +25,8 @@ const DEFAULTS = {
   offerTimeoutSec: 20,
   stopFee: 1000,          // added per extra stop on a trip, for the driver's waiting time (UGX)
   minWithdrawal: 5000,
+  // "Buy it for me": a fee for the courier's shopping time, and the most a courier is asked to spend on goods.
+  errand: { shopFee: 2000, maxBudget: 200000 },
   supportPhone: '',      // set the real line in Admin → Pricing (or SUPPORT_PHONE). Hidden in the apps until set.
   // Dynamic pricing (see src/surge.js). Caps keep fares affordable in Kampala.
   dynamic: { enabled: true, sensitivity: 0.35, maxBoda: 1.8, maxCar: 2.0, weather: true },
@@ -62,6 +65,7 @@ async function getSettings() {
     try { s[r.key] = JSON.parse(r.value); } catch { /* ignore bad rows */ }
   }
   s.dynamic = { ...DEFAULTS.dynamic, ...(s.dynamic || {}) };
+  s.errand = { ...DEFAULTS.errand, ...(s.errand || {}) };
   s.drivers = { ...DEFAULTS.drivers, ...(s.drivers || {}) };
   if (!Array.isArray(s.bonuses)) s.bonuses = [];
   const g = s.growth || {};
@@ -91,7 +95,7 @@ async function getSettings() {
 
 async function updateSettings(patch) {
   const current = await getSettings();
-  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'stopFee', 'supportPhone', 'dynamic', 'growth', 'drivers', 'bonuses'];
+  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'stopFee', 'errand', 'supportPhone', 'dynamic', 'growth', 'drivers', 'bonuses'];
   for (const key of allowed) {
     if (patch[key] === undefined) continue;
     let value = patch[key];
@@ -151,6 +155,10 @@ async function updateSettings(patch) {
         period: b.period === 'week' ? 'week' : 'day',
         active: !!b.active,
       }));
+    } else if (key === 'errand') {
+      const num = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+      const c = { ...current.errand, ...(value || {}) };
+      value = { shopFee: num(c.shopFee, 0, 50000, 2000), maxBudget: num(c.maxBudget, 5000, 2000000, 200000) };
     } else if (key === 'supportPhone') {
       value = String(value || '').trim();
       if (value && !/^\+?[0-9][0-9 ]{7,17}$/.test(value)) continue; // digits, spaces and an optional +
@@ -213,6 +221,7 @@ async function quote(pickup, drop, clientKm, clientFreeMin, stops = []) {
   const s = await getSettings();
   const { km, min: freeMin } = trustedDistance(pickup, drop, clientKm, clientFreeMin, stops);
   const stopsFee = stops.length * (s.stopFee || 0);
+  const shopFee = (s.errand && s.errand.shopFee) || 0;
   const cond = await surge.conditions(pickup.lat, pickup.lng, s.dynamic);
   const options = Object.entries(s.services)
     .filter(([, v]) => v.enabled)
@@ -225,9 +234,9 @@ async function quote(pickup, drop, clientKm, clientFreeMin, stops = []) {
       return {
         id, name: v.name, icon: v.icon, seats: v.seats, blurb: v.blurb, vehicle: v.vehicle,
         surge: Math.round(mult * 10) / 10, surgeReasons: mult > 1 ? reasons : [],
-        durationMin: mins, fare: calcFare(v, km, mins, mult) + stopsFee, regularFare: calcFare(v, km, mins, 1) + stopsFee,
+        durationMin: mins, fare: calcFare(v, km, mins, mult) + stopsFee + (id === 'errand' ? shopFee : 0), regularFare: calcFare(v, km, mins, 1) + stopsFee + (id === 'errand' ? shopFee : 0),
         // How the price is made, for "Why this price?"
-        parts: { base: v.base, distance: Math.round(v.perKm * km), time: Math.round(v.perMin * mins), minFare: v.minFare, km: Math.round(km * 10) / 10, min: mins, stops: stopsFee },
+        parts: { base: v.base, distance: Math.round(v.perKm * km), time: Math.round(v.perMin * mins), minFare: v.minFare, km: Math.round(km * 10) / 10, min: mins, stops: stopsFee, shop: id === 'errand' ? shopFee : 0 },
       };
     });
   const car = options.find((o) => surge.CLASS_OF[o.id] === 'car') || options[0];

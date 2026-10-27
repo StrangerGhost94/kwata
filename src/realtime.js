@@ -26,6 +26,7 @@ async function loadTrip(id) {
       (SELECT COUNT(*)::int FROM trips x WHERE x.driver_id = t.driver_id AND x.status = 'completed') AS d_trips,
       (SELECT COUNT(*)::int FROM trips x WHERE x.rider_id = t.rider_id AND x.status = 'completed') AS r_trips,
       (SELECT dd.created_at FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'photo') AS d_photo,
+      EXISTS (SELECT 1 FROM errand_receipts er WHERE er.trip_id = t.id) AS has_receipt,
       EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'national_id') AS d_has_id,
       EXISTS (SELECT 1 FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'license') AS d_has_permit,
       (SELECT dd.expires_on FROM driver_docs dd WHERE dd.user_id = t.driver_id AND dd.kind = 'license') AS d_permit_exp,
@@ -46,7 +47,7 @@ const rating = (s, c) => (c ? Math.round((s / c) * 10) / 10 : null);
 function driverChecks(t) {
   const approved = t.d_status === 'approved';
   const exp = t.d_permit_exp ? new Date(t.d_permit_exp) : null;
-  const today = new Date(new Date().toISOString().slice(0, 10));
+  const today = new Date(new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10));   // Kampala's date, not UTC's
   return {
     id: approved && !!t.d_has_id,
     permit: approved && !!t.d_has_permit && (!exp || exp >= today),
@@ -66,10 +67,12 @@ function view(t, role) {
     distanceKm: t.distance_km, durationMin: t.duration_min,
     fare: t.fare, paymentMethod: t.payment_method, paymentStatus: t.payment_status,
     parcel: t.parcel ? JSON.parse(t.parcel) : null, notes: t.notes,
+    errand: t.errand ? { ...JSON.parse(t.errand), goodsTotal: t.goods_total ?? null, receipt: !!t.has_receipt } : null,
     createdAt: t.created_at, acceptedAt: t.accepted_at, startedAt: t.started_at, completedAt: t.completed_at,
     cancelledBy: t.cancelled_by, cancelReason: t.cancel_reason === 'no_show' ? 'no_show' : undefined, noShowFee: t.no_show_fee || 0, cancelFee: t.cancel_fee || 0,
     arrivedAt: t.arrived_at || null,
-    discount: t.discount || 0, payable: t.fare - (t.discount || 0), promoLabel: t.promo_label || null,
+    // What the rider pays in all: the fare less any discount, plus the goods on an errand.
+    discount: t.discount || 0, payable: t.fare - (t.discount || 0) + (t.goods_total || 0), goodsTotal: t.goods_total || 0, promoLabel: t.promo_label || null,
     tip: t.tip || 0, tipMethod: t.tip_method || null,
     scheduledFor: t.scheduled_for || null, womanDriver: !!t.woman_driver,
     passenger: t.passenger ? JSON.parse(t.passenger) : null,
@@ -83,7 +86,7 @@ function view(t, role) {
   };
   if (role === 'public') {
     v.rider = { name: (t.rider_name || '').split(' ')[0] };
-    delete v.fare; delete v.paymentMethod; delete v.paymentStatus; delete v.parcel; delete v.notes;
+    delete v.fare; delete v.paymentMethod; delete v.paymentStatus; delete v.parcel; delete v.notes; delete v.errand; delete v.goodsTotal;
     delete v.discount; delete v.payable; delete v.promoLabel; delete v.tip; delete v.tipMethod; delete v.noShowFee; delete v.cancelFee;
     if (v.passenger) v.rider = { name: String(v.passenger.name).split(' ')[0] };
     delete v.passenger;
@@ -144,7 +147,7 @@ function riderAlert(t, moment) {
   if (sent.has(moment)) return;
   sent.add(moment);
   if (!riderAway(t.rider_id)) return;
-  const who = t.service === 'parcel' ? 'courier' : 'driver';
+  const who = ['parcel', 'errand'].includes(t.service) ? 'courier' : 'driver';
   const name = firstName(t.driver_name), plate = t.plate ? ` · ${t.plate}` : '';
   const msg = {
     accepted: [`${name} is on the way`, `${[t.vehicle_color, t.vehicle_make].filter(Boolean).join(' ') || 'Your ' + who}${plate}`],
@@ -268,7 +271,7 @@ async function dispatch(tripId, excludeDriverId) {
   notify(next.id, 'trip:offer', offer);
   const d = drivers.get(next.id);
   if (d && d.push && next.away) {
-    const what = full.service === 'parcel' ? 'delivery' : 'ride';
+    const what = full.service === 'parcel' ? 'delivery' : full.service === 'errand' ? 'errand' : 'ride';
     dtools.push(next.id, {
       type: 'offer', tripId, tag: `offer-${tripId}`,
       title: `New ${what} request · UGX ${offer.earning.toLocaleString()}`,

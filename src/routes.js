@@ -94,6 +94,7 @@ r.get('/config', wrap(async (req, res) => {
     supportPhone: supportPhone(s),
     minWithdrawal: s.minWithdrawal,
     stopFee: s.stopFee || 0,
+    errand: { shopFee: s.errand.shopFee, maxBudget: s.errand.maxBudget },
     growth: { firstRide: s.growth.firstRide, referral: s.growth.referral, rewards: s.growth.rewards },
     drivers: { freeWaitMin: s.drivers.freeWaitMin, noShowFee: s.drivers.noShowFee, cancelFee: s.drivers.cancelFee, cancelGraceMin: s.drivers.cancelGraceMin, cashDebtLimit: s.drivers.cashDebtLimit, headingHomePerDay: s.drivers.headingHomePerDay },
   });
@@ -707,7 +708,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const rt0 = route(req.body || {}, res);
   if (!rt0) return;
   const { pickup, drop, stops } = rt0;
-  if (stops.length && service === 'parcel') return bad(res, 'Parcels go straight to one address. Remove the stops, or book a ride instead.');
+  if (stops.length && ['parcel', 'errand'].includes(service)) return bad(res, service === 'errand' ? 'Errands go from the shop straight to you. Remove the stops.' : 'Parcels go straight to one address. Remove the stops, or book a ride instead.');
   const s = await getSettings();
   const svc = typeof service === 'string' && Object.prototype.hasOwnProperty.call(s.services, service) ? s.services[service] : null;
   if (!svc || !svc.enabled) return bad(res, 'That ride type is not available.');
@@ -757,8 +758,19 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const promo = await growth.discountFor(req.user.id, service, fare, req.body.promoCode || (locked && locked.promoCode));
   const discount = promo.discount || 0;
   if (paymentMethod === 'wallet' && walletlock.needsPass(req.user, req.body.walletPass)) return walletLocked(res);
-  if (paymentMethod === 'wallet' && req.user.wallet_balance < fare - discount) {
-    return bad(res, `Your wallet has UGX ${req.user.wallet_balance.toLocaleString()}. Top up or choose another payment method.`);
+  // "Buy it for me": what to buy, a budget for the goods, and whether substitutes are fine.
+  let errandJson = null, budget = 0;
+  if (service === 'errand') {
+    const e = (req.body && req.body.errand) || {};
+    const items = (Array.isArray(e.items) ? e.items : String(e.items || '').split('\n')).map((x) => clean(x, 80)).filter(Boolean).slice(0, 20);
+    budget = Math.round(Number(e.budget));
+    if (!items.length) return bad(res, 'Add what we should buy, one item per line.');
+    if (!(budget >= 1000)) return bad(res, 'Set a budget for the goods (at least UGX 1,000).');
+    if (budget > s.errand.maxBudget) return bad(res, `Errands can be up to UGX ${s.errand.maxBudget.toLocaleString()} of goods.`);
+    errandJson = JSON.stringify({ items, budget, substitutes: e.substitutes !== false });
+  }
+  if (paymentMethod === 'wallet' && req.user.wallet_balance < fare - discount + budget) {
+    return bad(res, budget ? `Your wallet has UGX ${req.user.wallet_balance.toLocaleString()}. It needs to cover the delivery and your goods budget. Top up or pay in cash.` : `Your wallet has UGX ${req.user.wallet_balance.toLocaleString()}. Top up or choose another payment method.`);
   }
 
   let parcelJson = null;
@@ -771,15 +783,15 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
 
   const pin = String(crypto.randomInt(1000, 10000));
   const share = crypto.randomBytes(12).toString('base64url');
-  const dropCode = service === 'parcel' ? String(crypto.randomInt(1000, 10000)) : null; // recipient gives this to the rider
+  const dropCode = ['parcel', 'errand'].includes(service) ? String(crypto.randomInt(1000, 10000)) : null; // the person receiving gives this to the courier
   const t = await db.one(`
     INSERT INTO trips(rider_id, service, pickup_lat, pickup_lng, pickup_address, drop_lat, drop_lng, drop_address,
       distance_km, duration_min, fare, payment_method, pin, share_token, parcel, notes,
-      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver, stops)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING id`,
+      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver, stops, errand)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING id`,
   [req.user.id, service, pickup.lat, pickup.lng, pickup.address, drop.lat, drop.lng, drop.address,
     km, min, fare, paymentMethod, pin, share, parcelJson, notes ? clean(notes, 200) || null : null,
-    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true, stops.length ? JSON.stringify(stops.map((x) => ({ lat: x.lat, lng: x.lng, address: x.address }))) : null]);
+    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true, stops.length ? JSON.stringify(stops.map((x) => ({ lat: x.lat, lng: x.lng, address: x.address }))) : null, errandJson]);
 
   if (req.body.quoteId) surge.dropQuote(req.body.quoteId);
   if (!scheduledFor) { surge.recordRequest(service, pickup.lat, pickup.lng); rt.dispatch(t.id).catch(console.error); }
@@ -838,6 +850,7 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
   if (!t) return;
   const allowed = role === 'rider' ? ['scheduled', 'requested', 'accepted', 'arrived'] : ['accepted', 'arrived'];
   if (!allowed.includes(t.status)) return bad(res, 'This trip can no longer be cancelled.');
+  if (t.goods_total != null) return bad(res, role === 'rider' ? 'Your items are already bought. Message your courier if something is wrong.' : 'You’ve already bought the items. Deliver them, or contact Flytte support.');
   if (role === 'driver') {
     // Don't strand the rider: put the request back and find another driver.
     await db.query("UPDATE trips SET status = 'requested', driver_id = NULL, accepted_at = NULL, arrived_at = NULL WHERE id = $1", [t.id]);
@@ -972,7 +985,7 @@ r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
   if (t.status !== 'completed' || t.payment_status === 'paid') return bad(res, 'Nothing to pay on this trip.');
   if (!['momo', 'card'].includes(t.payment_method)) return bad(res, 'This trip is paid in cash or wallet.');
   let out;
-  try { out = await payments.createCheckout({ user: req.user, amount: t.fare - (t.discount || 0), purpose: 'trip', tripId: t.id, method: t.payment_method, baseUrl: baseUrl(req) }); }
+  try { out = await payments.createCheckout({ user: req.user, amount: t.fare - (t.discount || 0) + (t.goods_total || 0), purpose: 'trip', tripId: t.id, method: t.payment_method, baseUrl: baseUrl(req) }); }
   catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
   if (out.demo) await rt.broadcast(t.id);
   res.json(out);
@@ -1017,7 +1030,7 @@ r.post('/trips/:id/arrived', auth.requireAuth('driver'), wrap(async (req, res) =
   const t = await driverStep(req, res, ['accepted'], 'arrived', ', arrived_at = NOW()');
   if (!t) return;
   await rt.broadcast(t.id);
-  rt.notify(t.rider_id, 'toast', { text: 'Your ride is here 👋' });
+  rt.notify(t.rider_id, 'toast', { text: t.service === 'errand' ? `${String(req.user.name).split(' ')[0]} is at the shop` : t.service === 'parcel' ? 'Your courier is here' : 'Your ride is here 👋' });
   res.json({ ok: true });
 }));
 
@@ -1041,6 +1054,7 @@ r.post('/trips/:id/stop', auth.requireAuth('driver'), wrap(async (req, res) => {
 r.post('/trips/:id/noshow', auth.requireAuth('driver'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'driver');
   if (!t) return;
+  if (t.service === 'errand') return bad(res, 'Errands have no pickup to wait at. Message the customer if something is wrong.');
   if (t.status !== 'arrived' || !t.arrived_at) return bad(res, 'Mark that you have arrived at the pickup first.');
   const s = await getSettings();
   const waited = (Date.now() - new Date(t.arrived_at).getTime()) / 60000;
@@ -1104,11 +1118,65 @@ async function nightShare(tripId) {
   return status;
 }
 
+// ---------- "Buy it for me" errands ----------
+// The rider can raise the budget until the items are bought (e.g. after a chat about prices).
+r.post('/trips/:id/budget', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'rider');
+  if (!t) return;
+  if (t.service !== 'errand' || !['requested', 'accepted', 'arrived'].includes(t.status) || t.goods_total != null) return bad(res, 'The budget can’t be changed now.');
+  const s = await getSettings();
+  const budget = Math.round(Number((req.body || {}).budget));
+  if (!(budget >= 1000) || budget > s.errand.maxBudget) return bad(res, `Choose a budget between UGX 1,000 and UGX ${s.errand.maxBudget.toLocaleString()}.`);
+  const e = JSON.parse(t.errand);
+  if (t.payment_method === 'wallet') {
+    const u = await db.one('SELECT wallet_balance FROM users WHERE id = $1', [t.rider_id]);
+    if (u.wallet_balance < t.fare - (t.discount || 0) + budget) return bad(res, 'Your wallet doesn’t cover that budget. Top up first.');
+  }
+  e.budget = budget;
+  await db.query('UPDATE trips SET errand = $1 WHERE id = $2', [JSON.stringify(e), t.id]);
+  if (t.driver_id) rt.notify(t.driver_id, 'toast', { text: `Budget raised to UGX ${budget.toLocaleString()}` });
+  await rt.broadcast(t.id);
+  res.json({ ok: true, budget });
+}));
+// The courier, at the shop: what they spent (never more than the budget) and, optionally, a photo of the receipt.
+r.post('/trips/:id/goods', auth.requireAuth('driver'), wrap(async (req, res) => {
+  const t = await ownTrip(req, res, 'driver');
+  if (!t) return;
+  if (t.service !== 'errand' || !['accepted', 'arrived'].includes(t.status)) return bad(res, 'This trip has no shopping to do now.');
+  const e = JSON.parse(t.errand), total = Math.round(Number((req.body || {}).total));
+  if (!(total > 0)) return bad(res, 'Enter what you spent, in UGX.');
+  if (total > e.budget) return bad(res, `That’s more than the UGX ${e.budget.toLocaleString()} budget. Message the customer to raise it in their app, or leave something out.`);
+  const photo = (req.body || {}).photo;
+  if (photo) {
+    const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(photo));
+    if (!m) return bad(res, 'The receipt photo must be a JPG or PNG.');
+    if (m[2].length > 2.8e6) return bad(res, 'That photo is too large. Try again.');
+    await db.query(`INSERT INTO errand_receipts(trip_id, mime, data) VALUES ($1,$2,$3)
+      ON CONFLICT (trip_id) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, created_at = NOW()`, [t.id, m[1], m[2]]);
+  }
+  const ok = await db.one("UPDATE trips SET goods_total = $1 WHERE id = $2 AND goods_total IS NULL AND status IN ('accepted','arrived') RETURNING id", [total, t.id]);
+  if (!ok) return bad(res, 'The items are already recorded for this trip.');
+  rt.notify(t.rider_id, 'toast', { text: `Your items are bought: UGX ${total.toLocaleString()}. They’re on the way soon.` });
+  await rt.broadcast(t.id);
+  res.json({ ok: true, total });
+}));
+// The receipt photo, for the rider and the courier on that trip.
+r.get('/trips/:id/receipt-photo', auth.requireAuth('rider', 'driver', 'admin'), wrap(async (req, res) => {
+  const t = await db.one('SELECT rider_id, driver_id FROM trips WHERE id = $1', [Number(req.params.id)]);
+  if (!t || (req.user.role !== 'admin' && t.rider_id !== req.user.id && t.driver_id !== req.user.id)) return bad(res, 'Not your trip.', 403);
+  const r0 = await db.one('SELECT mime, data FROM errand_receipts WHERE trip_id = $1', [Number(req.params.id)]);
+  if (!r0) return bad(res, 'No receipt photo.', 404);
+  res.set('Cache-Control', 'private, max-age=3600').type(r0.mime).send(Buffer.from(r0.data, 'base64'));
+}));
+
 r.post('/trips/:id/start', auth.requireAuth('driver'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'driver');
   if (!t) return;
   if (!['accepted', 'arrived'].includes(t.status)) return bad(res, 'Trip is not at that stage.');
-  if (String((req.body || {}).pin || '').trim() !== t.pin) return bad(res, 'Wrong PIN. Ask the rider for the 4-digit PIN in their app.');
+  if (t.service === 'errand') {
+    // Nobody waits at the shop: no PIN. The goods must be bought (and their cost entered) first.
+    if (t.goods_total == null) return bad(res, 'Enter what you spent on the items first.');
+  } else if (String((req.body || {}).pin || '').trim() !== t.pin) return bad(res, 'Wrong PIN. Ask the rider for the 4-digit PIN in their app.');
   await db.query("UPDATE trips SET status = 'in_progress', started_at = NOW() WHERE id = $1", [t.id]);
   await rt.broadcast(t.id);
   nightShare(t.id).catch(async (e) => {
@@ -1255,6 +1323,7 @@ r.post('/trips/:id/split', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'rider');
   if (!t) return;
   if (!payments.available()) return bad(res, 'Splitting needs Mobile Money, which isn’t available yet.', 503);
+  if (['parcel', 'errand'].includes(t.service)) return bad(res, 'Only rides can be split.');
   if (!['accepted', 'arrived', 'in_progress', 'completed'].includes(t.status) || t.payment_status === 'paid') return bad(res, 'This trip can’t be split now.');
   const people = Math.round(Number((req.body || {}).people));
   if (!(people >= 2 && people <= 4)) return bad(res, 'Split between 2 and 4 people.');

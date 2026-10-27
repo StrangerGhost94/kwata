@@ -35,7 +35,7 @@
   const prettyPhone = (p) => K.prettyPhone(p);
   // What riders call the person who comes: "driver" (cars and bodas alike), "courier" for parcels.
   // ("Rider" would clash with riders, the passengers.)
-  const who = (t) => (t && t.service === 'parcel' ? 'courier' : 'driver');
+  const who = (t) => (t && ['parcel', 'errand'].includes(t.service) ? 'courier' : 'driver');
   const svcName = (id) => K.SERVICE_LABEL[id] || id;
 
   async function start() {
@@ -237,7 +237,7 @@
       // Before pickup, the countdown and plate stay in view on the map, where riders look.
       const d = S.trip.driver, mins = tripMins(), here = S.trip.status === 'arrived';
       tb.innerHTML = `<div class="trip-banner"><span class="round tb-face">${d.photo ? `<img src="${K.esc(d.photo)}" alt="">` : K.initials(d.name)}</span>
-        <span class="grow"><b>${K.esc(K.first(d.name))} · <span class="plate-mini">${K.esc(d.plate || '')}</span></b><small id="bnTxt">${here ? 'Here now · meet at the pickup' : mins ? `Here in ${mins} min` : 'On the way'}</small></span>
+        <span class="grow"><b>${K.esc(K.first(d.name))} · <span class="plate-mini">${K.esc(d.plate || '')}</span></b><small id="bnTxt">${S.trip.service === 'errand' ? (S.trip.errand && S.trip.errand.goodsTotal != null ? 'Items bought' : here ? 'Shopping for you' : mins ? `At the shop in ${mins} min` : 'Going to the shop') : here ? 'Here now · meet at the pickup' : mins ? `Here in ${mins} min` : 'On the way'}</small></span>
         <button class="round" id="bnSos" aria-label="Safety">${K.ic('shield')}</button></div>`;
       K.$('#bnSos').onclick = openSafetySheet;
     } else if (v === 'trip') {
@@ -278,7 +278,7 @@
   function vHome() {
     clearRoute();
     const ids = S.config.services.map((s) => s.id);
-    const main = ['boda', 'car', 'comfort', 'parcel', 'airport'].filter((id) => ids.includes(id));
+    const main = ['boda', 'car', 'comfort', 'parcel', 'errand', 'airport'].filter((id) => ids.includes(id)).slice(0, 5);
     const first = !S.homeShown; S.homeShown = true;
     sheet.innerHTML = `
       <div class="grabber"></div>
@@ -300,7 +300,7 @@
     K.installCard(K.$('#installHost'));
     K.$('#whereBtn').onclick = () => openSearch();
     K.$('#homeWhen').onclick = () => openWhen(() => openSearch());
-    sheet.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { setService(b.dataset.svc); openSearch(b.dataset.svc === 'airport' ? { preset: K.PLACES[0] } : {}); });
+    sheet.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { if (b.dataset.svc === 'errand') { startErrand(); return; } setService(b.dataset.svc); openSearch(b.dataset.svc === 'airport' ? { preset: K.PLACES[0] } : {}); });
     bindQuick(); bindForYou(); paintEtas(); paintSuggestion();
     homeSheet();
   }
@@ -331,12 +331,14 @@
     const g = S.config.growth || {}, cards = [];
     if (S.growth && S.growth.firstRide) cards.push(`<div class="fy-card fy-offer"><span class="grow"><small>Welcome offer</small><b>${S.growth.firstRide.percent}% off your first ride</b><span>Up to ${K.ugx(S.growth.firstRide.max)} · applied automatically</span></span><span class="fy-art">${K.ic('gift')}</span></div>`);
     if (g.referral && g.referral.enabled && g.referral.referrer) cards.push(`<button class="fy-card fy-invite" data-fy="invite"><span class="grow"><small>Invite friends</small><b>Get ${K.ugx(g.referral.referrer)} per friend</b><span>They get ${K.ugx(g.referral.friend)} after their first trip</span></span><span class="fy-art emoji">🎁</span></button>`);
+    if (ids.includes('errand')) cards.push(`<button class="fy-card fy-errand" data-errand><span class="grow"><small>Flytte Errand</small><b>Buy it for me</b><span>Market, pharmacy or shop: we buy it and bring it</span></span><span class="fy-art">${K.ART.errand}</span></button>`);
     if (ids.includes('parcel')) cards.push(`<button class="fy-card fy-parcel" data-svc2="parcel"><span class="grow"><small>Flytte Parcel</small><b>Send a package</b><span>Picked up and delivered across Kampala</span></span><span class="fy-art">${K.ART.parcel}</span></button>`);
     if (ids.includes('airport')) cards.push(`<button class="fy-card fy-air" data-svc2="airport"><span class="grow"><small>Airport transfer</small><b>Flying out of Entebbe?</b><span>Book now, or schedule ahead at the regular price</span></span><span class="fy-art">${K.ART.airport}</span></button>`);
     if (!cards.length) return '';
     return `<div class="section-label">For you</div><div class="fy-rail">${cards.join('')}</div>`;
   }
   function bindForYou() {
+    const fe = sheet.querySelector('[data-errand]'); if (fe) fe.onclick = startErrand;
     sheet.querySelectorAll('[data-svc2]').forEach((b) => b.onclick = () => { setService(b.dataset.svc2); openSearch(b.dataset.svc2 === 'airport' ? { preset: K.PLACES[0] } : {}); });
     const ib = sheet.querySelector('[data-fy="invite"]'); if (ib) ib.onclick = () => openInvite();
   }
@@ -469,20 +471,20 @@
   let searchTimer;
   function openSearch(opts = {}) {
     if (opts.preset) { chooseDrop(opts.preset); return; }
-    const saveAs = opts.saveAs, addStop = !!opts.addStop, single = !!saveAs || addStop;   // one search box
+    const saveAs = opts.saveAs, addStop = !!opts.addStop, shop = !!opts.shop, single = !!saveAs || addStop || shop;   // one search box
     const pickFirst = !single && !!opts.pickFirst;
     const page = document.createElement('div');
     page.className = 'page push-in';
     page.style.zIndex = 870;
     page.innerHTML = `<div class="page-inner">
       <div class="page-head"><button class="btn icon-btn btn-ghost" data-x aria-label="Close">${K.ic('back')}</button>
-        <h2>${saveAs ? 'Set ' + K.esc(opts.label || saveAs) + ' address' : addStop ? 'Add a stop' : pickFirst ? 'Set your pickup point' : S.service === 'parcel' ? 'Where should it go?' : 'Where are you going?'}</h2></div>
+        <h2>${saveAs ? 'Set ' + K.esc(opts.label || saveAs) + ' address' : shop ? 'Where should we buy?' : addStop ? 'Add a stop' : pickFirst ? 'Set your pickup point' : S.service === 'parcel' ? 'Where should it go?' : S.service === 'errand' ? 'Where should we bring it?' : 'Where are you going?'}</h2></div>
       ${single ? '' : `<div class="route-box" style="margin-bottom:6px">
         <div class="rb-line" style="grid-row:span 2"><span class="rb-dot"></span><span class="rb-bar"></span><span class="rb-sq"></span></div>
         <input id="qPick" placeholder="Set your pickup point" value="${K.esc(S.pickup && !opts.pickFirst ? (S.pickup.short || S.pickup.address) : '')}" autocomplete="off" aria-label="Pickup point">
         <input id="qDrop" placeholder="Where to?" autocomplete="off" aria-label="Destination">
       </div>`}
-      ${single ? `<input id="qDrop" placeholder="${addStop ? 'Search for your stop' : 'Search for an address'}" autocomplete="off" aria-label="Search">` : ''}
+      ${single ? `<input id="qDrop" placeholder="${shop ? 'Shop, market or pharmacy' : addStop ? 'Search for your stop' : 'Search for an address'}" autocomplete="off" aria-label="Search">` : ''}
       <p class="error" id="sErr" role="alert"></p>
       <div id="res" style="margin-top:10px" aria-live="polite"></div></div>`;
     root.querySelector('#app').appendChild(page);
@@ -548,6 +550,7 @@
     if (qPick) { qPick.onfocus = () => { target = 'pick'; qPick.select(); showDefault(); }; qPick.oninput = () => onInput(qPick); }
 
     async function pick(p) {
+      if (shop) { close(); errandShop({ lat: p.lat, lng: p.lng, address: p.name }); return; }
       if (addStop) {
         S.stops = [...(S.stops || []), { lat: p.lat, lng: p.lng, address: p.name }].slice(0, 2);
         close(); prepareQuote(); return;
@@ -735,19 +738,21 @@
     const sel = q.options.find((o) => o.id === S.service);
     const p = pref(), P = PAY[p];
     // Arrival first: how soon the driver comes and when you'd get there. Seats sit next to the name.
-    const seats = (o) => (o.seats ? `${o.seats} seat${o.seats > 1 ? 's' : ''}` : 'Up to 10 kg');
+    const seats = (o) => (o.id === 'errand' ? '' : o.seats ? `${o.seats} seat${o.seats > 1 ? 's' : ''}` : 'Up to 10 kg');
     const meta = (o) => o.etaMin == null ? 'No drivers nearby'
       : `<b>${o.etaMin} min</b> <span class="nowrap">· drop-off ${K.clock(new Date(Date.now() + (o.etaMin + o.durationMin) * 60e3))}</span>`;
     // One promo for every option (e.g. first ride 50% off) is said once, above the list.
-    const promos = [...new Set(q.options.filter((o) => o.discount).map((o) => o.promoLabel))];
-    const sharedPromo = promos.length === 1 && q.options.every((o) => o.discount) ? promos[0] : null;
+    // An errand shows only the errand option; rides and parcels never list it (it needs its own form).
+    const pool = q.options.filter((o) => (S.service === 'errand') === (o.id === 'errand'));
+    const promos = [...new Set(pool.filter((o) => o.discount).map((o) => o.promoLabel))];
+    const sharedPromo = promos.length === 1 && pool.every((o) => o.discount) ? promos[0] : null;
     // The 3 most useful options, plus the chosen one; the rest behind "More options".
-    const ranked = [...q.options].sort((a, b) => (a.etaMin == null) - (b.etaMin == null));
-    const shown = S.allOpts || q.options.length <= 3 ? q.options : q.options.filter((o) => o.id === S.service || ranked.slice(0, 3).includes(o)).slice(0, 4);
-    const hidden = q.options.length - shown.length;
+    const ranked = [...pool].sort((a, b) => (a.etaMin == null) - (b.etaMin == null));
+    const shown = S.allOpts || pool.length <= 3 ? pool : pool.filter((o) => o.id === S.service || ranked.slice(0, 3).includes(o)).slice(0, 4);
+    const hidden = pool.length - shown.length;
     sheet.innerHTML = `
       <div class="grabber"></div>
-      <div class="row" style="margin-bottom:12px;align-items:baseline"><h2 style="margin:0" class="grow">Choose a ride</h2>
+      <div class="row" style="margin-bottom:12px;align-items:baseline"><h2 style="margin:0" class="grow">${S.service === 'errand' ? 'Your errand' : 'Choose a ride'}</h2>
         <span class="tiny muted">${[q.raining ? '🌧 Raining' : '', { rush: 'Rush hour traffic', busy: 'Busy roads', clear: 'Clear roads' }[q.traffic] || ''].filter(Boolean).join(' · ')}</span></div>
       ${sharedPromo ? `<p class="promo-band">${K.ic('tag', 'sm')}<span>${K.esc(sharedPromo)} · applied to every ride</span></p>` : ''}
       <div class="opts" role="radiogroup" aria-label="Ride type">
@@ -761,15 +766,16 @@
         </button>`).join('')}
       ${hidden > 0 ? `<button class="more-opts" id="moreOpts">More options (${hidden}) ${K.ic('chevDown', 'sm')}</button>` : ''}
       </div>
-      <button class="payrow" id="pickRow" style="padding-bottom:4px"><span class="dot-pick" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Pickup</span><span class="ellipsis" id="pickLabel" style="display:block">${K.esc(S.pickup.address)}</span></span><span class="small muted">Change</span></button>
+      <button class="payrow" id="pickRow" style="padding-bottom:4px"><span class="dot-pick" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">${S.service === 'errand' ? 'Buy at' : 'Pickup'}</span><span class="ellipsis" id="pickLabel" style="display:block">${K.esc(S.pickup.address)}</span></span><span class="small muted">Change</span></button>
       ${(S.stops || []).map((x, i) => `<div class="payrow stop-row"><span class="stop-num" aria-hidden="true">${i + 1}</span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">Stop ${i + 1}</span><span class="ellipsis" style="display:block">${K.esc(x.address)}</span></span><button class="btn icon-btn btn-ghost" data-rmstop="${i}" aria-label="Remove stop ${i + 1}">${K.ic('x', 'sm')}</button></div>`).join('')}
-      <button class="payrow" id="dropRow"><span class="dot-drop" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">${S.service === 'parcel' ? 'Deliver to' : 'To'}</span><span class="ellipsis" style="display:block">${K.esc(S.drop.address)}</span></span><span class="small muted">Change</span></button>
-      ${S.service !== 'parcel' && (S.stops || []).length < 2 ? `<button class="payrow add-stop" id="addStop"><span class="paylogo note-ic">${K.ic('plus', 'sm')}</span><span class="grow">Add a stop<span class="tiny muted" style="display:block;font-weight:500">${K.ugx((S.config && S.config.stopFee) || 0)} per stop, plus the extra distance</span></span></button>` : ''}
-      <button class="payrow note-row" id="noteBtn"><span class="paylogo note-ic">${K.ic('msg', 'sm')}</span><span class="grow ellipsis">${S.note ? K.esc(S.note) : '<span class="muted">Add a pickup note</span>'}</span>${S.note ? '<span class="small muted">Edit</span>' : K.ic('chev', 'sm')}</button>
+      <button class="payrow" id="dropRow"><span class="dot-drop" style="margin:0 12px 0 11px"></span><span class="grow"><span class="tiny muted" style="display:block;font-weight:500">${['parcel', 'errand'].includes(S.service) ? 'Deliver to' : 'To'}</span><span class="ellipsis" style="display:block">${K.esc(S.drop.address)}</span></span><span class="small muted">Change</span></button>
+      ${S.service === 'errand' ? `<button class="payrow" id="errandRow"><span class="paylogo wallet">${K.ic('receipt', 'sm')}</span><span class="grow">${S.errand ? `${S.errand.items.length} item${S.errand.items.length > 1 ? 's' : ''} · budget ${K.ugx(S.errand.budget)}<span class="tiny muted" style="display:block;font-weight:500">Plus the items, up to your budget, paid when they arrive</span>` : 'Add what to buy'}</span>${K.ic('chev', 'sm')}</button>` : ''}
+      ${!['parcel', 'errand'].includes(S.service) && (S.stops || []).length < 2 ? `<button class="payrow add-stop" id="addStop"><span class="paylogo note-ic">${K.ic('plus', 'sm')}</span><span class="grow">Add a stop<span class="tiny muted" style="display:block;font-weight:500">${K.ugx((S.config && S.config.stopFee) || 0)} per stop, plus the extra distance</span></span></button>` : ''}
+      <button class="payrow note-row" id="noteBtn"><span class="paylogo note-ic">${K.ic('msg', 'sm')}</span><span class="grow ellipsis">${S.note ? K.esc(S.note) : `<span class="muted">${S.service === 'errand' ? 'Add a note for the courier' : 'Add a pickup note'}</span>`}</span>${S.note ? '<span class="small muted">Edit</span>' : K.ic('chev', 'sm')}</button>
       ${S.service === 'parcel' ? `<button class="payrow" id="parcelRow"><span class="paylogo wallet">${K.ic('gift', 'sm')}</span><span class="grow">${S.parcel ? `Package for ${K.esc(S.parcel.recipientName)}` : 'Add delivery details'}</span>${K.ic('chev', 'sm')}</button>` : ''}
       <div class="chip-row">
         <button class="pill-opt ${S.when ? 'on' : ''}" id="whenBtn">${K.ic('clock', 'sm')}<span>${S.when ? K.esc(whenLabel(S.when)) : 'Now'}</span>${K.ic('chevDown', 'sm')}</button>
-        <button class="pill-opt ${S.passenger ? 'on' : ''}" id="whoBtn">${K.ic('person', 'sm')}<span>${S.passenger ? K.esc(K.first(S.passenger.name)) : 'For me'}</span>${K.ic('chevDown', 'sm')}</button>
+        ${S.service === 'errand' ? '' : `<button class="pill-opt ${S.passenger ? 'on' : ''}" id="whoBtn">${K.ic('person', 'sm')}<span>${S.passenger ? K.esc(K.first(S.passenger.name)) : 'For me'}</span>${K.ic('chevDown', 'sm')}</button>`}
         <button class="pill-opt ${S.promoCode ? 'on' : ''}" id="promoBtn">${K.ic('tag', 'sm')}<span>${S.promoCode ? K.esc(S.promoCode) : 'Promo'}</span></button>
       </div>
       <button class="payrow" id="womanBtn" role="switch" aria-checked="${!!S.womanDriver}"><span class="paylogo note-ic">${K.ic('shield', 'sm')}</span><span class="grow">Woman driver<span class="tiny muted" style="display:block;font-weight:500">${S.womanDriver ? 'Only women drivers get your request' : 'Ask only women drivers'}</span></span><span class="set-switch${S.womanDriver ? ' on' : ''}" aria-hidden="true"><i></i></span></button>
@@ -785,10 +791,12 @@
     K.$('#dropRow').onclick = () => openSearch();
     const asb = K.$('#addStop'); if (asb) asb.onclick = () => openSearch({ addStop: true });
     sheet.querySelectorAll('[data-rmstop]').forEach((b) => b.onclick = () => { S.stops.splice(+b.dataset.rmstop, 1); prepareQuote(); });
-    K.$('#pickRow').onclick = () => { S.prevPickup = S.pickup ? { ...S.pickup } : null; S.view = 'pickup'; clearRoute(); map.setView([S.pickup.lat, S.pickup.lng], 18); render(); };
+    const er = K.$('#errandRow'); if (er) er.onclick = () => openErrandForm(render);
+    if (S.service === 'errand') K.$('#pickRow').onclick = () => openSearch({ shop: true });
+    else K.$('#pickRow').onclick = () => { S.prevPickup = S.pickup ? { ...S.pickup } : null; S.view = 'pickup'; clearRoute(); map.setView([S.pickup.lat, S.pickup.lng], 18); render(); };
     const pr = K.$('#parcelRow'); if (pr) pr.onclick = openParcel;
     K.$('#whenBtn').onclick = openWhen;
-    K.$('#whoBtn').onclick = openWho;
+    const wb = K.$('#whoBtn'); if (wb) wb.onclick = openWho;
     K.$('#promoBtn').onclick = openPromo;
     K.$('#womanBtn').onclick = () => {
       S.womanDriver = !S.womanDriver; K.haptic && K.haptic();
@@ -800,6 +808,7 @@
     if (q.promoError && S.promoCode && !q._shown) { q._shown = true; K.toast(q.promoError, 4500); }
     K.$('#request').onclick = () => {
       if (S.service === 'parcel' && !S.parcel) { openParcel(); return; }
+      if (S.service === 'errand' && !S.errand) { openErrandForm(render); return; }
       if (p === 'wallet' && S.user.walletBalance < payOf(sel)) { K.toast(S.config.paymentsAvailable ? 'Not enough in your wallet. Top up or pick another way to pay.' : 'Not enough in your wallet. Choose cash instead.', 4000); openPayments({ onPick: render }); return; }
       book();
     };
@@ -821,7 +830,7 @@
 
   // ---------- split the fare ----------
   // Friends pay their share by Mobile Money through a link; it lands in the rider's wallet.
-  const canSplit = (t) => S.config.paymentsAvailable && t.service !== 'parcel' && t.paymentStatus !== 'paid' && ['accepted', 'arrived', 'in_progress', 'completed'].includes(t.status);
+  const canSplit = (t) => S.config.paymentsAvailable && !['parcel', 'errand'].includes(t.service) && t.paymentStatus !== 'paid' && ['accepted', 'arrived', 'in_progress', 'completed'].includes(t.status);
   const splitRow = (t) => !canSplit(t) ? '' : t.split
     ? `<button class="payrow" data-split><span class="paylogo note-ic">${K.ic('person', 'sm')}</span><span class="grow">Split ${t.split.people} ways · ${K.ugx(t.split.share)} each<span class="tiny muted" style="display:block;font-weight:500">${t.split.paid} of ${t.split.people - 1} friend${t.split.people > 2 ? 's' : ''} paid · goes to your Flytte Wallet</span></span>${K.ic('chev', 'sm')}</button>`
     : `<button class="payrow" data-split><span class="paylogo note-ic">${K.ic('person', 'sm')}</span><span class="grow">Split the fare<span class="tiny muted" style="display:block;font-weight:500">Friends pay their share by Mobile Money</span></span>${K.ic('chev', 'sm')}</button>`;
@@ -873,6 +882,67 @@
       <button class="btn btn-block" style="margin-top:14px" data-close>Close</button>`);
   }
 
+  // ---------- "Buy it for me" errands ----------
+  // 1. What to buy and a budget  2. Where to buy it  3. Delivered to where you are (or where you choose).
+  function startErrand() {
+    if (!S.errandHome) S.errandHome = S.pickup && !S.pickup.isShop ? { ...S.pickup } : S.gps ? { lat: S.gps.lat, lng: S.gps.lng, address: 'Current location' } : null;
+    openErrandForm(() => openSearch({ shop: true }));
+  }
+  function openErrandForm(next) {
+    const e = S.errand || { items: [], budget: '', substitutes: true }, max = (S.config.errand || {}).maxBudget || 200000;
+    const m = K.modal(`<h2>Buy it for me</h2><p class="small muted">Your courier buys these and brings them to you. You pay for the items when they arrive, plus the delivery.</p>
+      <label for="er-items">What should we buy? One item per line</label><textarea id="er-items" rows="5" maxlength="1200" placeholder="2 kg sugar&#10;Panadol, 1 packet&#10;Airtime card, UGX 10,000">${K.esc(e.items.join('\n'))}</textarea>
+      <label for="er-budget">Budget for the items (UGX)</label><input id="er-budget" type="number" inputmode="numeric" min="1000" max="${max}" step="500" placeholder="50000" value="${e.budget || ''}">
+      <p class="tiny muted" style="margin:4px 0 10px">Your courier won’t spend more than this. You can raise it later.</p>
+      <div class="set-card list" style="margin:0 0 12px"><button class="set-row" id="er-sub" role="switch" aria-checked="${e.substitutes !== false}"><span class="grow"><b>Substitutes are OK</b><small>If something isn’t there, the courier picks the closest match</small></span><span class="set-switch${e.substitutes !== false ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
+      <p class="error" id="err" role="alert"></p><button class="btn btn-primary btn-block btn-lg" id="er-next">${S.service === 'errand' && S.quote ? 'Save' : 'Next: choose the shop'}</button>`);
+    let sub = e.substitutes !== false;
+    K.$('#er-sub', m.el).onclick = (ev) => { sub = !sub; ev.currentTarget.setAttribute('aria-checked', sub); ev.currentTarget.querySelector('.set-switch').classList.toggle('on', sub); };
+    K.$('#er-next', m.el).onclick = () => {
+      const items = K.$('#er-items', m.el).value.split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 20);
+      const budget = Math.round(Number(K.$('#er-budget', m.el).value));
+      const err = K.$('#err', m.el);
+      if (!items.length) { err.textContent = 'Add at least one item.'; return; }
+      if (!(budget >= 1000)) { err.textContent = 'Set a budget of at least UGX 1,000.'; return; }
+      if (budget > max) { err.textContent = `The most for one errand is ${K.ugx(max)}.`; return; }
+      S.errand = { items, budget, substitutes: sub };
+      m.close(); setTimeout(() => (next || render)(), 280);
+    };
+  }
+  // The shop is where the courier starts; your place is where it ends.
+  function errandShop(place) {
+    setService('errand'); S.stops = [];
+    S.pickup = { ...place, short: shortName(place.address), manual: true, isShop: true };
+    if (S.errandHome) {
+      // The courier needs a real place name, not "Current location".
+      const h = S.errandHome, generic = /^(Current location|Finding address…|Pinned location)$/;
+      const name = h.short && !generic.test(h.short) ? h.short : h.address && !generic.test(h.address) ? h.address : null;
+      const go = (addr) => { S.drop = { lat: h.lat, lng: h.lng, address: addr }; prepareQuote(); };
+      if (name) go(name); else K.reverse(h.lat, h.lng).then((a) => go(a && !generic.test(a) ? a : 'Your location'));
+    }
+    else openSearch();   // no location yet: ask where to bring it
+  }
+  function raiseBudget(t) {
+    const max = (S.config.errand || {}).maxBudget || 200000;
+    const m = K.modal(`<h2>Raise the budget</h2><p class="small muted">Now ${K.ugx(t.errand.budget)}. Your courier gets a message straight away.</p>
+      <input id="nb" type="number" inputmode="numeric" min="${t.errand.budget}" max="${max}" step="500" value="${t.errand.budget + 10000 <= max ? t.errand.budget + 10000 : max}" aria-label="New budget">
+      <p class="error" id="err"></p><button class="btn btn-primary btn-block btn-lg" id="sv">Save budget</button>`);
+    K.$('#sv', m.el).onclick = async () => {
+      try { await K.api(`/trips/${t.id}/budget`, { budget: Math.round(Number(K.$('#nb', m.el).value)) }); m.close(); K.toast('Budget updated'); }
+      catch (x) { K.$('#err', m.el).textContent = x.message; }
+    };
+  }
+  // The receipt photo is private to the trip, so it's fetched with the sign-in, not as a public link.
+  async function showReceiptPhoto(t) {
+    const m = K.modal(`<h2>Receipt</h2><div id="rph" style="min-height:120px">${K.skeleton('list', 1)}</div><button class="btn btn-block" data-close style="margin-top:12px">Close</button>`);
+    try {
+      const r = await fetch(`/api/trips/${t.id}/receipt-photo`, { headers: { Authorization: 'Bearer ' + K.token() } });
+      if (!r.ok) throw new Error();
+      const url = URL.createObjectURL(await r.blob());
+      K.$('#rph', m.el).innerHTML = `<img src="${url}" alt="Photo of the shop receipt" style="width:100%;border-radius:12px;display:block">`;
+    } catch { K.$('#rph', m.el).innerHTML = '<p class="small muted">Couldn’t load the photo. Try again in a moment.</p>'; }
+  }
+
   function openParcel() {
     const p = S.parcel || {};
     const m = K.modal(`<h2>Delivery details</h2><p class="muted small">Your rider will call the recipient on arrival.</p>
@@ -921,6 +991,7 @@
     const opt = S.quote.options.find((o) => o.id === S.service);
     const body = { service: S.service, paymentMethod: PAY[pref()].method, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined, notes: S.note || undefined, womanDriver: S.womanDriver || undefined, stops: S.stops.length ? S.stops : undefined };
     if (S.service === 'parcel') body.parcel = S.parcel;
+    if (S.service === 'errand') body.errand = S.errand;
     // A locked wallet needs the rider's fingerprint, face or a code before paying from it.
     if (body.paymentMethod === 'wallet' && S.user.walletLock) {
       body.walletPass = await K.walletLock.unlock({ amount: opt ? payOf(opt) : undefined });
@@ -1066,10 +1137,23 @@
   const pinDigits = (pin) => `<span class="pin-code" aria-label="PIN ${pin}">${String(pin).split('').map((d) => `<span>${d}</span>`).join('')}</span>`;
 
   // ---------- trip extras: discount, passenger, parcel delivery code, tips ----------
-  const fareHtml = (t) => (t.discount ? `<span class="was" style="display:inline;margin-right:6px">${K.ugx(t.fare)}</span>${K.ugx(t.payable)}` : K.ugx(t.fare));
+  // The fare (crossed out when discounted); on an errand, the total with the items in it.
+  const fareHtml = (t) => {
+    const g = t.goodsTotal || 0, ride = t.payable - g;
+    const base = t.discount ? `<span class="was" style="display:inline;margin-right:6px">${K.ugx(t.fare)}</span>${K.ugx(ride)}` : K.ugx(t.fare);
+    return g ? `${K.ugx(t.payable)}<span class="fare-sub">incl. ${K.ugx(g)} of items</span>` : base;
+  };
   function extrasHtml(t) {
     let h = '';
     if (t.passenger) h += `<div class="extra-box"><span class="grow"><b>Riding: ${K.esc(t.passenger.name)}</b><br><span class="small muted">The ${who(t)} will call ${K.esc(K.first(t.passenger.name))} at pickup</span></span><button class="btn btn-sm btn-primary" data-sendpass>Send details</button></div>`;
+    if (t.service === 'errand' && t.errand) {
+      const e = t.errand, list = e.items.slice(0, 4).map((x) => `<li>${K.esc(x)}</li>`).join('') + (e.items.length > 4 ? `<li class="muted">+${e.items.length - 4} more</li>` : '');
+      h += `<div class="errand-box"><div class="row" style="justify-content:space-between;align-items:baseline"><b>Your shopping</b><span class="small muted">${e.substitutes ? 'Substitutes OK' : 'No substitutes'}</span></div>
+        <ul class="errand-list">${list}</ul>
+        ${e.goodsTotal != null ? `<div class="row" style="justify-content:space-between;align-items:center"><span><b>Spent ${K.ugx(e.goodsTotal)}</b><span class="small muted"> of ${K.ugx(e.budget)}</span></span>${e.receipt ? '<button class="btn btn-sm" data-receiptphoto>See receipt</button>' : ''}</div>`
+          : `<div class="row" style="justify-content:space-between;align-items:center"><span class="small">Budget <b>${K.ugx(e.budget)}</b></span>${['requested', 'accepted', 'arrived'].includes(t.status) ? '<button class="btn btn-sm" data-budget>Raise budget</button>' : ''}</div>`}</div>`;
+      if (t.dropCode && t.status !== 'completed') h += `<div class="extra-box"><span class="grow"><b>Delivery code ${pinDigits(t.dropCode)}</b><br><span class="small muted">Give it to ${K.esc(K.first((t.driver || {}).name || 'your courier'))} when your items arrive</span></span></div>`;
+    }
     if (t.dropCode && t.service === 'parcel' && t.parcel) h += `<div class="extra-box"><span class="grow"><b>Delivery code ${pinDigits(t.dropCode)}</b><br><span class="small muted">${K.esc(K.first(t.parcel.recipientName))} gives this to the rider to receive the parcel</span></span><button class="btn btn-sm btn-primary" data-sendcode>Send</button></div>`;
     return h;
   }
@@ -1079,6 +1163,8 @@
     const d = t.driver || {};
     const sp = sheet.querySelector('[data-sendpass]');
     if (sp) sp.onclick = () => sms(t.passenger.phone, `Hi ${K.first(t.passenger.name)}, I booked you a Flytte ${svcName(t.service).toLowerCase()}.${d.name ? ` ${K.first(d.name)} is coming in ${d.vehicle || ''} ${d.plate || ''}.` : ''} Your PIN is ${t.pin}: tell it to the ${who(t)} to start. Follow live: ${link}`);
+    const bb = sheet.querySelector('[data-budget]'); if (bb) bb.onclick = () => raiseBudget(t);
+    const rp = sheet.querySelector('[data-receiptphoto]'); if (rp) rp.onclick = () => showReceiptPhoto(t);
     const sc = sheet.querySelector('[data-sendcode]');
     if (sc) sc.onclick = () => sms(t.parcel.recipientPhone, `Hi ${K.first(t.parcel.recipientName)}, a Flytte parcel is on its way to you (${t.parcel.item}). Give the rider this delivery code when it arrives: ${t.dropCode}. Track it: ${link}`);
   }
@@ -1173,27 +1259,28 @@
       const arrived = t.status === 'arrived';
       sheet.innerHTML = `
         <div class="grabber"></div>
-        ${arrived ? `<div class="arrive-hero" role="status"><small>${K.esc(K.first(d.name))} is here · look for</small><b class="arrive-plate">${K.esc(d.plate || '')}</b><span>${K.esc(d.vehicle || svcName(t.service))}</span></div>`
+        ${t.service === 'errand' ? `<h2 style="font-size:1.15rem">${K.esc(K.first(d.name))} ${t.errand && t.errand.goodsTotal != null ? 'bought your items' : arrived ? 'is shopping for you' : 'is going to the shop'}</h2>`
+          : arrived ? `<div class="arrive-hero" role="status"><small>${K.esc(K.first(d.name))} is here · look for</small><b class="arrive-plate">${K.esc(d.plate || '')}</b><span>${K.esc(d.vehicle || svcName(t.service))}</span></div>`
           : `<h2 style="font-size:1.15rem">${K.esc(K.first(d.name))} is on the way</h2>`}
         <div class="driver-card" style="margin-top:12px">${facePhoto(d)}
           <span class="grow"><b style="display:block">${K.esc(d.name)}</b>${stars(d.rating, d.trips)}<span class="small muted" style="display:block">${K.esc(d.vehicle || svcName(t.service))}</span>${trustRow(d)}</span>
           <span style="text-align:right"><span class="plate-chip">${K.esc(d.plate)}</span><span style="display:block;width:70px;height:44px;margin-top:4px">${K.artFor(t.service, d.vehicleType)}</span></span></div>
-        <button class="link-report" data-report>Driver or plate doesn’t match?</button>
-        <div class="eta-line"><span id="etaTxt">${arrived ? `Meet ${K.esc(K.first(d.name))} now` : mins ? `Arriving in ${mins} min` : 'On the way'}</span><span class="small muted" style="font-weight:600">${t.service === 'parcel' ? 'Parcel pickup' : 'Pickup'}</span></div>
+        ${t.service === 'errand' ? '' : '<button class="link-report" data-report>Driver or plate doesn’t match?</button>'}
+        <div class="eta-line"><span id="etaTxt">${t.service === 'errand' ? (t.errand && t.errand.goodsTotal != null ? 'Items bought · on the way soon' : arrived ? 'Shopping now' : mins ? `At the shop in ${mins} min` : 'Going to the shop') : arrived ? `Meet ${K.esc(K.first(d.name))} now` : mins ? `Arriving in ${mins} min` : 'On the way'}</span><span class="small muted" style="font-weight:600">${t.service === 'parcel' ? 'Parcel pickup' : t.service === 'errand' ? 'Shop' : 'Pickup'}</span></div>
         <div class="bar"><i id="etaBar" style="width:${pct}%"></i></div>
-        ${arrived && S.config.drivers ? `<p class="wait-note">${K.ic('clock', 'sm')}<span>Your ${who(t)} waits up to ${S.config.drivers.freeWaitMin} min for free.${S.config.drivers.noShowFee ? ` After that they can leave, and a ${K.ugx(S.config.drivers.noShowFee)} no-show fee is taken from your wallet if it has enough.` : ' After that they can leave.'}</span></p>` : ''}
+        ${arrived && S.config.drivers && t.service !== 'errand' ? `<p class="wait-note">${K.ic('clock', 'sm')}<span>Your ${who(t)} waits up to ${S.config.drivers.freeWaitMin} min for free.${S.config.drivers.noShowFee ? ` After that they can leave, and a ${K.ugx(S.config.drivers.noShowFee)} no-show fee is taken from your wallet if it has enough.` : ' After that they can leave.'}</span></p>` : ''}
         <div class="act-row">${callBtn('act') || '<span></span>'}<button class="act" id="chatBtn">${K.ic('msg')} Message</button></div>
-        <div class="pin-box"><span><b>${t.passenger ? `${K.esc(K.first(t.passenger.name))}’s trip PIN` : 'Your trip PIN'}</b><br><span class="small muted">${t.passenger ? 'Send it to them below' : `Tell your ${who(t)} to start`}</span></span>${pinDigits(t.pin)}</div>
+        ${t.service === 'errand' ? '' : `<div class="pin-box"><span><b>${t.passenger ? `${K.esc(K.first(t.passenger.name))}’s trip PIN` : 'Your trip PIN'}</b><br><span class="small muted">${t.passenger ? 'Send it to them below' : `Tell your ${who(t)} to start`}</span></span>${pinDigits(t.pin)}</div>`}
         ${extrasHtml(t)}
         ${t.notes ? `<p class="note-line">${K.ic('msg', 'sm')}<span><small>Your pickup note</small>${K.esc(t.notes)}</span></p>` : ''}
         <div class="stops">
-          <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>Pickup</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
+          <div class="stop"><span class="s-ic"><span class="dot-pick"></span></span><span><small>${t.service === 'errand' ? 'Shop' : 'Pickup'}</small><b class="ellipsis">${K.esc(t.pickup.address)}</b></span></div>
           ${stopRows(t)}
-          <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>Drop-off</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
+          <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>${t.service === 'errand' ? 'Deliver to' : 'Drop-off'}</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
         </div>
         <div class="fare-row"><span class="row" style="gap:8px">${PAY[payOfTrip(t)].logo}<span class="muted">${PAY[payOfTrip(t)].name}</span></span><b>${fareHtml(t)}</b></div>
-        <div class="sheet-foot"><button class="btn btn-danger btn-block btn-lg" id="cancel">Cancel ride</button></div>`;
-      K.$('#cancel').onclick = cancelTrip;
+        ${t.service === 'errand' && t.errand && t.errand.goodsTotal != null ? '' : `<div class="sheet-foot"><button class="btn btn-danger btn-block btn-lg" id="cancel">${t.service === 'errand' ? 'Cancel errand' : 'Cancel ride'}</button></div>`}`;
+      const cx = K.$('#cancel'); if (cx) cx.onclick = cancelTrip;
     }
     K.$('#chatBtn').onclick = openChat;
     bindExtras(t);
@@ -1265,8 +1352,8 @@
       <div class="done-wrap">
         <div class="confetti">${confetti}</div>
         <div class="check-big">${K.ic('check')}</div>
-        <h2>${t.service === 'parcel' ? 'Parcel delivered' : 'You’ve arrived'}</h2>
-        <p class="small muted">${t.service === 'parcel' ? 'Your package has been handed over' : 'Thanks for riding with Flytte'}</p>
+        <h2>${t.service === 'parcel' ? 'Parcel delivered' : t.service === 'errand' ? 'Your items are here' : 'You’ve arrived'}</h2>
+        <p class="small muted">${t.service === 'parcel' ? 'Your package has been handed over' : t.service === 'errand' ? `${K.ugx(t.goodsTotal || 0)} of items, plus the delivery` : 'Thanks for riding with Flytte'}</p>
         <div class="fare-card">
           <span class="small muted">${t.paymentMethod === 'cash' ? 'Pay in cash' : needsPay ? 'Amount due' : 'Total paid'}</span>
           <div class="amt">${K.ugx(t.payable)}</div>
@@ -1341,7 +1428,7 @@
     // What happened when: requested → accepted → arrived → started → dropped off.
     const at = (x) => (x ? K.clock(new Date(x)) : null);
     const steps = [['Requested', t.createdAt], [`${d.name ? K.first(d.name) : 'Driver'} accepted`, t.acceptedAt], ['Arrived at pickup', t.arrivedAt], ['Trip started', t.startedAt],
-      [t.service === 'parcel' ? 'Delivered' : 'Dropped off', t.completedAt]].filter(([, x]) => x);
+      [['parcel', 'errand'].includes(t.service) ? 'Delivered' : 'Dropped off', t.completedAt]].filter(([, x]) => x);
     if (['cancelled', 'no_drivers'].includes(t.status)) steps.push([t.status === 'no_drivers' ? 'No driver found' : `Cancelled${t.cancelledBy === 'driver' ? ' by the driver' : ''}`, null]);
     const dm = K.modal(`<div class="td-map" id="tdMap" aria-label="Map of the route"></div>
       <h2>${K.esc(shorten(t.drop.address, 40))}</h2>
@@ -1353,7 +1440,8 @@
         <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>To</small><b>${K.esc(t.drop.address)}</b></span></div>
       </div>
       <div class="kv"><span>Service</span><b>${svcName(t.service)}</b></div>
-      ${d.name ? `<div class="kv"><span>${t.service === 'parcel' ? 'Courier' : 'Driver'}</span><b>${K.esc(d.name)} · ${K.esc(d.plate || '')}</b></div>` : ''}
+      ${t.errand ? `<div class="kv"><span>Items bought (${t.errand.items.length})</span><b>${t.errand.goodsTotal != null ? K.ugx(t.errand.goodsTotal) : 'Not yet'}</b></div>` : ''}
+      ${d.name ? `<div class="kv"><span>${['parcel', 'errand'].includes(t.service) ? 'Courier' : 'Driver'}</span><b>${K.esc(d.name)} · ${K.esc(d.plate || '')}</b></div>` : ''}
       ${t.distanceKm ? `<div class="kv"><span>Distance</span><b>${Number(t.distanceKm).toFixed(1)} km</b></div>` : ''}
       <div class="kv"><span>Payment</span><b>${P.name}${t.paymentStatus === 'paid' ? ' · Paid' : t.paymentStatus === 'pending' && t.paymentMethod !== 'cash' ? ' · Not paid' : ''}</b></div>
       ${t.scheduledFor ? `<div class="kv"><span>Scheduled for</span><b>${whenLabel(t.scheduledFor)}</b></div>` : ''}
@@ -1363,8 +1451,8 @@
       ${t.tip ? `<div class="kv"><span>Tip (${t.tipMethod === 'wallet' ? 'wallet' : 'cash'})</span><b>${K.ugx(t.tip)}</b></div>` : ''}
       <div class="big-total"><span class="bold">You paid</span><b>${K.ugx(t.payable + (t.tip || 0))}</b></div>
       <div class="trip-acts">
-        ${t.service !== 'parcel' && ['completed', 'cancelled', 'no_drivers'].includes(t.status) ? `<button class="trip-act" data-again>${K.ic('refresh')}<span>Book again</span></button>` : ''}
-        ${t.service !== 'parcel' && t.status === 'completed' ? `<button class="trip-act" data-return>${K.ic('back')}<span>Book the return</span></button>` : ''}
+        ${!['parcel', 'errand'].includes(t.service) && ['completed', 'cancelled', 'no_drivers'].includes(t.status) ? `<button class="trip-act" data-again>${K.ic('refresh')}<span>Book again</span></button>` : ''}
+        ${!['parcel', 'errand'].includes(t.service) && t.status === 'completed' ? `<button class="trip-act" data-return>${K.ic('back')}<span>Book the return</span></button>` : ''}
         ${t.status === 'completed' ? `<button class="trip-act" data-receipt>${K.ic('receipt')}<span>Receipt</span></button>` : ''}
         ${t.driver ? `<button class="trip-act" data-help>${K.ic('help')}<span>Get help</span></button>` : ''}
       </div>
@@ -1534,7 +1622,7 @@
     const t = S.trip, target = t.status === 'in_progress' ? t.drop : t.pickup;
     const mins = K.etaMin(p, target);
     const et = K.$('#etaTxt'); if (et && t.status === 'accepted') et.textContent = `Arriving in ${mins} min`;
-    const bn = K.$('#bnTxt'); if (bn) bn.textContent = t.status === 'in_progress' ? `Arriving in ${mins} min` : t.status === 'accepted' ? `Here in ${mins} min` : bn.textContent;
+    const bn = K.$('#bnTxt'); if (bn) bn.textContent = t.status === 'in_progress' ? `Arriving in ${mins} min` : t.status === 'accepted' ? (t.service === 'errand' ? `At the shop in ${mins} min` : `Here in ${mins} min`) : bn.textContent;
     const bar = K.$('#etaBar'); if (bar && phaseKm && t.status !== 'arrived') bar.style.width = Math.max(5, Math.min(100, 100 - (K.km(p, target) / phaseKm) * 100)) + '%';
   }
 
@@ -1613,8 +1701,8 @@
   // One tap: a WhatsApp message with the arrival time and the live link (the share sheet where WhatsApp isn't there).
   function etaMessage(t, mins, now = new Date()) {
     const link = location.origin + '/t/' + t.shareToken;
-    const ride = t.service === 'parcel' ? 'My Flytte parcel is' : `I’m on my way to ${t.drop.address} in a Flytte ${t.driver && t.driver.vehicleType === 'car' ? 'car' : 'boda'}.`;
-    if (t.service === 'parcel') {
+    const ride = t.service === 'errand' ? 'My Flytte errand is' : t.service === 'parcel' ? 'My Flytte parcel is' : `I’m on my way to ${t.drop.address} in a Flytte ${t.driver && t.driver.vehicleType === 'car' ? 'car' : 'boda'}.`;
+    if (['parcel', 'errand'].includes(t.service)) {
       return mins ? `${ride} on its way to ${t.drop.address}. It should arrive at about ${K.clock(new Date(now.getTime() + mins * 60e3))} (${mins} min). Follow it live: ${link}` : `${ride} on its way to ${t.drop.address}. Follow it live: ${link}`;
     }
     return mins ? `${ride} I’ll arrive at about ${K.clock(new Date(now.getTime() + mins * 60e3))} (${mins} min). Follow my trip live: ${link}` : `${ride} Follow my trip live: ${link}`;
@@ -1669,6 +1757,9 @@
     const hadTrip = !!S.trip;
     S.view = 'home'; S.drop = null; S.quote = null; S.route = null; S.trip = null; S.rating = 0; S.parcel = null; S.allOpts = false;
     S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false; S.womanDriver = false; S.stops = [];
+    if (S.errandHome) { S.pickup = S.errandHome; S.errandHome = null; }
+    S.errand = null;
+    if (S.service === 'errand') S.service = (S.user && S.user.ridePrefs && S.user.ridePrefs.service) || 'boda';
     S.summary = null; applyPrefs();
     loadGrowth();
     S.messages = []; S.unread = 0; routedPhase = null; phaseKm = null;
@@ -1811,7 +1902,7 @@
     const live = ['requested', 'accepted', 'arrived', 'in_progress'];
     const keep = (t) => filter === 'all' ? !['cancelled', 'no_drivers'].includes(t.status) || t.cancelFee || t.noShowFee
       : filter === 'cancelled' ? ['cancelled', 'no_drivers'].includes(t.status)
-      : (filter === 'parcel' ? t.service === 'parcel' : t.service !== 'parcel') && !['cancelled', 'no_drivers'].includes(t.status);
+      : (filter === 'parcel' ? ['parcel', 'errand'].includes(t.service) : !['parcel', 'errand'].includes(t.service)) && !['cancelled', 'no_drivers'].includes(t.status);
     const shown = list.filter(keep);
     const st = (t) => (t.status === 'scheduled' ? [`Scheduled · ${whenLabel(t.scheduledFor)}`, 'warn'] : live.includes(t.status) ? ['Now', 'warn'] : { cancelled: ['Cancelled', 'bad'], no_drivers: ['No driver found', 'bad'] }[t.status] || null);
     const groups = [], weekAgo = Date.now() - 7 * 86400e3;
@@ -2023,7 +2114,7 @@
     const p = { ...(S.user.ridePrefs || {}) };
     const draw = () => {
       sp.body.innerHTML = `<p class="small muted" style="margin:0 4px 6px">Used for every booking. You can still change them on the ride options.</p>
-        <h3 class="set-h">Usual ride</h3><div class="set-card list">${S.config.services.filter((s) => s.id !== 'parcel').map((s) => `<button class="set-row" data-svc="${s.id}" role="radio" aria-checked="${p.service === s.id}"><span class="grow"><b>${K.esc(svcName(s.id))}</b></span>${p.service === s.id ? K.ic('check') : ''}</button>`).join('')}</div>
+        <h3 class="set-h">Usual ride</h3><div class="set-card list">${S.config.services.filter((s) => !['parcel', 'errand'].includes(s.id)).map((s) => `<button class="set-row" data-svc="${s.id}" role="radio" aria-checked="${p.service === s.id}"><span class="grow"><b>${K.esc(svcName(s.id))}</b></span>${p.service === s.id ? K.ic('check') : ''}</button>`).join('')}</div>
         <h3 class="set-h">Driver</h3><div class="set-card list"><button class="set-row" id="wd" role="switch" aria-checked="${!!p.womanDriver}"><span class="grow"><b>Always ask for a woman driver</b><small>It can take a little longer to find one</small></span><span class="set-switch${p.womanDriver ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
         <h3 class="set-h">Pickup note</h3><div class="set-card"><input id="pn" maxlength="120" placeholder="e.g. Call me when you arrive" value="${K.esc(p.note || '')}" aria-label="Default pickup note" style="margin:0"></div>
         <button class="btn btn-primary btn-block btn-lg" id="sv" style="margin-top:18px">Save preferences</button>`;
