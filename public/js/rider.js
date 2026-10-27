@@ -335,7 +335,7 @@
     if (S.growth && S.growth.firstRide) cards.push(`<div class="fy-card fy-offer"><span class="grow"><small>Welcome offer</small><b>${S.growth.firstRide.percent}% off your first ride</b><span>Up to ${K.ugx(S.growth.firstRide.max)} · applied automatically</span></span><span class="fy-art">${K.ic('gift')}</span></div>`);
     if (g.referral && g.referral.enabled && g.referral.referrer) cards.push(`<button class="fy-card fy-invite" data-fy="invite"><span class="grow"><small>Invite friends</small><b>Get ${K.ugx(g.referral.referrer)} per friend</b><span>They get ${K.ugx(g.referral.friend)} after their first trip</span></span><span class="fy-art emoji">🎁</span></button>`);
     const pc = S.config.pass;
-    if (pc && pc.enabled && S.pass && !S.pass.active) cards.push(`<button class="fy-card fy-pass" data-fy="pass"><span class="grow"><small>Flytte Pass</small><b>${pc.percent}% off every ride</b><span>No busy-time prices · free cancels · ${K.ugx(pc.price)} a month</span></span><span class="fy-art emoji">✨</span></button>`);
+    if (pc && pc.enabled && S.pass && !S.pass.active && passBuyable()) cards.push(`<button class="fy-card fy-pass" data-fy="pass"><span class="grow"><small>Flytte Pass</small><b>${pc.percent}% off every ride</b><span>No busy-time prices · free cancels · ${K.ugx(pc.price)} a month</span></span><span class="fy-art emoji">✨</span></button>`);
     if (ids.includes('errand')) cards.push(`<button class="fy-card fy-errand" data-errand><span class="grow"><small>Flytte Errand</small><b>Buy it for me</b><span>Market, pharmacy or shop: we buy it and bring it</span></span><span class="fy-art">${K.ART.errand}</span></button>`);
     if (ids.includes('parcel')) cards.push(`<button class="fy-card fy-parcel" data-svc2="parcel"><span class="grow"><small>Flytte Parcel</small><b>Send a package</b><span>Picked up and delivered across Kampala</span></span><span class="fy-art">${K.ART.parcel}</span></button>`);
     if (ids.includes('airport')) cards.push(`<button class="fy-card fy-air" data-svc2="airport"><span class="grow"><small>Airport transfer</small><b>Flying out of Entebbe?</b><span>Book now, or schedule ahead at the regular price</span></span><span class="fy-art">${K.ART.airport}</span></button>`);
@@ -1359,7 +1359,7 @@
       <div class="done-wrap">
         <div class="confetti">${confetti}</div>
         <div class="check-big">${K.ic('check')}</div>
-        <h2>${t.service === 'parcel' ? 'Parcel delivered' : t.service === 'errand' ? 'Your items are here' : 'You’ve arrived'}</h2>
+        <h2>${t.school ? `${K.esc((t.passenger || {}).name || 'Your child')} ${t.school.leg === 'morning' ? 'is at school' : 'is home'}` : t.service === 'parcel' ? 'Parcel delivered' : t.service === 'errand' ? 'Your items are here' : 'You’ve arrived'}</h2>
         <p class="small muted">${t.service === 'parcel' ? 'Your package has been handed over' : t.service === 'errand' ? `${K.ugx(t.goodsTotal || 0)} of items, plus the delivery` : 'Thanks for riding with Flytte'}</p>
         <div class="fare-card">
           <span class="small muted">${t.paymentMethod === 'cash' ? 'Pay in cash' : needsPay ? 'Amount due' : 'Total paid'}</span>
@@ -2302,13 +2302,15 @@
 
   // ---------- Flytte Pass ----------
   const dayMonth = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  // The Pass can be bought now if Mobile Money is on, or the wallet already covers it.
+  const passBuyable = () => !!(S.config.pass && (S.config.paymentsAvailable || S.user.walletBalance >= S.config.pass.price));
   function passCard() {
     const pc = S.config.pass, p = S.pass;
     if (!pc || (!pc.enabled && !(p && p.active))) return '';
     if (p && p.active) return `<button class="pass-card on" data-a="pass"><span class="pass-glow" aria-hidden="true"></span><span class="grow"><small>Flytte Pass</small><b>Active until ${dayMonth(p.endsAt)}</b>
       <span>${p.saved ? `You’ve saved ${K.ugx(p.saved)} so far` : `${pc.percent}% off every ride · free cancels`}</span></span><span class="pass-tick">${K.ic('check', 'sm')}</span></button>`;
     return `<button class="pass-card" data-a="pass"><span class="pass-glow" aria-hidden="true"></span><span class="grow"><small>Flytte Pass</small><b>${pc.percent}% off every ride</b>
-      <span>No busy-time prices, free cancels · ${K.ugx(pc.price)} a month</span></span><span class="acct-pill">Get it</span></button>`;
+      <span>No busy-time prices, free cancels · ${K.ugx(pc.price)} a month</span></span><span class="acct-pill${passBuyable() ? '' : ' soon'}">${passBuyable() ? 'Get it' : 'Soon'}</span></button>`;
   }
   async function openPass(onBack) {
     const sp = subPage('Flytte Pass', onBack);
@@ -2321,17 +2323,20 @@
             <div class="stats3"><div><b>${K.ugx(p.saved).replace('UGX ', '')}</b><span>Saved (UGX)</span></div><div><b>${p.trips}</b><span>Trips with a saving</span></div><div><b>${Math.max(0, Math.ceil((new Date(p.endsAt) - Date.now()) / 864e5))}</b><span>Days left</span></div></div></div>
           ${perks}
           <div class="set-card list" style="margin-top:14px"><button class="set-row" id="ar" role="switch" aria-checked="${p.autoRenew}"><span class="row-ic">${K.ic('wallet', 'sm')}</span><span class="grow"><b>Renew from my wallet</b><small>${p.autoRenew ? `${K.ugx(pc.price)} on ${dayMonth(p.endsAt)}, if your wallet has it` : 'Off · your pass ends on ' + dayMonth(p.endsAt)}</small></span><span class="set-switch${p.autoRenew ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
-          <button class="btn btn-block" id="more" style="margin-top:12px">Add another ${pc.days} days</button>`;
+          ${passBuyable() ? `<button class="btn btn-block" id="more" style="margin-top:12px">Add another ${pc.days} days</button>` : ''}`;
         K.$('#ar', sp.page).onclick = async () => { try { S.pass = await K.api('/me/pass/renew', { on: !p.autoRenew }); draw(S.pass); } catch (e) { K.toast(e.message); } };
-        K.$('#more', sp.page).onclick = () => buyPass(draw);
+        const mb = K.$('#more', sp.page); if (mb) mb.onclick = () => buyPass(draw);
         return;
       }
       sp.body.innerHTML = `<div class="pass-hero"><small>Flytte Pass</small><h2>Ride more, pay less</h2><p><b class="pass-price">${K.ugx(pc.price)}</b> for ${pc.days} days</p></div>
         ${perks}
         <p class="small muted" style="margin:14px 2px">At ${pc.percent}% off, it pays for itself after about ${Math.ceil(pc.price / Math.max(100, Math.min(pc.maxDiscount, (10000 * pc.percent) / 100)))} rides of ${K.ugx(10000)}, before any busy-time savings. Switch off renewal any time.</p>
-        <button class="btn btn-primary btn-block btn-lg" id="buy">Get Flytte Pass</button>
+        ${passBuyable() ? '<button class="btn btn-primary btn-block btn-lg" id="buy">Get Flytte Pass</button>' : `<div class="pass-soon" role="status"><b>Paying by Mobile Money is coming soon</b>
+          <span>You can already get Flytte Pass from your Flytte Wallet once it has ${K.ugx(pc.price)}. You have ${K.ugx(S.user.walletBalance)}. Invite friends to earn wallet credit, and we’ll tell you as soon as Mobile Money is on.</span></div>
+          <button class="btn btn-block btn-lg" id="inv" style="margin-top:12px">${K.ic('gift', 'sm')} Invite friends for credit</button>`}
         ${p.endedAt ? `<p class="tiny faint" style="text-align:center;margin-top:10px">Your last pass ended on ${dayMonth(p.endedAt)}.</p>` : ''}`;
-      K.$('#buy', sp.page).onclick = () => buyPass(draw);
+      const bb = K.$('#buy', sp.page); if (bb) bb.onclick = () => buyPass(draw);
+      const ib = K.$('#inv', sp.page); if (ib) ib.onclick = () => openInvite();
     };
     sp.body.innerHTML = K.skeleton('list', 3);
     if (S.pass) draw(S.pass);
