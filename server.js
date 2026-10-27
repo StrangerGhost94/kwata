@@ -83,6 +83,10 @@ app.get('/manifest-beta.json', testManifest('manifest.json', '/beta', 'Flytte Te
 app.get('/manifest-driver-beta.json', testManifest('manifest-driver.json', '/driver-beta', 'Driver Test'));
 app.get('/t/:token', page('track.html'));
 app.get('/split/:token', page('split.html'));
+app.get('/shop/:slug', page('shop.html'));
+// Flytte for Business / Shops live in the rider app (Account); these addresses open them there.
+app.get('/business', (req, res) => res.redirect('/?open=business' + (req.query.payment ? '&payment=' + encodeURIComponent(String(req.query.payment)) : '')));
+app.get('/shops', (req, res) => res.redirect('/?open=shop'));
 app.get(['/admin', '/admin.html'], page('admin.html'));
 app.get(['/about', '/about.html'], page('about.html'));
 // The service worker must never be cached by the browser, or updates get stuck.
@@ -158,9 +162,10 @@ async function resumeDispatch() {
 // Scheduled rides: start looking for a driver 10 minutes before pickup time.
 async function activateScheduled() {
   const leadMin = Number(process.env.SCHEDULE_LEAD_MIN) || 10;
-  const { rows } = await db.query("SELECT id, rider_id, scheduled_for FROM trips WHERE status = 'scheduled' AND scheduled_for <= $1", [new Date(Date.now() + leadMin * 60e3)]);
+  const { rows } = await db.query("SELECT id, rider_id, scheduled_for, plan_id FROM trips WHERE status = 'scheduled' AND scheduled_for <= $1", [new Date(Date.now() + leadMin * 60e3)]);
   for (const t of rows) {
-    const busy = await db.one("SELECT id FROM trips WHERE rider_id = $1 AND status IN ('requested','accepted','arrived','in_progress')", [t.rider_id]);
+    // A school run goes ahead even if the parent is on a ride of their own.
+    const busy = !t.plan_id && await db.one("SELECT id FROM trips WHERE rider_id = $1 AND NOT merchant AND status IN ('requested','accepted','arrived','in_progress')", [t.rider_id]);
     if (busy) {
       if (new Date(t.scheduled_for).getTime() < Date.now() - 15 * 60e3) {
         await db.query("UPDATE trips SET status = 'cancelled', cancelled_by = 'system', cancel_reason = 'Rider was on another trip' WHERE id = $1", [t.id]);
@@ -184,6 +189,12 @@ async function activateScheduled() {
   require('./src/receipts').start();   // trip receipts by email
   await resumeDispatch();
   setInterval(() => activateScheduled().catch(console.error), 30e3);
+  const passNote = (uid, text) => { rt.notify(uid, 'toast', { text }); require('./src/drivers').push(uid, { type: 'pass', title: 'Flytte Pass', body: text }, { ttl: 86400, urgency: 'normal' }).catch(() => {}); };
+  setInterval(() => require('./src/pass').renewDue(passNote).catch(console.error), 5 * 60e3);
+  setTimeout(() => require('./src/pass').renewDue(passNote).catch(console.error), 8000);
+  // School runs: book the next day and a half of rides.
+  setInterval(() => require('./src/school').scheduleDue().catch(console.error), 10 * 60e3);
+  setTimeout(() => require('./src/school').scheduleDue().catch(console.error), 6000);
   setTimeout(() => activateScheduled().catch(console.error), 5000);
   const port = process.env.PORT || 3000;
   server.listen(port, () => console.log(`🚀 Flytte running on http://localhost:${port} (database: ${kind})`));

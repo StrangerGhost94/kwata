@@ -2171,3 +2171,69 @@ html.lite .page-head::before, html.lite .nav-bar::before { -webkit-backdrop-filt
 .fy-card.fy-errand { background: linear-gradient(140deg, #FFF0B8, #FFD44D); }
 html.theme-dark .fy-card.fy-errand { background: linear-gradient(140deg, #3A3110, #5A4A10); }
 .fare-sub { display: block; font-size: .74rem; font-weight: 600; color: var(--ink-3); text-align: right; }
+
+/* ---------- Flytte Pass ---------- */
+.fy-card.fy-pass { background: linear-gradient(135deg, #17130A, #3A2E0C); color: #fff; }
+.fy-card.fy-pass b { color: #FFD54A; }
+.pass-card { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 10px; padding: 14px 16px; border: 0; border-radius: 18px; background: linear-gradient(135deg, #17130A 0%, #3A2E0C 60%, #6B5214 100%); color: #fff; font: inherit; text-align: left; cursor: pointer; }
+.pass-card small { display: block; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #FFD54A; }
+.pass-card b { display: block; font-size: 1.05rem; font-weight: 800; margin-top: 2px; }
+.pass-card .grow > span { display: block; font-size: .8rem; opacity: .8; margin-top: 3px; }
+.pass-card .acct-pill { margin-top: 0; flex: none; }
+.pass-glow { position: absolute; right: -30px; top: -40px; width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, rgba(255,213,74,.45), transparent 70%); pointer-events: none; }
+.pass-tick { flex: none; width: 30px; height: 30px; border-radius: 50%; background: #FFD54A; color: #17130A; display: grid; place-items: center; }
+.pass-tick .i { color: #17130A; }
+.pass-hero { position: relative; overflow: hidden; border-radius: 22px; padding: 22px 18px; margin-bottom: 14px; color: #fff; background: radial-gradient(circle at 85% 0%, rgba(255,213,74,.5), transparent 55%), linear-gradient(140deg, #17130A, #3A2E0C 70%, #6B5214); }
+.pass-hero small { font-size: .74rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #FFD54A; }
+.pass-hero h2 { margin: 6px 0 4px; font-size: 1.6rem; color: #fff; }
+.pass-hero p { margin: 0; opacity: .9; }
+.pass-price { font-size: 1.3rem; color: #FFD54A; }
+.pass-hero .stats3 { margin: 16px 0 0; border-color: rgba(255,255,255,.18); }
+.pass-hero .stats3 b { color: #fff; }
+.pass-hero .stats3 span { color: rgba(255,255,255,.75); }
+.pass-perk { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; }
+.pass-perk + .pass-perk { border-top: 1px solid var(--line); }
+.pass-perk b { display: block; }
+.pass-perk small { display: block; color: var(--muted); font-size: .82rem; margin-top: 2px; }
+.promo-band.pass-band { background: linear-gradient(90deg, #2A220C, #4A3A10); color: #FFD54A; }
+
+/* ---------- Flytte for Business / Shops ---------- */
+.paylogo.biz { background: #1F2A44; color: #fff; }
+.paylogo.biz .i { color: #fff; }
+.biz-hero { border-radius: 22px; padding: 22px 18px; margin-bottom: 14px; color: #fff; background: radial-gradient(circle at 90% 0%, rgba(120,170,255,.35), transparent 55%), linear-gradient(140deg, #101828, #1F2A44); }
+.biz-hero.shop { background: radial-gradient(circle at 90% 0%, rgba(255,140,60,.45), transparent 55%), linear-gradient(140deg, #2A1408, #5A2A0E); }
+.biz-hero small { font-size: .74rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .8; }
+.biz-hero h2 { margin: 6px 0 6px; font-size: 1.45rem; color: #fff; }
+.biz-hero p { margin: 0; opacity: .88; font-size: .92rem; }
+.biz-bill { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 18px; background: var(--dark); color: #fff; margin-bottom: 14px; }
+.biz-bill small { display: block; font-size: .74rem; opacity: .75; font-weight: 600; }
+.biz-bill b { font-size: 1.5rem; font-weight: 800; }
+.biz-bill .tiny { opacity: .75; }
+.biz-bill .acct-meter { background: rgba(255,255,255,.18); }
+.biz-bill .acct-meter i { background: var(--brand); }
+.biz-spot { margin-top: 6px; padding: 11px 12px; border-radius: 12px; background: var(--surface); font-size: .9rem; }
+.biz-results { max-height: 220px; overflow: auto; }
+.biz-res { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 10px 4px; border-bottom: 1px solid var(--line); font: inherit; color: var(--ink); cursor: pointer; }
+.biz-res small { display: block; color: var(--muted); font-size: .8rem; }
+.biz-price { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; min-height: 22px; }
+.biz-price b { font-size: 1.15rem; }
+.biz-pin { font-variant-numeric: tabular-nums; letter-spacing: .12em; }
+.biz-pin.big { font-size: 2.2rem; font-weight: 800; margin: 6px 0 14px; }
+.biz-month { align-items: center; margin-bottom: 10px; }
+.set-row.off { opacity: .55; }
+.check-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-weight: 500; }
+.check-row input { width: 20px; height: 20px; margin: 0; }
+.school-note { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: #E8F1FF; color: #12325E; font-size: .85rem; font-weight: 600; }
+.school-note .i { flex: none; margin-top: 1px; color: #12325E; }
+.biz-hero.school { background: radial-gradient(circle at 90% 0%, rgba(90,200,140,.4), transparent 55%), linear-gradient(140deg, #0B2A1C, #124A30); }
+.school-card { background: var(--card); border-radius: 18px; box-shadow: var(--shadow-card); padding: 16px; margin-bottom: 12px; }
+.school-card.off { opacity: .7; }
+.school-driver { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px; border-radius: 12px; background: var(--surface); }
+.school-driver img, .school-driver .acct-photo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; font-size: .9rem; }
+.school-driver b { display: block; font-size: .92rem; }
+.school-driver small { display: block; color: var(--muted); font-size: .78rem; }
+.school-code { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line-strong, var(--line)); }
+.school-code b { font-size: 1.3rem; letter-spacing: .14em; font-variant-numeric: tabular-nums; }
+.set-row small.blk { display: block; }
+.set-row small.blk .i { width: 12px; height: 12px; vertical-align: -1px; }
+.chips.wrap { flex-wrap: wrap; overflow: visible; }

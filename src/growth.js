@@ -40,6 +40,11 @@ async function discountFor(userId, service, fare, code) {
   const fr = s.growth.firstRide;
   const first = fr.enabled && fr.percent > 0 && await firstRideEligible(userId);
   if (first) best = { discount: round100(Math.min(fr.max, (fare * fr.percent) / 100)), label: `First ride: ${fr.percent}% off`, code: null };
+  // Flytte Pass: a percentage off every ride, up to a cap.
+  if (s.pass.enabled && s.pass.percent > 0 && await require('./pass').active(userId)) {
+    const d = round100(Math.min(s.pass.maxDiscount, (fare * s.pass.percent) / 100));
+    if (d > best.discount) best = { discount: d, label: `Flytte Pass: ${s.pass.percent}% off`, code: null, pass: true };
+  }
 
   if (code) {
     const c = String(code).trim().toUpperCase();
@@ -58,7 +63,7 @@ async function discountFor(userId, service, fare, code) {
     d = round100(Math.min(d, fare));
     const label = p.kind === 'flat' ? `${c}: UGX ${p.value.toLocaleString()} off` : `${c}: ${p.value}% off`;
     if (d >= best.discount) best = { discount: d, label, code: c };
-    else best.promoError = 'Your first-ride discount is bigger, so we kept that.';
+    else best.promoError = best.pass ? 'Your Flytte Pass discount is bigger, so we kept that.' : 'Your first-ride discount is bigger, so we kept that.';
   }
   best.discount = Math.max(0, Math.min(best.discount, fare));
   return best;

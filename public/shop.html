@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF">
+<title>Order delivery</title>
+<meta name="description" content="Ask the shop to deliver your order with Flytte.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  body { background: var(--bg); }
+  .shop-page { max-width: 440px; margin: 0 auto; padding: 24px 16px 40px; }
+  .shop-brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.05rem; color: var(--ink); text-decoration: none; margin-bottom: 18px; }
+  .shop-card { background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow-card); padding: 20px; }
+  .shop-card h1 { font-size: 1.45rem; margin: 0; }
+  .shop-done { text-align: center; padding: 10px 0; }
+  .shop-done .big { font-size: 2.6rem; }
+  .spot { margin-top: 6px; padding: 12px; border-radius: 12px; background: var(--surface); font-size: .9rem; }
+  .spot.set { background: var(--brand-soft); font-weight: 600; }
+  .res { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 10px 4px; border-bottom: 1px solid var(--line); font: inherit; color: var(--ink); cursor: pointer; }
+  .res small { display: block; color: var(--muted); font-size: .8rem; }
+</style>
+</head>
+<body>
+<main class="shop-page">
+  <a class="shop-brand" href="/about">
+    <svg width="26" height="19" viewBox="0 0 140 100" aria-hidden="true"><g fill="#F5C518"><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg>Delivered by Flytte</a>
+  <div class="shop-card" id="card" aria-live="polite"><i class="sk" style="width:70%;height:22px"></i><i class="sk" style="width:90%;height:12px;margin-top:12px"></i></div>
+  <p class="tiny muted" style="text-align:center;margin-top:16px">You pay the shop for your order as you normally do. The shop pays for the delivery.</p>
+</main>
+<script>
+(function () {
+  const slug = location.pathname.split('/').pop();
+  const card = document.getElementById('card');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const done = (icon, title, text) => { card.innerHTML = `<div class="shop-done"><div class="big" aria-hidden="true">${icon}</div><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p></div>`; };
+  let drop = null;
+
+  async function load() {
+    let s;
+    try {
+      const r = await fetch('/api/shop/' + encodeURIComponent(slug));
+      s = await r.json();
+      if (!r.ok) return done('🔗', 'Link not found', s.error || 'This shop link isn’t valid.');
+    } catch { return done('📶', 'No connection', 'Check your data or Wi-Fi and open the link again.'); }
+    document.title = `Order from ${s.name}`;
+    card.innerHTML = `
+      <h1>Get your order from ${esc(s.name)} delivered</h1>
+      <p class="small muted" style="margin:6px 0 14px">Tell ${esc(s.name)} what you ordered and where to bring it. They’ll send a Flytte rider and you can follow it live.</p>
+      <form id="f" novalidate>
+        <label for="nm">Your name</label><input id="nm" autocomplete="name" required>
+        <label for="ph">Your phone number</label><input id="ph" type="tel" inputmode="tel" placeholder="0772 123456" autocomplete="tel" required>
+        <label for="nt">What you ordered</label><textarea id="nt" rows="2" placeholder="e.g. 1 chicken pizza, order #114"></textarea>
+        <label for="q">Deliver to</label>
+        <div class="spot" id="spot">Search for your area or building, or use your location.</div>
+        <input id="q" type="search" placeholder="Search: Ntinda, Kisementi, Acacia Mall…" autocomplete="off" style="margin-top:8px">
+        <div id="res"></div>
+        <button class="btn btn-block" type="button" id="gps" style="margin-top:8px">📍 Use my location</button>
+        <p class="error" id="err" role="alert"></p>
+        <button class="btn btn-primary btn-block btn-lg" type="submit" id="go">Ask for delivery</button>
+      </form>`;
+    const $ = (id) => document.getElementById(id);
+    const setDrop = (p) => { drop = p; $('spot').textContent = p.address; $('spot').classList.add('set'); $('res').innerHTML = ''; };
+    let timer, seq = 0;
+    $('q').oninput = () => {
+      clearTimeout(timer);
+      const q = $('q').value.trim();
+      if (q.length < 2) { $('res').innerHTML = ''; return; }
+      timer = setTimeout(async () => {
+        const my = ++seq;
+        try {
+          const r = await fetch(`/api/shop/${encodeURIComponent(slug)}/places?q=${encodeURIComponent(q)}`).then((x) => x.json());
+          if (my !== seq) return;
+          const list = r.results || [];
+          $('res').innerHTML = list.map((p, i) => `<button type="button" class="res" data-i="${i}"><b>${esc(p.name)}</b><small>${esc(p.address || '')}</small></button>`).join('') || '<p class="tiny muted">No places found. Try another name, or use your location.</p>';
+          $('res').querySelectorAll('[data-i]').forEach((b) => b.onclick = () => { const p = list[+b.dataset.i]; $('q').value = p.name; setDrop({ lat: p.lat, lng: p.lng, address: [p.name, p.address].filter(Boolean).join(', ') }); });
+        } catch {}
+      }, 250);
+    };
+    $('gps').onclick = () => {
+      if (!navigator.geolocation) { $('err').textContent = 'Your phone can’t share its location here. Search instead.'; return; }
+      $('gps').disabled = true; $('gps').textContent = 'Finding you…';
+      navigator.geolocation.getCurrentPosition((p) => {
+        $('gps').disabled = false; $('gps').textContent = '📍 Use my location';
+        setDrop({ lat: p.coords.latitude, lng: p.coords.longitude, address: 'My location (shared from my phone)' });
+      }, () => { $('gps').disabled = false; $('gps').textContent = '📍 Use my location'; $('err').textContent = 'We couldn’t get your location. Search for the place instead.'; }, { enableHighAccuracy: true, timeout: 12000 });
+    };
+    $('f').onsubmit = async (e) => {
+      e.preventDefault();
+      const err = $('err'), btn = $('go');
+      err.textContent = '';
+      if (!drop) { err.textContent = 'Choose where it should be delivered.'; return; }
+      btn.disabled = true; btn.textContent = 'Sending…';
+      try {
+        const r = await fetch(`/api/shop/${encodeURIComponent(slug)}/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: $('nm').value, phone: $('ph').value, note: $('nt').value, drop }) });
+        const out = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(out.error || 'Something went wrong. Try again.');
+        done('✅', 'Request sent', `${s.name} has your request. When they send the rider you’ll get a link to follow it live and a code to give the rider.`);
+      } catch (x) { err.textContent = x.message; btn.disabled = false; btn.textContent = 'Ask for delivery'; }
+    };
+  }
+  load();
+})();
+</script>
+</body>
+</html>

@@ -622,7 +622,8 @@
       <div class="fare-row"><span class="muted">${t.paymentMethod === 'cash' ? 'Collect in cash' : 'Fare'}</span><b>${K.ugx(t.paymentMethod === 'cash' ? t.payable : t.fare)}</b></div>
       ${t.discount ? `<p class="tiny muted" style="margin:6px 0 0">${t.paymentMethod === 'cash' ? `The ${customer(t)} has a ${K.ugx(t.discount)} discount. Flytte adds it to your balance, so you still earn on the full ${K.ugx(t.fare)}.` : `Promo applied for the ${customer(t)}. You still earn on the full ${K.ugx(t.fare)}.`}</p>` : ''}
       ${t.goodsTotal ? `<p class="tiny muted" style="margin:6px 0 0">Delivery ${K.ugx(t.payable - t.goodsTotal)} + items ${K.ugx(t.goodsTotal)}${t.paymentMethod === 'cash' ? '' : '. The items come back to your balance in full when the customer pays.'}</p>` : ''}
-      ${t.status === 'in_progress' && t.needsDropCode ? `<label for="dcode" style="text-align:center">Ask the ${t.service === 'errand' ? 'customer' : 'recipient'} for the delivery code</label>
+      ${t.school ? `<p class="school-note">${K.ic('shield', 'sm')} School run · ${K.esc(t.rider.name)}. ${t.school.leg === 'morning' ? 'Hand the child to the school and ask them for the handover code.' : 'The school gives you the handover code before the child gets in.'}</p>` : ''}
+      ${t.status === 'in_progress' && t.needsDropCode ? `<label for="dcode" style="text-align:center">${t.school ? (t.school.leg === 'morning' ? 'Ask the school for the handover code' : 'Ask the parent for the delivery code') : `Ask the ${t.service === 'errand' ? 'customer' : 'recipient'} for the delivery code`}</label>
         <input id="dcode" class="pin-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="····" aria-label="Delivery code">` : ''}
       ${t.status === 'arrived' && t.service === 'errand' && t.errand.goodsTotal == null ? `
         <label for="gtotal">What did you spend on the items? (UGX)</label>
@@ -630,7 +631,7 @@
         <input type="file" id="gphoto" accept="image/*" capture="environment" hidden>
         <button class="btn btn-block" id="gphotoBtn" style="margin-top:8px">${K.ic('camera', 'sm')} Add a photo of the receipt</button>` : ''}
       ${t.status === 'arrived' && t.service !== 'errand' ? `
-        <label for="pin" style="text-align:center">Ask the ${customer(t)} for their 4-digit PIN</label>
+        <label for="pin" style="text-align:center">${t.school ? (t.school.leg === 'afternoon' ? 'Ask the school for the handover code' : 'Ask the parent for the 4-digit PIN') : `Ask the ${customer(t)} for their 4-digit PIN`}</label>
         <input id="pin" class="pin-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="····" aria-label="Trip PIN">` : ''}
       <div class="sheet-foot"><p class="error" id="err" style="margin:0 0 6px;min-height:0"></p>
       <div id="action"></div>

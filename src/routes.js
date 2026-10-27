@@ -15,6 +15,8 @@ const tg = require('./telegram');
 const { getSettings, updateSettings, quote } = require('./pricing');
 const surge = require('./surge');
 const places = require('./places');
+const pass = require('./pass');
+const biz = require('./business');
 const { haversineKm: haversine } = require('./pricing');
 
 const r = express.Router();
@@ -95,6 +97,7 @@ r.get('/config', wrap(async (req, res) => {
     minWithdrawal: s.minWithdrawal,
     stopFee: s.stopFee || 0,
     errand: { shopFee: s.errand.shopFee, maxBudget: s.errand.maxBudget },
+    pass: { enabled: s.pass.enabled, price: s.pass.price, days: s.pass.days, percent: s.pass.percent, maxDiscount: s.pass.maxDiscount },
     growth: { firstRide: s.growth.firstRide, referral: s.growth.referral, rewards: s.growth.rewards },
     drivers: { freeWaitMin: s.drivers.freeWaitMin, noShowFee: s.drivers.noShowFee, cancelFee: s.drivers.cancelFee, cancelGraceMin: s.drivers.cancelGraceMin, cashDebtLimit: s.drivers.cashDebtLimit, headingHomePerDay: s.drivers.headingHomePerDay },
   });
@@ -545,7 +548,7 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
     await db.query('UPDATE users SET night_share = $1 WHERE id = $2', [JSON.stringify({ on: !!n.on, from }), req.user.id]);
   }
   if (payPref !== undefined) {
-    if (!['mtn', 'airtel', 'card', 'cash', 'wallet'].includes(payPref)) return bad(res, 'Choose a payment method.');
+    if (!['mtn', 'airtel', 'card', 'cash', 'wallet', 'business'].includes(payPref)) return bad(res, 'Choose a payment method.');
     await db.query('UPDATE users SET pay_pref = $1 WHERE id = $2', [payPref, req.user.id]);
   }
   if (payPhone !== undefined) {
@@ -657,6 +660,11 @@ r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   // Someone checking prices = demand signal; the home screen's own suggestion ("peek") doesn't count.
   if (!req.body.peek) surge.recordLook(req.user.id, pickup.lat, pickup.lng);
   const q = await quote(pickup, drop, req.body.distanceKm, req.body.durationMin, stops);
+  const myPass = await pass.active(req.user.id);
+  if (myPass) {
+    q.pass = true;
+    for (const o of q.options) { o.passSaved = o.fare - o.regularFare; o.fare = o.regularFare; o.surge = 1; o.surgeReasons = []; }
+  }
   // How far is the nearest free driver for each ride type?
   for (const o of q.options) {
     const near = rt.nearbyDrivers(pickup.lat, pickup.lng, o.id)[0];
@@ -671,7 +679,7 @@ r.post('/fare/estimate', auth.requireAuth(), wrap(async (req, res) => {
   }
   q.promoCode = code;
   // Lock these prices for 2 minutes: booking within that time pays exactly this.
-  q.quoteId = surge.saveQuote({ userId: req.user.id, pickup, drop, stops, km: q.distanceKm, promoCode: code, options: q.options.map((o) => ({ id: o.id, fare: o.fare, regularFare: o.regularFare, durationMin: o.durationMin, surge: o.surge })) });
+  q.quoteId = surge.saveQuote({ userId: req.user.id, pickup, drop, stops, km: q.distanceKm, promoCode: code, options: q.options.map((o) => ({ id: o.id, fare: o.fare, regularFare: o.regularFare, durationMin: o.durationMin, surge: o.surge, passSaved: o.passSaved || 0 })) });
   q.lockedForSec = 120;
   res.json(q);
 }));
@@ -712,7 +720,17 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const s = await getSettings();
   const svc = typeof service === 'string' && Object.prototype.hasOwnProperty.call(s.services, service) ? s.services[service] : null;
   if (!svc || !svc.enabled) return bad(res, 'That ride type is not available.');
-  if (!['cash', 'wallet', 'momo', 'card'].includes(paymentMethod)) return bad(res, 'Choose a payment method.');
+  if (!['cash', 'wallet', 'momo', 'card', 'business'].includes(paymentMethod)) return bad(res, 'Choose a payment method.');
+  if (paymentMethod === 'business' && service === 'errand') return bad(res, 'Errands can’t be charged to a company account. Pay another way.');
+  // A shop sending a delivery to its customer: it doesn't take over the staff member's own trip screen,
+  // and a shop can have many on the road at once.
+  const companyId = req.body.companyId ? Math.round(Number(req.body.companyId)) || null : null;
+  let merchant = false;
+  if (req.body.merchant === true) {
+    const c = paymentMethod === 'business' && companyId && await db.one(`SELECT c.kind FROM company_members m JOIN companies c ON c.id = m.company_id WHERE m.user_id = $1 AND m.company_id = $2 AND m.active AND c.status = 'active'`, [req.user.id, companyId]);
+    if (!c || c.kind !== 'merchant' || service !== 'parcel') return bad(res, 'Shop deliveries are sent from a Flytte for Shops account.');
+    merchant = true;
+  }
   if (['momo', 'card'].includes(paymentMethod) && !payments.available()) return bad(res, 'Mobile Money and card payments aren’t available yet. Choose cash or your Flytte wallet.');
 
   // Scheduled ride: between 20 minutes and 7 days ahead.
@@ -723,9 +741,9 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
     if (!Number.isFinite(ahead) || ahead < 19 * 60e3 || ahead > 7 * 86400e3) return bad(res, 'Schedule between 20 minutes and 7 days from now.');
     scheduledFor = when;
   }
-  if (!scheduledFor) {
+  if (!scheduledFor && !merchant) {
     const busy = await db.one(
-      "SELECT id FROM trips WHERE rider_id = $1 AND status IN ('requested','accepted','arrived','in_progress')", [req.user.id]);
+      "SELECT id FROM trips WHERE rider_id = $1 AND NOT merchant AND status IN ('requested','accepted','arrived','in_progress')", [req.user.id]);
     if (busy) return bad(res, 'You already have a trip in progress.');
   } else {
     const n = await db.one("SELECT COUNT(*)::int AS n FROM trips WHERE rider_id = $1 AND status = 'scheduled'", [req.user.id]);
@@ -746,17 +764,29 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const locked = surge.getQuote(req.body.quoteId, req.user.id);
   const lockedOpt = locked && haversine(locked.pickup, pickup) < 0.15 && haversine(locked.drop, drop) < 0.15 && sameStops(locked.stops, stops) && locked.options.find((o) => o.id === service);
   if (lockedOpt) { km = locked.km; min = lockedOpt.durationMin; fare = scheduledFor ? lockedOpt.regularFare : lockedOpt.fare; }
+  const myPass = paymentMethod === 'business' ? null : await pass.active(req.user.id);
+  let surgeSaved = 0;
+  if (lockedOpt) { if (myPass && !scheduledFor) { surgeSaved = Math.max(0, fare - lockedOpt.regularFare) || lockedOpt.passSaved || 0; fare = lockedOpt.regularFare; } }
   else {
     const q = await quote(pickup, drop, distanceKm, durationMin, stops);
     const o = q.options.find((x) => x.id === service);
-    km = q.distanceKm; min = o.durationMin; fare = scheduledFor ? o.regularFare : o.fare; // scheduled rides never surge
+    km = q.distanceKm; min = o.durationMin; fare = scheduledFor || myPass ? o.regularFare : o.fare; // scheduled rides and Flytte Pass never surge
+    if (myPass && !scheduledFor) surgeSaved = o.fare - o.regularFare;
     const expected = Number(req.body.expectedFare);
     if (expected > 0 && fare > expected * 1.05 + 100) {
       return res.status(409).json({ error: `Prices have just changed. ${svc.name.replace('Flytte ', '')} is now UGX ${fare.toLocaleString()}.`, code: 'PRICE_CHANGED', fare });
     }
   }
-  const promo = await growth.discountFor(req.user.id, service, fare, req.body.promoCode || (locked && locked.promoCode));
+  // A company pays the full fare: personal offers (first ride, promo codes, Flytte Pass) are for personal rides.
+  const promo = paymentMethod === 'business' ? { discount: 0 } : await growth.discountFor(req.user.id, service, fare, req.body.promoCode || (locked && locked.promoCode));
+  let company = null;
+  if (paymentMethod === 'business') {
+    const ok = await biz.canCharge(req.user.id, companyId, fare);
+    if (ok.error) return bad(res, ok.error);
+    company = ok.company;
+  }
   const discount = promo.discount || 0;
+  const passSaving = myPass ? surgeSaved + (promo.pass ? discount : 0) : 0;
   if (paymentMethod === 'wallet' && walletlock.needsPass(req.user, req.body.walletPass)) return walletLocked(res);
   // "Buy it for me": what to buy, a budget for the goods, and whether substitutes are fine.
   let errandJson = null, budget = 0;
@@ -787,11 +817,11 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await db.one(`
     INSERT INTO trips(rider_id, service, pickup_lat, pickup_lng, pickup_address, drop_lat, drop_lng, drop_address,
       distance_km, duration_min, fare, payment_method, pin, share_token, parcel, notes,
-      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver, stops, errand)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING id`,
+      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver, stops, errand, pass_saving, company_id, merchant)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING id`,
   [req.user.id, service, pickup.lat, pickup.lng, pickup.address, drop.lat, drop.lng, drop.address,
     km, min, fare, paymentMethod, pin, share, parcelJson, notes ? clean(notes, 200) || null : null,
-    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true, stops.length ? JSON.stringify(stops.map((x) => ({ lat: x.lat, lng: x.lng, address: x.address }))) : null, errandJson]);
+    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true, stops.length ? JSON.stringify(stops.map((x) => ({ lat: x.lat, lng: x.lng, address: x.address }))) : null, errandJson, passSaving, company ? company.id : null, merchant]);
 
   if (req.body.quoteId) surge.dropQuote(req.body.quoteId);
   if (!scheduledFor) { surge.recordRequest(service, pickup.lat, pickup.lng); rt.dispatch(t.id).catch(console.error); }
@@ -806,7 +836,7 @@ r.get('/trips/active', auth.requireAuth(), wrap(async (req, res) => {
   // Also return a just-finished trip that still needs rating or payment. For drivers the trip
   // under way comes first; a lined-up next trip is returned alongside it.
   const { rows } = await db.query(`
-    SELECT id, status FROM trips WHERE ${col} = $1 AND (
+    SELECT id, status FROM trips WHERE ${col} = $1 AND ${driver ? 'TRUE' : 'NOT merchant'} AND (
       status IN ('requested','accepted','arrived','in_progress')
       OR (status = 'completed' AND completed_at > NOW() - INTERVAL '2 hours' AND (
         ${driver ? 'driver_rating IS NULL' : "rider_rating IS NULL OR payment_status = 'pending'"}))
@@ -819,7 +849,7 @@ r.get('/trips/active', auth.requireAuth(), wrap(async (req, res) => {
 
 r.get('/trips/history', auth.requireAuth(), wrap(async (req, res) => {
   const col = req.user.role === 'driver' ? 'driver_id' : 'rider_id';
-  const { rows } = await db.query(`SELECT id FROM trips WHERE ${col} = $1 ORDER BY id DESC LIMIT 30`, [req.user.id]);
+  const { rows } = await db.query(`SELECT id FROM trips WHERE ${col} = $1 ${req.user.role === 'driver' ? '' : 'AND NOT merchant'} ORDER BY id DESC LIMIT 30`, [req.user.id]);
   const out = [];
   for (const row of rows) out.push(rt.view(await rt.loadTrip(row.id), req.user.role === 'driver' ? 'driver' : 'rider'));
   res.json(out);
@@ -866,6 +896,7 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
   // A late cancel pays the driver for their time (see cancelFeeDue), from the wallet when it covers it.
   const s = await getSettings();
   const due = cancelFeeDue(t, s.drivers);
+  const passFree = due > 0 && !!(await pass.active(t.rider_id));
   let fee = 0, done = false;
   await db.tx(async (tx) => {
     const fresh = await tx.one("UPDATE trips SET status = 'cancelled', cancelled_by = $1, cancel_reason = $2 WHERE id = $3 AND status = $4 RETURNING id",
@@ -873,6 +904,11 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
     if (!fresh) return;
     done = true;
     if (!due || !t.driver_id) return;
+    if (passFree) {
+      await tx.query('UPDATE drivers SET earnings_balance = earnings_balance + $1 WHERE user_id = $2', [due, t.driver_id]);
+      await tx.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'cancel_fee',$2,$3,'Cancellation fee, paid by Flytte (the rider has Flytte Pass)')", [t.driver_id, due, t.id]);
+      return;
+    }
     const rider = await tx.one('SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE', [t.rider_id]);
     if (!rider || rider.wallet_balance < due) return;
     fee = due;
@@ -886,10 +922,10 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
   rt.clearOffer(t.id);
   if (t.driver_id) {
     rt.setDriverFree(t.driver_id, t.id);
-    if (['accepted', 'arrived'].includes(t.status)) dtools.push(t.driver_id, { type: 'cancelled', tag: `trip-${t.id}`, title: 'Trip cancelled', body: fee ? `The rider cancelled. UGX ${fee.toLocaleString()} cancellation fee added to your balance.` : 'The rider cancelled. You’re free for the next request.' }, { ttl: 300 }).catch(() => {});
+    if (['accepted', 'arrived'].includes(t.status)) dtools.push(t.driver_id, { type: 'cancelled', tag: `trip-${t.id}`, title: 'Trip cancelled', body: passFree ? `The rider cancelled. UGX ${due.toLocaleString()} cancellation fee added to your balance.` : fee ? `The rider cancelled. UGX ${fee.toLocaleString()} cancellation fee added to your balance.` : 'The rider cancelled. You’re free for the next request.' }, { ttl: 300 }).catch(() => {});
   }
   await rt.broadcast(t.id);
-  res.json({ ok: true, fee });
+  res.json({ ok: true, fee, passFree });
 }));
 
 r.post('/trips/:id/rate', auth.requireAuth('rider', 'driver'), wrap(async (req, res) => {
@@ -1211,6 +1247,7 @@ r.post('/trips/:id/complete', auth.requireAuth('driver'), wrap(async (req, res) 
     if (fresh) { settled = await ledger.settleCompletedTrip(tx, fresh); bonuses = await dtools.payBonuses(tx, req.user.id); }
   });
   rt.setDriverFree(req.user.id, t.id);
+  if (t.plan_id) require('./school').afterCompleted({ ...t, driver_id: req.user.id }).catch(console.error);
   await rt.broadcast(t.id);
   places.learnFromTrip(t.id).catch((e) => console.error('learn places:', e.message));
   for (const b of bonuses) rt.notify(req.user.id, 'toast', { text: `🎉 Bonus reached: ${b.title}. UGX ${b.reward.toLocaleString()} added to your balance.` });
@@ -1294,6 +1331,29 @@ r.post('/rewards/redeem', auth.requireAuth('rider'), wrap(async (req, res) => {
   res.json({ ...out, walletBalance: u.wallet_balance });
 }));
 
+// ---------- Flytte Pass ----------
+r.get('/me/pass', auth.requireAuth('rider'), wrap(async (req, res) => res.json(await pass.summary(req.user.id))));
+r.post('/me/pass/buy', auth.requireAuth('rider'), limit(10, 3600e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
+  const s = await getSettings();
+  if (!s.pass.enabled) return bad(res, 'Flytte Pass isn’t available right now.');
+  if ((req.body || {}).method === 'momo') {
+    let out;
+    try { out = await payments.createCheckout({ user: req.user, amount: s.pass.price, purpose: 'pass', method: 'momo', baseUrl: baseUrl(req) }); }
+    catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
+    return res.json({ ...out, pass: out.demo ? await pass.summary(req.user.id) : undefined });
+  }
+  if (walletlock.needsPass(req.user, (req.body || {}).walletPass)) return walletLocked(res);
+  const out = await pass.buyWithWallet(req.user.id);
+  if (out.error) return bad(res, out.error);
+  res.json({ ok: true, pass: await pass.summary(req.user.id) });
+}));
+r.post('/me/pass/renew', auth.requireAuth('rider'), wrap(async (req, res) => {
+  const p = await pass.active(req.user.id);
+  if (!p) return bad(res, 'You don’t have a Flytte Pass right now.');
+  await db.query('UPDATE passes SET auto_renew = $1 WHERE id = $2', [(req.body || {}).on !== false, p.id]);
+  res.json(await pass.summary(req.user.id));
+}));
+
 // ---------- Wallet ----------
 r.get('/wallet', auth.requireAuth(), wrap(async (req, res) => {
   const { rows } = await db.query('SELECT type, amount, note, trip_id, created_at FROM transactions WHERE user_id = $1 ORDER BY id DESC LIMIT 40', [req.user.id]);
@@ -1312,7 +1372,7 @@ r.post('/wallet/topup', auth.requireAuth('rider'), wrap(async (req, res) => {
 }));
 
 // ---------- Payments (Flutterwave) ----------
-const paidText = (p) => p.purpose === 'split'
+const paidText = (p) => p.purpose === 'pass' ? 'Flytte Pass is on ✨ Enjoy your rides.' : p.purpose === 'split'
   ? `${p.payer_name || 'A friend'} paid their share. UGX ${Number(p.amount).toLocaleString()} is in your Flytte Wallet.` : 'Payment received ✅';
 
 // ---------- Split the fare ----------
@@ -1364,7 +1424,7 @@ r.post('/split/:token/pay', limit(10, 10 * 60e3), wrap(async (req, res) => {
 
 r.get('/payments/callback', wrap(async (req, res) => {
   const ref = String(req.query.tx_ref || '').slice(0, 80);
-  const result = /^(?:FLY|KWT)-(TOP|TRP|DBT|SPL)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
+  const result = /^(?:FLY|KWT)-(TOP|TRP|DBT|SPL|PAS|BIZ)-\d+-[0-9a-f]{8}$/.test(ref) ? await payments.verifyAndApply(ref) : { ok: false };
   const p = ref && await db.one('SELECT * FROM payments WHERE tx_ref = $1', [ref]);
   if (p && p.trip_id && result.ok) await rt.broadcast(p.trip_id);
   if (p && result.ok) rt.notify(p.user_id, 'toast', { text: paidText(p) });
@@ -1373,7 +1433,7 @@ r.get('/payments/callback', wrap(async (req, res) => {
     const sp = await db.one('SELECT token FROM fare_splits WHERE trip_id = $1', [p.trip_id]);
     return res.redirect(`/split/${sp ? sp.token : ''}?payment=${outcome}`);
   }
-  res.redirect(`${p && p.purpose === 'debt' ? '/driver' : '/'}?payment=${outcome}`);
+  res.redirect(`${p && p.purpose === 'debt' ? '/driver' : p && p.purpose === 'company' ? '/business' : '/'}?payment=${outcome}`);
 }));
 
 r.post('/payments/webhook', wrap(async (req, res) => {
@@ -1599,7 +1659,7 @@ r.get('/admin/drivers', admin, wrap(async (req, res) => {
     id: x.id, name: x.name, phone: x.phone, status: x.status, vehicleType: x.vehicle_type, plate: x.plate,
     vehicle: [x.vehicle_color, x.vehicle_make].filter(Boolean).join(' '), licenseNo: x.license_no, momoNumber: x.momo_number,
     balance: x.earnings_balance, trips: x.trips, rating: x.rating_count ? Math.round((x.rating_sum / x.rating_count) * 10) / 10 : null,
-    createdAt: x.created_at, docs: x.docs, woman: !!x.woman,
+    createdAt: x.created_at, docs: x.docs, woman: !!x.woman, school: !!x.school_ok,
     nextExpiry: x.next_expiry ? (x.next_expiry instanceof Date ? x.next_expiry.toISOString() : String(x.next_expiry)).slice(0, 10) : null,
     acceptanceRate: x.ev_acc + x.ev_rej ? Math.round((x.ev_acc / (x.ev_acc + x.ev_rej)) * 100) : null,
     cancellationRate: x.ev_acc ? Math.round((x.ev_can / x.ev_acc) * 100) : null,
@@ -1738,6 +1798,14 @@ r.post('/admin/drivers/:id/woman', admin, wrap(async (req, res) => {
   res.json({ ok: true, woman: d.woman });
 }));
 
+// School runs: only drivers the team has vetted (checks, references, a clean record) carry children.
+r.post('/admin/drivers/:id/school', admin, wrap(async (req, res) => {
+  const d = await db.one('UPDATE drivers SET school_ok = $1 WHERE user_id = $2 RETURNING user_id, school_ok', [req.body.school === true, Number(req.params.id)]);
+  if (!d) return bad(res, 'Driver not found.', 404);
+  rt.setSchool(d.user_id, d.school_ok);
+  res.json({ ok: true, school: d.school_ok });
+}));
+
 r.post('/admin/drivers/:id/status', admin, wrap(async (req, res) => {
   const status = req.body.status;
   if (!['approved', 'suspended', 'pending', 'rejected'].includes(status)) return bad(res, 'Invalid status.');
@@ -1769,6 +1837,38 @@ r.get('/admin/riders', admin, wrap(async (req, res) => {
 r.post('/admin/users/:id/block', admin, wrap(async (req, res) => {
   await db.query("UPDATE users SET blocked = $1 WHERE id = $2 AND role <> 'admin'", [!!req.body.blocked, Number(req.params.id)]);
   if (req.body.blocked) rt.forceOffline(Number(req.params.id));
+  res.json({ ok: true });
+}));
+
+// Business and shop accounts.
+r.get('/admin/companies', admin, wrap(async (req, res) => {
+  const from = require('./business').monthStart();
+  const { rows } = await db.query(`SELECT c.*,
+      (SELECT COUNT(*)::int FROM company_members m WHERE m.company_id = c.id AND m.active) AS people,
+      (SELECT COUNT(*)::int FROM trips t WHERE t.company_id = c.id AND t.status = 'completed' AND t.created_at >= $1) AS month_trips,
+      (SELECT COALESCE(SUM(t.fare - t.discount), 0)::int FROM trips t WHERE t.company_id = c.id AND t.status = 'completed' AND t.created_at >= $1) AS month_spent,
+      (SELECT u.name FROM company_members m JOIN users u ON u.id = m.user_id WHERE m.company_id = c.id AND m.role = 'admin' ORDER BY m.added_at LIMIT 1) AS admin_name,
+      (SELECT u.phone FROM company_members m JOIN users u ON u.id = m.user_id WHERE m.company_id = c.id AND m.role = 'admin' ORDER BY m.added_at LIMIT 1) AS admin_phone
+    FROM companies c ORDER BY c.balance_due DESC, c.id DESC LIMIT 500`, [from]);
+  res.json(rows.map((c) => ({ id: c.id, kind: c.kind, name: c.name, email: c.email, status: c.status, balanceDue: c.balance_due, creditLimit: c.credit_limit,
+    people: c.people, monthTrips: c.month_trips, monthSpent: c.month_spent, adminName: c.admin_name, adminPhone: c.admin_phone })));
+}));
+r.post('/admin/companies/:id', admin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const c = await db.one('SELECT * FROM companies WHERE id = $1', [Number(req.params.id)]);
+  if (!c) return bad(res, 'Account not found.', 404);
+  const lim = b.creditLimit !== undefined ? Math.max(0, Math.min(50000000, Math.round(Number(b.creditLimit) || 0))) : c.credit_limit;
+  const status = ['active', 'paused'].includes(b.status) ? b.status : c.status;
+  await db.query('UPDATE companies SET credit_limit = $1, status = $2 WHERE id = $3', [lim, status, c.id]);
+  res.json({ ok: true });
+}));
+
+// Start looking for a driver for a scheduled ride now (e.g. a school run the team wants covered early).
+r.post('/admin/trips/:id/search-now', admin, wrap(async (req, res) => {
+  const t = await db.one("UPDATE trips SET status = 'requested', created_at = NOW() WHERE id = $1 AND status = 'scheduled' RETURNING id", [Number(req.params.id)]);
+  if (!t) return bad(res, 'Only a scheduled ride can be started early.');
+  await rt.broadcast(t.id);
+  rt.dispatch(t.id).catch(console.error);
   res.json({ ok: true });
 }));
 
@@ -1847,5 +1947,9 @@ r.post('/admin/withdrawals/:id', admin, wrap(async (req, res) => {
   rt.notify(out.driver_id, 'toast', { text: status === 'paid' ? `UGX ${out.amount.toLocaleString()} sent to your Mobile Money 💸` : 'Withdrawal was rejected and refunded to your balance.' });
   res.json({ ok: true });
 }));
+
+
+// Flytte for Business, Flytte for Shops and school runs have their own files.
+require('./bizroutes')(r, { wrap, bad, limit, clean, baseUrl, point, walletLocked });
 
 module.exports = r;
