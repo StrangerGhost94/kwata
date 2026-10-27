@@ -18,6 +18,11 @@ async function settleCompletedTrip(t, trip) {
   let method = trip.payment_method;
   let paymentStatus = 'pending';
 
+  if (method === 'business') {
+    await require('./business').chargeTrip(t, trip, commission);
+    paymentStatus = 'paid';
+  }
+
   if (method === 'wallet') {
     const rider = await t.one('SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE', [trip.rider_id]);
     if (rider.wallet_balance >= payable + goods) {

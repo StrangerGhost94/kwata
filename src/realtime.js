@@ -76,6 +76,7 @@ function view(t, role) {
     tip: t.tip || 0, tipMethod: t.tip_method || null,
     scheduledFor: t.scheduled_for || null, womanDriver: !!t.woman_driver,
     passenger: t.passenger ? JSON.parse(t.passenger) : null,
+    school: t.plan_id ? { leg: t.plan_leg } : null,
     driver: t.driver_id ? {
       id: t.driver_id, name: t.driver_name, rating: rating(t.d_rs, t.d_rc), trips: t.d_trips,
       photo: t.d_photo ? `/api/drivers/${t.driver_id}/photo?v=${new Date(t.d_photo).getTime()}` : null, // a newly approved photo shows straight away
@@ -167,7 +168,8 @@ function nightShareAlert(t) { riderAlert(t, 'night_share'); }
 async function broadcast(tripId) {
   const t = await loadTrip(tripId);
   if (!t) return null;
-  if (t.status === 'accepted') riderAlert(t, 'accepted');
+  if (t.merchant) { /* a shop's delivery: the shop follows it on its Business page, not as its own trip */ }
+  else if (t.status === 'accepted') riderAlert(t, 'accepted');
   else if (t.status === 'arrived') riderAlert(t, 'arrived');
   else if (t.status === 'completed') riderAlert(t, 'completed');
   else if (t.status === 'no_drivers') riderAlert(t, 'no_drivers');
@@ -177,7 +179,7 @@ async function broadcast(tripId) {
   if (['completed', 'cancelled', 'no_drivers'].includes(t.status)) setTimeout(() => chats.delete(t.id), 10 * 60e3);
   const ld = t.driver_id && drivers.get(t.driver_id);
   if (ld && ld.tripId === t.id) { ld.tripStatus = t.status; ld.drop = { lat: t.drop_lat, lng: t.drop_lng }; ld.pickup = { lat: t.pickup_lat, lng: t.pickup_lng }; ld.trip = t; }
-  io.to(`user:${t.rider_id}`).emit('trip:update', view(t, 'rider'));
+  if (!t.merchant) io.to(`user:${t.rider_id}`).emit('trip:update', view(t, 'rider'));
   if (t.driver_id) io.to(`user:${t.driver_id}`).emit('trip:update', view(t, 'driver'));
   io.to(`share:${t.id}`).emit('trip:update', view(t, 'public'));
   io.to('admin').emit('admin:trip', view(t, 'admin'));
@@ -198,6 +200,7 @@ async function candidates(trip, tried) {
     if (!d.online || !d.lat || tried.has(id) || id === trip.rider_id) continue;
     if (!d.services.includes(trip.service)) continue;
     if (trip.woman_driver && !d.woman) continue;   // the rider asked for a woman driver
+    if (trip.plan_id && !d.school) continue;       // school runs: only drivers the team has vetted for children
     const connected = !!io.sockets.adapter.rooms.get(`user:${id}`);
     // Phone locked or app in the background: still reachable through a ride alert, for a while.
     const reachable = connected || (d.away && d.push && d.updatedAt && Date.now() - d.updatedAt < AWAY_MS);
@@ -225,8 +228,14 @@ async function candidates(trip, tried) {
     const owing = new Set(rows.filter((r) => r.earnings_balance <= -s.drivers.cashDebtLimit).map((r) => r.user_id));
     for (let i = list.length - 1; i >= 0; i--) if (owing.has(list[i].id)) list.splice(i, 1);
   }
-  // Free drivers first, then by distance.
-  return list.sort((a, b) => (a.queued - b.queued) || (a.km - b.km));
+  // Free drivers first, then by distance. A school run goes to the child's usual driver first.
+  list.sort((a, b) => (a.queued - b.queued) || (a.km - b.km));
+  if (trip.plan_id) {
+    const p = await db.one('SELECT preferred_driver_id FROM ride_plans WHERE id = $1', [trip.plan_id]);
+    const i = p && p.preferred_driver_id ? list.findIndex((x) => x.id === p.preferred_driver_id) : -1;
+    if (i > 0) list.unshift(...list.splice(i, 1));
+  }
+  return list;
 }
 
 async function dispatch(tripId, excludeDriverId) {
@@ -410,7 +419,7 @@ function init(server) {
       }
       const d = drivers.get(u.id);
       d.services = dv ? dv.services.split(',') : [];
-      d.name = u.name; d.plate = dv && dv.plate; d.vehicle = dv && dv.vehicle_type; d.woman = !!(dv && dv.woman);
+      d.name = u.name; d.plate = dv && dv.plate; d.vehicle = dv && dv.vehicle_type; d.woman = !!(dv && dv.woman); d.school = !!(dv && dv.school_ok);
       if (active) { d.busy = true; d.tripId = active.id; d.tripStatus = active.status; d.queuedTripId = actives[1] ? actives[1].id : null; }
       d.away = false; d.visible = true; clearTimeout(d.awayTimer);
       dtools.hasPush(u.id).then((v) => { d.push = v; }).catch(() => {});
@@ -513,6 +522,7 @@ function setHome(driverId, place) {
   if (d) d.home = place ? { lat: place.lat, lng: place.lng, address: place.address } : null;
 }
 function setWoman(driverId, woman) { const d = drivers.get(driverId); if (d) d.woman = !!woman; }
+function setSchool(driverId, ok) { const d = drivers.get(driverId); if (d) d.school = !!ok; }
 
 function driverState(driverId) {
   const d = drivers.get(driverId);
@@ -527,7 +537,7 @@ function forceOffline(driverId) {
   notify(driverId, 'driver:forced_offline', {});
 }
 
-module.exports = { setWoman, nightShareAlert,
+module.exports = { setWoman, setSchool, nightShareAlert,
   init, broadcast, messages, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
   liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, setHome, driverState, markPush, updateDriverVehicle, ACTIVE,
   driversSnapshot: () => [...drivers.values()],

@@ -25,14 +25,14 @@ function newRef(prefix) {
 }
 
 // `payer`: someone other than the account holder pays (a friend's share of a split fare).
-async function createCheckout({ user, amount, purpose, tripId, method, baseUrl, payer }) {
+async function createCheckout({ user, amount, purpose, tripId, method, baseUrl, payer, companyId }) {
   amount = Math.round(amount);
   if (!available()) throw new PaymentsUnavailable('Mobile Money and card payments aren’t available yet. Pay with cash for now.');
   if (!(amount > 0)) throw new PaymentsUnavailable('Nothing to pay.');
-  const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : purpose === 'debt' ? 'FLY-DBT' : purpose === 'split' ? 'FLY-SPL' : 'FLY-TRP');
+  const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : purpose === 'debt' ? 'FLY-DBT' : purpose === 'split' ? 'FLY-SPL' : purpose === 'pass' ? 'FLY-PAS' : purpose === 'company' ? 'FLY-BIZ' : 'FLY-TRP');
   await db.query(
-    'INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount, payer_name) VALUES ($1,$2,$3,$4,$5,$6)',
-    [tx_ref, user.id, purpose, tripId || null, amount, payer ? payer.name : null]
+    'INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount, payer_name, company_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [tx_ref, user.id, purpose, tripId || null, amount, payer ? payer.name : null, companyId || null]
   );
 
   if (demo()) {
@@ -57,7 +57,7 @@ async function createCheckout({ user, amount, purpose, tripId, method, baseUrl, 
     },
     customizations: {
       title: 'Flytte',
-      description: purpose === 'topup' ? 'Flytte wallet top-up' : purpose === 'debt' ? 'Flytte commission payment' : purpose === 'split' ? 'Your share of a Flytte trip' : `Flytte trip #${tripId}`,
+      description: purpose === 'topup' ? 'Flytte wallet top-up' : purpose === 'debt' ? 'Flytte commission payment' : purpose === 'split' ? 'Your share of a Flytte trip' : purpose === 'pass' ? 'Flytte Pass, 30 days' : purpose === 'company' ? 'Flytte for Business statement' : `Flytte trip #${tripId}`,
     },
   };
   const r = await fetch('https://api.flutterwave.com/v3/payments', {
@@ -116,6 +116,11 @@ async function applyPayment(tx_ref, providerRef) {
       // A friend's share of a split fare goes into the rider's wallet; the trip itself is paid as usual.
       await ledger.creditWallet(t, p.user_id, p.amount, `Split from ${p.payer_name || 'a friend'} (trip #${p.trip_id})`);
       await t.query('UPDATE fare_splits SET paid = paid + 1 WHERE trip_id = $1', [p.trip_id]);
+    } else if (p.purpose === 'pass') {
+      await t.query("INSERT INTO transactions(user_id, type, amount, note) VALUES ($1,'pass',0,$2)", [p.user_id, `Flytte Pass paid by Mobile Money (${tx_ref})`]);
+      await require('./pass').grant(t, p.user_id, p.amount, 'momo');
+    } else if (p.purpose === 'company') {
+      await require('./business').applyPayment(t, p);
     } else if (p.purpose === 'trip' && p.trip_id) {
       await ledger.markTripPaid(t, p.trip_id);
     }

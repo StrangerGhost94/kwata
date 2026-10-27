@@ -27,6 +27,10 @@ const DEFAULTS = {
   minWithdrawal: 5000,
   // "Buy it for me": a fee for the courier's shopping time, and the most a courier is asked to spend on goods.
   errand: { shopFee: 2000, maxBudget: 200000 },
+  // Flytte Pass: monthly subscription (see src/pass.js).
+  pass: { enabled: true, price: 15000, days: 30, percent: 10, maxDiscount: 3000 },
+  // Flytte for Business: the credit a new company account starts with (see src/business.js).
+  business: { enabled: true, creditLimit: 300000 },
   supportPhone: '',      // set the real line in Admin → Pricing (or SUPPORT_PHONE). Hidden in the apps until set.
   // Dynamic pricing (see src/surge.js). Caps keep fares affordable in Kampala.
   dynamic: { enabled: true, sensitivity: 0.35, maxBoda: 1.8, maxCar: 2.0, weather: true },
@@ -66,6 +70,8 @@ async function getSettings() {
   }
   s.dynamic = { ...DEFAULTS.dynamic, ...(s.dynamic || {}) };
   s.errand = { ...DEFAULTS.errand, ...(s.errand || {}) };
+  s.pass = { ...DEFAULTS.pass, ...(s.pass || {}) };
+  s.business = { ...DEFAULTS.business, ...(s.business || {}) };
   s.drivers = { ...DEFAULTS.drivers, ...(s.drivers || {}) };
   if (!Array.isArray(s.bonuses)) s.bonuses = [];
   const g = s.growth || {};
@@ -95,7 +101,7 @@ async function getSettings() {
 
 async function updateSettings(patch) {
   const current = await getSettings();
-  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'stopFee', 'errand', 'supportPhone', 'dynamic', 'growth', 'drivers', 'bonuses'];
+  const allowed = ['services', 'commissionPct', 'dispatchRadiusKm', 'offerTimeoutSec', 'minWithdrawal', 'stopFee', 'errand', 'pass', 'business', 'supportPhone', 'dynamic', 'growth', 'drivers', 'bonuses'];
   for (const key of allowed) {
     if (patch[key] === undefined) continue;
     let value = patch[key];
@@ -159,6 +165,14 @@ async function updateSettings(patch) {
       const num = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
       const c = { ...current.errand, ...(value || {}) };
       value = { shopFee: num(c.shopFee, 0, 50000, 2000), maxBudget: num(c.maxBudget, 5000, 2000000, 200000) };
+    } else if (key === 'pass') {
+      const num = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+      const c = { ...current.pass, ...(value || {}) };
+      value = { enabled: c.enabled !== false && c.enabled !== 'false', price: num(c.price, 1000, 500000, 15000), days: num(c.days, 7, 365, 30), percent: num(c.percent, 0, 50, 10), maxDiscount: num(c.maxDiscount, 0, 50000, 3000) };
+    } else if (key === 'business') {
+      const c = { ...current.business, ...(value || {}) };
+      const n = Math.round(Number(c.creditLimit));
+      value = { enabled: c.enabled !== false && c.enabled !== 'false', creditLimit: Number.isFinite(n) ? Math.min(50000000, Math.max(0, n)) : 300000 };
     } else if (key === 'supportPhone') {
       value = String(value || '').trim();
       if (value && !/^\+?[0-9][0-9 ]{7,17}$/.test(value)) continue; // digits, spaces and an optional +

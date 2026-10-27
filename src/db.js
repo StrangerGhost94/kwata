@@ -256,6 +256,91 @@ async function migrate() {
   ALTER TABLE payments ADD COLUMN IF NOT EXISTS payer_name TEXT;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS photo TEXT;
   ALTER TABLE trips ADD COLUMN IF NOT EXISTS errand TEXT;
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS pass_saving INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE IF NOT EXISTS passes (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    starts_at TIMESTAMPTZ NOT NULL,
+    ends_at TIMESTAMPTZ NOT NULL,
+    price INTEGER NOT NULL,
+    paid_via TEXT,
+    auto_renew BOOLEAN NOT NULL DEFAULT TRUE,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS passes_user_idx ON passes(user_id, status, ends_at);
+  CREATE TABLE IF NOT EXISTS companies (
+    id SERIAL PRIMARY KEY,
+    kind TEXT NOT NULL DEFAULT 'business',
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE,
+    email TEXT,
+    phone TEXT,
+    shop_address TEXT,
+    shop_lat DOUBLE PRECISION,
+    shop_lng DOUBLE PRECISION,
+    balance_due INTEGER NOT NULL DEFAULT 0,
+    credit_limit INTEGER NOT NULL DEFAULT 300000,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_by INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE TABLE IF NOT EXISTS company_members (
+    company_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    role TEXT NOT NULL DEFAULT 'staff',
+    monthly_budget INTEGER NOT NULL DEFAULT 0,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (company_id, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS company_ledger (
+    id SERIAL PRIMARY KEY,
+    company_id INTEGER NOT NULL,
+    trip_id INTEGER,
+    user_id INTEGER,
+    amount INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS company_ledger_idx ON company_ledger(company_id, created_at);
+  CREATE TABLE IF NOT EXISTS delivery_requests (
+    id SERIAL PRIMARY KEY,
+    company_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    address TEXT NOT NULL,
+    lat DOUBLE PRECISION,
+    lng DOUBLE PRECISION,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'new',
+    trip_id INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS company_id INTEGER;
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS merchant BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE payments ADD COLUMN IF NOT EXISTS company_id INTEGER;
+  ALTER TABLE drivers ADD COLUMN IF NOT EXISTS school_ok BOOLEAN NOT NULL DEFAULT FALSE;
+  CREATE TABLE IF NOT EXISTS ride_plans (
+    id SERIAL PRIMARY KEY,
+    parent_id INTEGER NOT NULL,
+    child_name TEXT NOT NULL,
+    home_address TEXT NOT NULL, home_lat DOUBLE PRECISION NOT NULL, home_lng DOUBLE PRECISION NOT NULL,
+    school_address TEXT NOT NULL, school_lat DOUBLE PRECISION NOT NULL, school_lng DOUBLE PRECISION NOT NULL,
+    school_contact_name TEXT, school_contact_phone TEXT,
+    days TEXT NOT NULL DEFAULT '1,2,3,4,5',
+    morning TEXT,
+    afternoon TEXT,
+    payment_method TEXT NOT NULL DEFAULT 'cash',
+    preferred_driver_id INTEGER,
+    handover_code TEXT NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS plan_id INTEGER;
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS plan_leg TEXT;
+  CREATE UNIQUE INDEX IF NOT EXISTS trips_plan_leg_idx ON trips(plan_id, plan_leg, scheduled_for) WHERE plan_id IS NOT NULL;
   ALTER TABLE trips ADD COLUMN IF NOT EXISTS goods_total INTEGER;
   CREATE TABLE IF NOT EXISTS errand_receipts (
     trip_id INTEGER PRIMARY KEY,

@@ -1,10 +1,10 @@
 // Flytte admin console
 (function () {
   const root = document.getElementById('root');
-  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['checks', 'Photo & plate checks'], ['driverRules', 'Driver rules'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['help', 'Customer help'], ['safety', 'Safety'], ['payouts', 'Payouts']];
+  const TABS = [['overview', 'Overview'], ['drivers', 'Drivers'], ['checks', 'Photo & plate checks'], ['driverRules', 'Driver rules'], ['riders', 'Riders'], ['trips', 'Trips'], ['pricing', 'Pricing'], ['promos', 'Promotions'], ['companies', 'Business'], ['help', 'Customer help'], ['safety', 'Safety'], ['payouts', 'Payouts']];
   // Phones: four sections at the bottom, the rest under More.
   const MTABS = [['overview', 'Overview', 'chart'], ['drivers', 'Drivers', 'idcard'], ['checks', 'Checks', 'camera'], ['trips', 'Trips', 'list'], ['more', 'More', 'menu']];
-  const MORE = [['help', 'Customer help', 'help'], ['riders', 'Riders', 'person'], ['payouts', 'Driver cash outs', 'cash'], ['safety', 'Safety alerts', 'shield'], ['driverRules', 'Driver rules', 'settings'], ['pricing', 'Pricing', 'tag'], ['promos', 'Promotions', 'gift']];
+  const MORE = [['help', 'Customer help', 'help'], ['riders', 'Riders', 'person'], ['payouts', 'Driver cash outs', 'cash'], ['safety', 'Safety alerts', 'shield'], ['driverRules', 'Driver rules', 'settings'], ['pricing', 'Pricing', 'tag'], ['promos', 'Promotions', 'gift'], ['companies', 'Business accounts', 'work']];
   let fitRaf = 0;
   let tab = location.hash.slice(1) || 'overview';
   let stats = {}, liveMap, liveLayer, liveTimer, sock;
@@ -53,7 +53,7 @@
     window.scrollTo(0, 0);
     const main = K.$('#main');
     main.innerHTML = K.skeleton('title-list', 5);
-    ({ overview, drivers, checks, driverRules, riders, trips, pricing, promos, help, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
+    ({ overview, drivers, checks, driverRules, riders, trips, pricing, promos, companies, help, safety, payouts }[tab] || overview)(main).catch((e) => { main.innerHTML = `<p class="error">${K.esc(e.message)}</p>`; });
   }
 
   // The rest of the sections, as a sheet.
@@ -166,7 +166,7 @@
         <td>${K.esc(d.licenseNo)}${expiryTag(d.nextExpiry)}</td><td>${d.trips}</td><td>${d.rating ? '★ ' + d.rating : '—'}</td>
         <td>${d.acceptanceRate == null ? '<span class="muted">—</span>' : `${d.acceptanceRate}% / ${d.cancellationRate ?? 0}%`}</td>
         <td>${d.balance < 0 ? `<span style="color:var(--stop)">${K.ugx(d.balance)}</span><br><span class="tiny muted">owes commission</span>` : K.ugx(d.balance)}</td><td>${badge(d.status)}</td>
-        <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}" data-plate="${K.esc(d.plate)}" data-veh="${K.esc(d.vehicle)}" data-woman="${d.woman ? 1 : ''}">${d.status === 'pending' ? 'Check & approve' : 'Documents'} (${d.docs || 0}/4)</button>
+        <td style="white-space:nowrap"><button class="btn btn-sm" data-docs="${d.id}" data-name="${K.esc(d.name)}" data-status="${d.status}" data-plate="${K.esc(d.plate)}" data-veh="${K.esc(d.vehicle)}" data-woman="${d.woman ? 1 : ''}" data-school="${d.school ? 1 : ''}">${d.status === 'pending' ? 'Check & approve' : 'Documents'} (${d.docs || 0}/4)</button>
         ${d.status !== 'approved' ? `<button class="btn btn-primary btn-sm" data-id="${d.id}" data-s="approved">Approve</button>` : `<button class="btn btn-sm" data-id="${d.id}" data-s="suspended">Suspend</button>`}
         <button class="btn btn-ghost btn-sm" data-pw="${d.id}" data-name="${K.esc(d.name)}">Reset password</button></td></tr>`).join('') || '<tr><td colspan="8" class="muted">No drivers yet. Click “Add driver” after you’ve met and checked them.</td></tr>'}
       </tbody></table></div>`;
@@ -176,7 +176,7 @@
     });
     bindReset(main);
     K.$('#addDriver').onclick = addDriver;
-    main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status, { plate: b.dataset.plate, vehicle: b.dataset.veh, woman: !!b.dataset.woman }));
+    main.querySelectorAll('[data-docs]').forEach((b) => b.onclick = () => showDocs(b.dataset.docs, b.dataset.name, b.dataset.status, { plate: b.dataset.plate, vehicle: b.dataset.veh, woman: !!b.dataset.woman, school: !!b.dataset.school }));
   }
 
   function expiryTag(day) {
@@ -298,11 +298,17 @@
         <p class="small muted">${status !== 'approved' ? 'Approve only if the photo is clearly the person on the ID and permit, and the plate in the vehicle photo is the one typed. Approving the driver approves their photo and plate.' : 'This driver is approved. Photo and plate changes come to Photo & plate checks.'}</p>
         <label class="row" style="gap:8px;align-items:flex-start;margin-top:12px;font-weight:600"><input type="checkbox" id="wd" ${veh.woman ? 'checked' : ''} style="width:auto;margin-top:3px">
           <span>Woman driver<br><span class="small muted" style="font-weight:400">Gets requests from riders who ask for a woman driver. Tick only when the ID confirms it.</span></span></label>
+        <label class="row" style="gap:8px;align-items:flex-start;margin-top:10px;font-weight:600"><input type="checkbox" id="sd" ${veh.school ? 'checked' : ''} style="width:auto;margin-top:3px">
+          <span>Vetted for school runs<br><span class="small muted" style="font-weight:400">Can carry children on school runs. Tick only after a police check, two references and a meeting with the driver.</span></span></label>
         <div class="row" style="margin-top:14px">
           ${status !== 'approved' ? `<button class="btn btn-danger-soft fill" data-st="rejected">Reject</button><button class="btn btn-primary fill" data-st="approved">Approve driver</button>` : '<button class="btn fill" data-close>Close</button>'}
         </div>`;
       K.$('#wd', m.el).onchange = async (e) => {
         try { await K.api(`/admin/drivers/${id}/woman`, { woman: e.target.checked }); K.toast(e.target.checked ? 'Marked as a woman driver' : 'No longer marked as a woman driver'); }
+        catch (err) { e.target.checked = !e.target.checked; K.toast(err.message); }
+      };
+      K.$('#sd', m.el).onchange = async (e) => {
+        try { await K.api(`/admin/drivers/${id}/school`, { school: e.target.checked }); K.toast(e.target.checked ? 'Vetted for school runs' : 'No longer on school runs'); }
         catch (err) { e.target.checked = !e.target.checked; K.toast(err.message); }
       };
       m.el.querySelectorAll('[data-st]').forEach((b) => b.onclick = async () => {
@@ -393,6 +399,11 @@
         <div><label for="sf">Fee per extra stop (UGX)</label><input id="sf" type="number" min="0" step="500" value="${s.stopFee}"></div>
         <div><label for="ef">Errand shopping fee (UGX)</label><input id="ef" type="number" min="0" step="500" value="${(s.errand || {}).shopFee ?? 2000}"></div>
         <div><label for="eb">Most a courier spends on one errand (UGX)</label><input id="eb" type="number" min="5000" step="5000" value="${(s.errand || {}).maxBudget ?? 200000}"></div>
+        <div><label for="pp">Flytte Pass price (UGX for ${(s.pass || {}).days ?? 30} days)</label><input id="pp" type="number" min="1000" step="500" value="${(s.pass || {}).price ?? 15000}"></div>
+        <div><label for="ppc">Flytte Pass discount (% off each ride)</label><input id="ppc" type="number" min="0" max="50" step="1" value="${(s.pass || {}).percent ?? 10}"></div>
+        <div><label for="ppm">Flytte Pass most off one ride (UGX)</label><input id="ppm" type="number" min="0" step="500" value="${(s.pass || {}).maxDiscount ?? 3000}"></div>
+        <div><label for="ppe">Sell Flytte Pass</label><select id="ppe"><option value="1" ${(s.pass || {}).enabled !== false ? 'selected' : ''}>Yes</option><option value="0" ${(s.pass || {}).enabled === false ? 'selected' : ''}>No</option></select></div>
+        <div><label for="bcl">New business account limit (UGX)</label><input id="bcl" type="number" min="0" step="10000" value="${(s.business || {}).creditLimit ?? 300000}"></div>
         <div><label for="sp">Support phone</label><input id="sp" type="tel" value="${K.esc(s.supportPhone || '')}" placeholder="Not set: hidden in the apps"></div>
       </div>
       <h2 style="margin-top:26px">Dynamic pricing</h2>
@@ -428,10 +439,27 @@
         tr.querySelectorAll('[data-f]').forEach((i) => { o[i.dataset.f] = i.type === 'checkbox' ? i.checked : i.type === 'text' ? i.value : +i.value; });
         services[tr.dataset.id] = o;
       });
-      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, stopFee: +K.$('#sf').value, errand: { shopFee: +K.$('#ef').value, maxBudget: +K.$('#eb').value }, supportPhone: K.$('#sp').value,
+      await K.api('/admin/settings', { services, commissionPct: +K.$('#cp').value, dispatchRadiusKm: +K.$('#rad').value, offerTimeoutSec: +K.$('#to').value, minWithdrawal: +K.$('#mw').value, stopFee: +K.$('#sf').value, errand: { shopFee: +K.$('#ef').value, maxBudget: +K.$('#eb').value },
+        pass: { price: +K.$('#pp').value, percent: +K.$('#ppc').value, maxDiscount: +K.$('#ppm').value, enabled: K.$('#ppe').value === '1' }, business: { creditLimit: +K.$('#bcl').value }, supportPhone: K.$('#sp').value,
         dynamic: { enabled: K.$('#dyn').checked, weather: K.$('#wx').checked, sensitivity: +K.$('#sens').value, maxBoda: +K.$('#mb').value, maxCar: +K.$('#mc').value } }, 'PUT');
       K.toast('Pricing saved. New requests use it right away.');
     };
+  }
+
+  // Flytte for Business and Shops: who owes what, and each account's limit.
+  async function companies(main) {
+    const list = await K.api('/admin/companies');
+    const owed = list.reduce((a, c) => a + c.balanceDue, 0);
+    main.innerHTML = `<h1>Business accounts</h1>
+      <p class="muted" style="max-width:720px">Companies pay for their staff’s rides and shops pay for deliveries at the end of the month. ${list.length} accounts · ${K.ugx(owed)} owed in all. Raise a limit for an account that pays on time; pause one that doesn’t.</p>
+      ${list.length ? `<div class="table-wrap"><table><thead><tr><th>Account</th><th>Type</th><th>People</th><th>This month</th><th>Owed</th><th>Limit</th><th></th></tr></thead><tbody>
+      ${list.map((c) => `<tr><td><b>${K.esc(c.name)}</b><br><span class="small muted">${K.esc(c.adminName || '')} ${K.esc(c.adminPhone || '')}${c.email ? ' · ' + K.esc(c.email) : ''}</span></td>
+        <td>${c.kind === 'merchant' ? 'Shop' : 'Company'}${c.status !== 'active' ? ' <span class="badge warn">Paused</span>' : ''}</td><td>${c.people}</td><td>${c.monthTrips} · ${K.ugx(c.monthSpent)}</td>
+        <td><b>${K.ugx(c.balanceDue)}</b></td><td><input type="number" min="0" step="10000" value="${c.creditLimit}" data-lim="${c.id}" style="width:120px;margin:0"></td>
+        <td style="white-space:nowrap"><button class="btn btn-sm" data-save="${c.id}">Save</button> <button class="btn btn-sm ${c.status === 'active' ? 'btn-danger-soft' : ''}" data-st="${c.id}" data-to="${c.status === 'active' ? 'paused' : 'active'}">${c.status === 'active' ? 'Pause' : 'Resume'}</button></td></tr>`).join('')}
+      </tbody></table></div>` : '<p class="muted">No business or shop accounts yet. Riders open them from Account → Flytte for Business or Flytte for Shops.</p>'}`;
+    main.querySelectorAll('[data-save]').forEach((b) => b.onclick = async () => { try { await K.api(`/admin/companies/${b.dataset.save}`, { creditLimit: +main.querySelector(`[data-lim="${b.dataset.save}"]`).value }); K.toast('Limit saved'); } catch (e) { K.toast(e.message); } });
+    main.querySelectorAll('[data-st]').forEach((b) => b.onclick = async () => { try { await K.api(`/admin/companies/${b.dataset.st}`, { status: b.dataset.to }); companies(main); } catch (e) { K.toast(e.message); } });
   }
 
   async function promos(main) {
