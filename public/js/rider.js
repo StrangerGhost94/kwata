@@ -254,6 +254,7 @@
     K.$('#cpin').classList.toggle('hidden', !['pickup', 'droppin'].includes(v));
     K.$('#tabs').classList.toggle('hidden', v !== 'home');
     sheet.classList.toggle('home-card', v === 'home');
+    sheet.classList.toggle('choosing', v === 'choose');   // shorter, so the route stays in view
     K.underTabs(sheet, v === 'home');
     topbar();
     if (v !== S.lastView) { sheet.classList.remove('sheet-enter'); void sheet.offsetWidth; sheet.classList.add('sheet-enter'); }
@@ -267,7 +268,7 @@
   function goBack() {
     if (S.view === 'pickup') { // cancel: the pin was never confirmed
       S.pickup = S.prevPickup || null; S.prevPickup = undefined;
-      if (S.route && S.quote && S.drop) { S.view = 'choose'; showRoute(); render(); }
+      if (S.route && S.quote && S.drop) { S.view = 'choose'; render(); showRoute(); }
       else { S.view = 'home'; render(); }
     }
     else if (S.view === 'droppin') { S.view = 'home'; render(); openSearch(); }
@@ -618,8 +619,8 @@
       S.quote = await K.api('/fare/estimate', { pickup: S.pickup, drop: S.drop, stops: S.stops, distanceKm: S.route.km, durationMin: S.route.freeMin, promoCode: S.promoCode || undefined });
       S.quote.at = Date.now();
       if (!S.quote.options.find((o) => o.id === S.service)) setService(S.quote.options[0].id);
-      showRoute();
       render();
+      showRoute();
     } catch (e) { sheet.innerHTML = '<div class="grabber"></div><div id="qErr"></div>'; K.failed(K.$('#qErr'), e.message, prepareQuote, ['Back', reset]); }
   }
 
@@ -648,7 +649,7 @@
   }
   const shorten = (s, n = 26) => String(s || '').split(',')[0].slice(0, n);
   function fit(bounds) {
-    const pad = window.innerWidth >= 760 ? { paddingTopLeft: [460, 90], paddingBottomRight: [60, 60] } : { paddingTopLeft: [40, 90], paddingBottomRight: [40, sheet.offsetHeight + 30] };
+    const pad = window.innerWidth >= 760 ? { paddingTopLeft: [460, 90], paddingBottomRight: [60, 60] } : { paddingTopLeft: [40, 90], paddingBottomRight: [40, Math.min(sheet.offsetHeight + 30, window.innerHeight - 230)] };
     map.fitBounds(bounds, { ...pad, maxZoom: 16 });
   }
   function clearRoute() {
@@ -790,7 +791,7 @@
       <button class="btn btn-primary btn-block btn-lg" id="request">${S.when ? 'Schedule' : 'Request'} ${K.esc(svcName(sel.id))} · ${K.ugx(payOf(sel))}</button></div>`;
     sheet.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => {
       if (b.dataset.s === S.service) return;
-      setService(b.dataset.s); showRoute(); render();
+      setService(b.dataset.s); render(); showRoute();
     });
     K.$('#payRow').onclick = () => openPayments({ onPick: render });
     const mo = K.$('#moreOpts'); if (mo) mo.onclick = () => { S.allOpts = true; render(); };
