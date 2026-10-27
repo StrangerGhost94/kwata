@@ -76,6 +76,21 @@
         const out = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(out.error || 'Something went wrong. Try again.');
         if (out.link) { location.href = out.link; return; }
+        if (out.pending) {
+          card.innerHTML = `<div class="split-done" aria-live="polite"><div class="big" aria-hidden="true">📱</div><h2>Check your phone</h2>
+            <p class="muted">Enter your Mobile Money PIN to approve ${ugx(out.amount)}.</p><p class="small muted" id="st">Waiting for you to approve…</p>
+            <p class="tiny muted">No prompt? Dial *165# (MTN) or *185# (Airtel) and check Approvals.</p></div>`;
+          const t0 = Date.now();
+          const tick = async () => {
+            let r = null;
+            try { r = await fetch('/api/payments/' + encodeURIComponent(out.tx_ref) + '/status').then((x) => x.json()); } catch {}
+            if (r && r.status === 'successful') return done('✅', 'Thank you', `You’ve paid your share. ${s.name} has been told.`);
+            if (r && r.status === 'failed') return done('❌', 'Payment didn’t go through', (r.message || 'Check your balance and PIN.') + ' Open the link again to retry.');
+            setTimeout(tick, Date.now() - t0 > 4 * 60e3 ? 10000 : 3000);
+          };
+          setTimeout(tick, 3000);
+          return;
+        }
         done('✅', 'Thank you', `You’ve paid your share. ${s.name} has been told.`);
       } catch (x) { err.textContent = x.message; btn.disabled = false; btn.textContent = `Pay ${ugx(s.share)} with Mobile Money`; }
     };

@@ -1,23 +1,31 @@
-// MTN / Airtel Mobile Money and card payments via Flutterwave Standard checkout.
-// Without FLW_SECRET_KEY, local development runs in DEMO mode (payments succeed
-// instantly so every flow can be tested). A live server (DATABASE_URL set) never
-// fakes payments: Mobile Money, card and wallet top-ups are switched off until the
-// Flutterwave keys are added. PAYMENTS_DEMO=true/false overrides this.
+// Payments.
+//   - MTN / Airtel Mobile Money through Relworx (RELWORX_API_KEY + RELWORX_ACCOUNT_NO): Relworx sends a
+//     PIN prompt to the payer's phone; the payment stays "pending" until Relworx's own status check says
+//     it succeeded. Its webhook and a background check only trigger that check; nothing is credited from
+//     what a webhook says.
+//   - Cards (and Mobile Money when Relworx isn't set up) through Flutterwave Standard checkout (FLW_SECRET_KEY).
+// Without either, local development runs in DEMO mode (payments succeed instantly so every flow can be
+// tested). A live server (DATABASE_URL set) never fakes payments. PAYMENTS_DEMO=true/false overrides this.
 const crypto = require('crypto');
 const db = require('./db');
 const ledger = require('./ledger');
 
 const FLW_KEY = process.env.FLW_SECRET_KEY || '';
 const FLW_HASH = process.env.FLW_WEBHOOK_HASH || '';
+const RW_KEY = process.env.RELWORX_API_KEY || '';
+const RW_ACC = process.env.RELWORX_ACCOUNT_NO || '';
+const RW_URL = (process.env.RELWORX_URL || 'https://payments.relworx.com').replace(/\/+$/, '');
 const enabled = () => !!FLW_KEY;
+const relworx = () => !!(RW_KEY && RW_ACC);
 const demo = () => {
-  if (FLW_KEY) return false;
+  if (FLW_KEY || relworx()) return false;
   if (process.env.PAYMENTS_DEMO === 'true') return true;
   if (process.env.PAYMENTS_DEMO === 'false') return false;
   return !process.env.DATABASE_URL && process.env.NODE_ENV !== 'production'; // same "live" rule as src/auth.js
 };
 // Can riders pay by Mobile Money / card or top up their wallet right now?
-const available = () => enabled() || demo();
+const available = () => enabled() || relworx() || demo();
+const cards = () => enabled() || demo();   // cards need Flutterwave
 class PaymentsUnavailable extends Error {}
 
 function newRef(prefix) {
@@ -29,6 +37,8 @@ async function createCheckout({ user, amount, purpose, tripId, method, baseUrl, 
   amount = Math.round(amount);
   if (!available()) throw new PaymentsUnavailable('Mobile Money and card payments aren’t available yet. Pay with cash for now.');
   if (!(amount > 0)) throw new PaymentsUnavailable('Nothing to pay.');
+  if (method === 'card' && !cards()) throw new PaymentsUnavailable('Card payments aren’t available yet. Pay with MTN or Airtel Mobile Money.');
+  if (method !== 'card' && relworx()) return relworxRequest({ user, amount, purpose, tripId, payer, companyId });
   const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : purpose === 'debt' ? 'FLY-DBT' : purpose === 'split' ? 'FLY-SPL' : purpose === 'pass' ? 'FLY-PAS' : purpose === 'company' ? 'FLY-BIZ' : 'FLY-TRP');
   await db.query(
     'INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount, payer_name, company_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
@@ -79,6 +89,7 @@ async function verifyAndApply(tx_ref) {
   const p = await db.one('SELECT * FROM payments WHERE tx_ref = $1', [tx_ref]);
   if (!p) return { ok: false, reason: 'unknown payment' };
   if (p.status === 'successful') return { ok: true, payment: p };
+  if (p.provider === 'relworx') return relworxVerify(p);
   if (!enabled()) return { ok: false, reason: 'payments disabled' };
 
   let data;
@@ -124,15 +135,95 @@ async function applyPayment(tx_ref, providerRef) {
     } else if (p.purpose === 'trip' && p.trip_id) {
       await ledger.markTripPaid(t, p.trip_id);
     }
-    return { ...p, status: 'successful' };
+    return { ...p, status: 'successful', newly: true };
   });
 }
 
 // Flutterwave signs webhooks with the secret hash set in its dashboard.
+// ---------- Relworx (MTN / Airtel Mobile Money) ----------
+const MSISDN = /^\+256(7\d{8})$/;   // Relworx collects UGX from Ugandan MTN and Airtel numbers
+async function relworxCall(path, { method = 'GET', body } = {}) {
+  const r = await fetch(RW_URL + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/vnd.relworx.v2', Authorization: `Bearer ${RW_KEY}` },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(20000),
+  });
+  const data = await r.json().catch(() => ({}));
+  return { status: r.status, data };
+}
+
+// Send the PIN prompt. Returns { pending, tx_ref, phone, amount }: the app then waits for the status.
+async function relworxRequest({ user, amount, purpose, tripId, payer, companyId }) {
+  const phone = String((payer && payer.phone) || user.pay_phone || user.phone || '');
+  if (!MSISDN.test(phone)) throw new PaymentsUnavailable('Mobile Money needs a Ugandan MTN or Airtel number, e.g. 0772 123456. Change it in Payment methods.');
+  if (amount < 500) throw new PaymentsUnavailable('Mobile Money payments start at UGX 500.');
+  const tx_ref = newRef({ topup: 'FLY-TOP', debt: 'FLY-DBT', split: 'FLY-SPL', pass: 'FLY-PAS', company: 'FLY-BIZ' }[purpose] || 'FLY-TRP');
+  await db.query(
+    "INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount, payer_name, company_id, provider, phone) VALUES ($1,$2,$3,$4,$5,$6,$7,'relworx',$8)",
+    [tx_ref, user.id, purpose, tripId || null, amount, payer ? payer.name : null, companyId || null, phone]
+  );
+  const description = { topup: 'Flytte wallet top-up', debt: 'Flytte commission', split: 'Share of a Flytte trip', pass: 'Flytte Pass', company: 'Flytte for Business bill' }[purpose] || `Flytte trip ${tripId}`;
+  let res;
+  try { res = await relworxCall('/api/mobile-money/request-payment', { method: 'POST', body: { account_no: RW_ACC, reference: tx_ref, msisdn: phone, currency: 'UGX', amount, description } }); }
+  catch (e) {
+    console.error('Relworx request failed', e.message);
+    await db.query("UPDATE payments SET status = 'failed', message = 'unreachable' WHERE tx_ref = $1", [tx_ref]);
+    throw new PaymentsUnavailable('We couldn’t reach Mobile Money just now. Try again in a moment, or pay with cash.');
+  }
+  const d = res.data || {};
+  if (res.status >= 400 || !d.success || !d.internal_reference) {
+    console.error('Relworx refused the payment request', res.status, d.message);
+    await db.query("UPDATE payments SET status = 'failed', message = $2 WHERE tx_ref = $1", [tx_ref, String(d.message || res.status).slice(0, 200)]);
+    throw new PaymentsUnavailable(res.status === 429 ? 'Too many payment prompts to this number. Wait 10 minutes and try again.' : 'We couldn’t send the Mobile Money prompt. Check the number and try again, or pay with cash.');
+  }
+  await db.query('UPDATE payments SET provider_internal = $1 WHERE tx_ref = $2', [String(d.internal_reference).slice(0, 80), tx_ref]);
+  return { pending: true, tx_ref, phone, amount };
+}
+
+// Ask Relworx how the payment went. Only its "success" in UGX for at least the amount asked credits anything.
+async function relworxVerify(p) {
+  if (p.status !== 'pending') return { ok: false, reason: p.status, message: p.message };
+  if (!p.provider_internal) return { ok: false, reason: 'pending' };
+  let res;
+  try { res = await relworxCall(`/api/mobile-money/check-request-status?${new URLSearchParams({ internal_reference: p.provider_internal, account_no: RW_ACC })}`); }
+  catch (e) { console.error('Relworx status check failed', e.message); return { ok: false, reason: 'unreachable' }; }
+  await db.query('UPDATE payments SET checked_at = NOW() WHERE tx_ref = $1', [p.tx_ref]);
+  const d = res.data || {};
+  const status = String(d.status || d.request_status || '').toLowerCase();
+  if (d.success && status === 'success') {
+    if (String(d.currency).toUpperCase() !== 'UGX' || Number(d.amount) < p.amount) {
+      console.error('Relworx payment did not match', p.tx_ref, d.currency, d.amount, p.amount);
+      await db.query("UPDATE payments SET status = 'failed', message = 'amount mismatch' WHERE tx_ref = $1 AND status = 'pending'", [p.tx_ref]);
+      return { ok: false, reason: 'failed', message: 'The payment didn’t match. Contact Flytte support.' };
+    }
+    const payment = await applyPayment(p.tx_ref, String(d.provider_transaction_id || p.provider_internal));
+    return { ok: true, payment };
+  }
+  if (status === 'failed' || status === 'cancelled' || status === 'declined') {
+    const message = String(d.message || 'The payment didn’t go through.').slice(0, 200);
+    await db.query("UPDATE payments SET status = 'failed', message = $2 WHERE tx_ref = $1 AND status = 'pending'", [p.tx_ref, message]);
+    return { ok: false, reason: 'failed', message };
+  }
+  return { ok: false, reason: 'pending' };
+}
+
+// Background check: pending Relworx payments are confirmed even if the app was closed; ones that never
+// finish are given up on after 30 minutes. `settled(payment)` tells the app.
+async function checkPending(settled) {
+  if (!relworx()) return;
+  await db.query("UPDATE payments SET status = 'expired' WHERE provider = 'relworx' AND status = 'pending' AND created_at < NOW() - INTERVAL '30 minutes'");
+  const { rows } = await db.query("SELECT tx_ref FROM payments WHERE provider = 'relworx' AND status = 'pending' AND (checked_at IS NULL OR checked_at < NOW() - INTERVAL '15 seconds') ORDER BY created_at LIMIT 25");
+  for (const r of rows) {
+    const out = await verifyAndApply(r.tx_ref).catch((e) => { console.error('payment check', e.message); return null; });
+    if (out && out.ok && out.payment && out.payment.newly && settled) settled(out.payment);
+  }
+}
+
 function webhookAuthentic(req) {
   const got = Buffer.from(String(req.headers['verif-hash'] || ''));
   const want = Buffer.from(FLW_HASH);
   return FLW_HASH.length > 0 && got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
-module.exports = { enabled, demo, available, PaymentsUnavailable, createCheckout, verifyAndApply, webhookAuthentic, _applyPayment: applyPayment };
+module.exports = { enabled, relworx, cards, checkPending, demo, available, PaymentsUnavailable, createCheckout, verifyAndApply, webhookAuthentic, _applyPayment: applyPayment };

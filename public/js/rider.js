@@ -30,7 +30,7 @@
     business: { name: 'Company account', logo: `<span class="paylogo biz">${K.ic('work', 'sm')}</span>`, method: 'business' },
   };
   // Mobile Money and card only work once online payments are switched on.
-  const payOK = (k) => k === 'business' ? bizCompanies('business').length > 0 : !['mtn', 'airtel', 'card'].includes(k) || !!(S.config && S.config.paymentsAvailable);
+  const payOK = (k) => k === 'business' ? bizCompanies('business').length > 0 : k === 'card' ? !!(S.config && S.config.paymentsAvailable && S.config.cardPayments !== false) : !['mtn', 'airtel'].includes(k) || !!(S.config && S.config.paymentsAvailable);
   const pref = () => (PAY[S.user && S.user.payPref] && payOK(S.user.payPref) ? S.user.payPref : 'cash');
   const payOfTrip = (t) => t.paymentMethod === 'momo' ? (S.user.payPref === 'airtel' ? 'airtel' : 'mtn') : t.paymentMethod;
   const prettyPhone = (p) => K.prettyPhone(p);
@@ -1396,7 +1396,9 @@
       pay.disabled = true;
       try {
         const out = await K.api(`/trips/${t.id}/pay`, {});
-        if (out.link) location.href = out.link; else { K.toast('Payment received'); S.trip.paymentStatus = 'paid'; render(); }
+        const r = await K.awaitPayment(out);
+        if (r === 'success') { K.toast('Payment received ✅'); S.trip.paymentStatus = 'paid'; render(); }
+        else if (r !== 'redirect') pay.disabled = false;
       } catch (e) { K.$('#err').textContent = e.message; pay.disabled = false; }
     };
     const pw = K.$('#payWallet');
@@ -2197,7 +2199,7 @@
     const m = K.modal(`<h2>Pay ${K.esc(d.name)}’s bill</h2><p class="money">${K.ugx(d.balanceDue)}</p><p class="small muted">Paid by MTN or Airtel Mobile Money. The account limit frees up as soon as it’s confirmed.</p>
       <p class="error" id="err" role="alert"></p><button class="btn btn-primary btn-block btn-lg" id="go">Pay with Mobile Money</button>`);
     K.$('#go', m.el).onclick = async () => {
-      try { const out = await K.api(`/business/${d.id}/pay`, {}); if (out.link) { location.href = out.link; return; } m.close(); K.toast('Payment received ✅'); after(); }
+      try { const out = await K.api(`/business/${d.id}/pay`, {}); m.close(); const r = await K.awaitPayment(out); if (r === 'success') { K.toast('Payment received ✅'); after(); } }
       catch (e) { K.$('#err', m.el).textContent = e.message; }
     };
   }
@@ -2355,7 +2357,11 @@
         let walletPass;
         if (method === 'wallet' && S.user.walletLock) { walletPass = await K.walletLock.unlock({ amount: pc.price }); if (!walletPass) { b.disabled = false; return; } }
         const out = await K.api('/me/pass/buy', { method, walletPass });
-        if (out.link) { location.href = out.link; return; }
+        if (out.link || out.pending) {
+          m.close();
+          if ((await K.awaitPayment(out)) !== 'success') return;
+          out.pass = null;
+        }
         if (method === 'wallet') S.user.walletBalance -= pc.price;
         S.pass = out.pass || await K.api('/me/pass');
         m.close(); K.toast('Flytte Pass is on ✨ Enjoy your rides.', 4000); K.haptic && K.haptic('success');
@@ -2830,7 +2836,7 @@
       ${live ? `<p class="small muted">Top up once with Mobile Money and pay for trips in one tap.</p>
       <div class="chips">${[10000, 20000, 50000, 100000].map((a) => `<button class="chip" data-amt="${a}">${K.ugx(a)}</button>`).join('')}</div>
       <label for="amt">Amount (UGX)</label><input id="amt" type="number" inputmode="numeric" min="1000" max="2000000" step="500" value="20000">
-      <div class="row" style="margin-top:12px"><button class="btn btn-primary fill" data-m="momo">MTN / Airtel</button><button class="btn fill" data-m="card">${K.ic('card', 'sm')} Card</button></div>
+      <div class="row" style="margin-top:12px"><button class="btn btn-primary fill" data-m="momo">MTN / Airtel</button>${S.config.cardPayments === false ? '' : `<button class="btn fill" data-m="card">${K.ic('card', 'sm')} Card</button>`}</div>
       ${S.config.paymentsDemo ? '<p class="tiny faint" style="margin-top:8px">Test mode: top-ups are added instantly without charging you.</p>' : ''}` : '<p class="small muted">Wallet top-ups by Mobile Money and card are coming soon. Credit from Flytte Rewards and invites lands here, and you can use it to pay for trips.</p>'}
       <p class="error" id="err" role="alert"></p>
       <div class="set-card list" style="margin:14px 0 4px"><button class="set-row" id="lockRow" role="switch" aria-checked="${!!S.user.walletLock}"><span class="ic-lock">${K.ic('lock')}</span>
@@ -2845,7 +2851,11 @@
       b.disabled = true;
       try {
         const out = await K.api('/wallet/topup', { amount, method: b.dataset.m });
-        if (out.link) { location.href = out.link; return; }
+        if (out.link || out.pending) {
+          m.close();
+          if ((await K.awaitPayment(out)) !== 'success') return;
+          out.balance = (await K.api('/wallet')).balance;
+        }
         S.user.walletBalance = out.balance; K.toast('Wallet topped up'); m.close();
         after && after();
         if (S.view === 'choose') render();
