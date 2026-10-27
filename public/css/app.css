@@ -2237,3 +2237,7 @@ html.theme-dark .fy-card.fy-errand { background: linear-gradient(140deg, #3A3110
 .set-row small.blk { display: block; }
 .set-row small.blk .i { width: 12px; height: 12px; vertical-align: -1px; }
 .chips.wrap { flex-wrap: wrap; overflow: visible; }
+
+/* Choose a ride: the sheet stays short enough that the route on the map is visible above it
+   (the options scroll inside; the Request button is in the sticky footer). */
+@media (max-width: 759px) { .sheet.choosing { max-height: 60vh; max-height: 60dvh; } }
