@@ -149,7 +149,9 @@ module.exports = function mount(r, { wrap, bad, limit, clean, baseUrl, point }) 
     if (!(amount >= 1000)) return bad(res, 'There’s nothing to pay right now.');
     if (amount > c.balance_due) return bad(res, `The account owes UGX ${c.balance_due.toLocaleString()}.`);
     let out;
-    try { out = await payments.createCheckout({ user: req.user, amount, purpose: 'company', method: 'momo', baseUrl: baseUrl(req), companyId: c.id }); }
+    const pick = await payments.chosenPhone(req.user, req.body);
+    if (pick.error) return bad(res, pick.error);
+    try { out = await payments.createCheckout({ user: req.user, amount, purpose: 'company', method: 'momo', baseUrl: baseUrl(req), companyId: c.id, phone: pick.phone }); }
     catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
     res.json(out);
   }));

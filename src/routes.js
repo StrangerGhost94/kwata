@@ -1045,7 +1045,9 @@ r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
   if (t.status !== 'completed' || t.payment_status === 'paid') return bad(res, 'Nothing to pay on this trip.');
   if (!['momo', 'card'].includes(t.payment_method)) return bad(res, 'This trip is paid in cash or wallet.');
   let out;
-  try { out = await payments.createCheckout({ user: req.user, amount: t.fare - (t.discount || 0) + (t.goods_total || 0), purpose: 'trip', tripId: t.id, method: t.payment_method, baseUrl: baseUrl(req) }); }
+  const pick = await payments.chosenPhone(req.user, req.body);
+  if (pick.error) return bad(res, pick.error);
+  try { out = await payments.createCheckout({ user: req.user, amount: t.fare - (t.discount || 0) + (t.goods_total || 0), purpose: 'trip', tripId: t.id, method: t.payment_method, baseUrl: baseUrl(req), phone: pick.phone }); }
   catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
   if (out.demo) await rt.broadcast(t.id);
   res.json(out);
@@ -1362,7 +1364,9 @@ r.post('/me/pass/buy', auth.requireAuth('rider'), limit(10, 3600e3, (req) => 'us
   if (!s.pass.enabled) return bad(res, 'Flytte Pass isn’t available right now.');
   if ((req.body || {}).method === 'momo') {
     let out;
-    try { out = await payments.createCheckout({ user: req.user, amount: s.pass.price, purpose: 'pass', method: 'momo', baseUrl: baseUrl(req) }); }
+    const pick = await payments.chosenPhone(req.user, req.body);
+    if (pick.error) return bad(res, pick.error);
+    try { out = await payments.createCheckout({ user: req.user, amount: s.pass.price, purpose: 'pass', method: 'momo', baseUrl: baseUrl(req), phone: pick.phone }); }
     catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
     return res.json({ ...out, pass: out.demo ? await pass.summary(req.user.id) : undefined });
   }
@@ -1389,7 +1393,9 @@ r.post('/wallet/topup', auth.requireAuth('rider'), wrap(async (req, res) => {
   if (!(amount >= 1000 && amount <= 2000000)) return bad(res, 'Top up between UGX 1,000 and 2,000,000.');
   const method = req.body.method === 'card' ? 'card' : 'momo';
   let out;
-  try { out = await payments.createCheckout({ user: req.user, amount, purpose: 'topup', method, baseUrl: baseUrl(req) }); }
+  const pick = await payments.chosenPhone(req.user, req.body);
+  if (pick.error) return bad(res, pick.error);
+  try { out = await payments.createCheckout({ user: req.user, amount, purpose: 'topup', method, baseUrl: baseUrl(req), phone: pick.phone }); }
   catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
   const u = await db.one('SELECT wallet_balance FROM users WHERE id = $1', [req.user.id]);
   res.json({ ...out, balance: u.wallet_balance });
@@ -1624,7 +1630,9 @@ r.post('/driver/pay-debt', auth.requireAuth('driver'), wrap(async (req, res) => 
   let amount = Math.round(Number((req.body || {}).amount) || owed);
   amount = Math.min(owed, Math.max(Math.min(1000, owed), amount));
   let out;
-  try { out = await payments.createCheckout({ user: req.user, amount, purpose: 'debt', method: 'momo', baseUrl: baseUrl(req) }); }
+  const pick = await payments.chosenPhone(req.user, req.body);
+  if (pick.error) return bad(res, pick.error);
+  try { out = await payments.createCheckout({ user: req.user, amount, purpose: 'debt', method: 'momo', baseUrl: baseUrl(req), phone: pick.phone }); }
   catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message.replace('Pay with cash for now.', 'Your balance clears from your next Mobile Money or wallet trips.'), 503); throw e; }
   const after = await db.one('SELECT earnings_balance FROM drivers WHERE user_id = $1', [req.user.id]);
   res.json({ ...out, balance: after.earnings_balance });

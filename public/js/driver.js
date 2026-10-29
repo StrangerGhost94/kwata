@@ -125,9 +125,9 @@
     K.$('#paynow', m.el).onclick = async (ev) => {
       const b = ev.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span>Starting payment…';
       try {
-        const r = await K.api('/driver/pay-debt', {});
         m.close();
-        if ((await K.awaitPayment(r)) !== 'success') return;
+        const r = await K.payMomo({ amount: o.owed, title: 'Pay your commission', saved: S.user.payPhone || S.user.phone, send: (x) => K.api('/driver/pay-debt', x) });
+        if (r !== 'success') return;
         K.toast('Payment received'); await loadEarnings(); loadOverview();
       } catch (e) { b.disabled = false; b.textContent = 'Try again'; K.$('#perr', m.el).textContent = e.message; }
     };
