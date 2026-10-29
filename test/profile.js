@@ -87,6 +87,13 @@ const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQg
   const cfg = await api('/config');
   ok(/^\d+\.\d+\.\d+/.test(cfg.version), 'the app version comes from the server');
 
+  // "Write to us" in Help reaches the team in Admin → Customer help.
+  ok((await call('/support/message', { message: 'hi' }, tok)).status === 400, 'a message that is too short is refused');
+  await api('/support/message', { message: 'Can I pay for my mum’s rides from my wallet?' }, tok);
+  const adm = await api('/auth/login', { phone: '0700000000', password: 'admin123' });
+  const fbk = await api("/admin/feedback", null, adm.token);
+  ok(fbk.messages.some((m) => /mum’s rides/.test(m.note)) && !fbk.items.some((m) => /mum’s rides/.test(m.note || '')), 'the message shows under Messages from Help, not as an app rating');
+
   console.log(failed ? `${failed} FAILED` : 'all account page checks passed');
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

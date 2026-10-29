@@ -4,7 +4,9 @@
   const root = document.getElementById('root');
   const S = {
     view: 'home', pickup: null, drop: null, route: null, quote: null, gps: null,
-    service: localStorage.getItem('flytte_service') || 'boda',
+    // Only an everyday ride is remembered between visits. Parcel, errand and airport are one-off choices,
+    // so the app never opens quietly in "send a parcel" mode.
+    service: ['boda', 'car', 'comfort'].includes(localStorage.getItem('flytte_service')) ? localStorage.getItem('flytte_service') : 'boda',
     trip: null, user: null, config: null, recent: [], parcel: null, stops: [], rating: 0, unread: 0, chatOpen: false, messages: [],
   };
   let map, sock, sheet, routeLayer, labels = [], driverMarker, meMarker, nearby = new Map(), revTimer, phaseKm = null, routedPhase = null;
@@ -132,7 +134,7 @@
     sock = K.socket(K.token());
     sock.on('trip:update', onTrip);
     sock.on('driver:location', (p) => { if (S.trip && p.tripId === S.trip.id) moveDriver(p); });
-    sock.on('toast', (m) => K.toast(m.text));
+    sock.on('toast', (m) => { if (m.arrived && S.view === 'trip' && S.trip && S.trip.id === m.tripId) return; K.toast(m.text); });
     sock.on('chat:message', onChat);
     sock.on('connect', async () => { sock.emit('rider:visible', document.visibilityState === 'visible'); const a = await K.api('/trips/active').catch(() => null); if (a) onTrip(a); });
     // Trip alerts go to the lock screen only while Flytte isn't on screen.
@@ -200,6 +202,7 @@
       const addr = await K.reverse(lat, lng);
       if (S.pickup && S.pickup.lat === lat) {
         S.pickup.address = addr;
+        if (S.pickup.short === 'Current location') S.pickup.short = null;   // the map label and the sheet then say the same place
         const el = K.$('#pickLabel'); if (el) el.textContent = addr;
       }
     }, 450);
@@ -491,7 +494,7 @@
   }
   function setService(id) {
     if (id === 'parcel' && S.stops && S.stops.length && S.view === 'choose') { S.stops = []; K.toast('Parcels go straight to one address, so your stops were removed.', 4000); setTimeout(prepareQuote, 0); }
-    S.service = id; try { localStorage.setItem('flytte_service', id); } catch {}
+    S.service = id; try { if (['boda', 'car', 'comfort'].includes(id)) localStorage.setItem('flytte_service', id); } catch {}
   }
 
   // ---------- full-screen search ----------
@@ -522,7 +525,7 @@
     const close = () => K.pop(page);
     K.$('[data-x]', page).onclick = close;
 
-    const rows = (items, iconFn) => items.map((p, i) => `<button class="lrow" data-i="${i}"><span class="ic">${K.ic(iconFn ? iconFn(p) : 'pin')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(p.name)}</span><span class="s ellipsis" style="display:block">${K.esc(p.address || '')}</span></span>${S.pickup && p.lat ? `<span class="tiny faint">${K.km(S.pickup, p).toFixed(1)} km</span>` : ''}</button>`).join('');
+    const rows = (items, iconFn) => items.map((p, i) => `<button class="lrow" data-i="${i}"><span class="ic">${K.ic(iconFn ? iconFn(p) : 'pin')}</span><span class="grow"><span class="t ellipsis" style="display:block">${K.esc(p.name)}</span><span class="s ellipsis" style="display:block">${K.esc(p.address || '')}</span></span>${S.pickup && p.lat && !p._act ? `<span class="tiny faint">${K.km(S.pickup, p).toFixed(1)} km</span>` : ''}</button>`).join('');
     let current = [];
     const bind = () => res.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => pick(current[+b.dataset.i]));
     const showDefault = () => {
@@ -533,7 +536,8 @@
       if (!saveAs && sp.work) saved.push({ name: 'Work', address: sp.work.address, lat: sp.work.lat, lng: sp.work.lng, _ic: 'work' });
       if (!saveAs) ownPlaces().forEach(([, v]) => saved.push({ name: v.label, address: v.address, lat: v.lat, lng: v.lng, _ic: 'pin' }));
       const recent = saveAs ? [] : S.recent.map((r) => ({ ...r, _ic: 'clock' }));
-      const extra = target === 'pick' && S.gps ? [{ name: 'Current location', address: 'Use GPS', lat: S.gps.lat, lng: S.gps.lng, _ic: 'locate' }] : [];
+      const extra = saveAs ? [...(S.gps ? [{ name: 'Use my current location', address: 'Where your phone is now', lat: S.gps.lat, lng: S.gps.lng, _ic: 'locate', _act: 'gps' }] : []), { name: 'Pick on the map', address: 'Move the map to the spot', _ic: 'pin', _act: 'map' }]
+        : target === 'pick' && S.gps ? [{ name: 'Current location', address: 'Use GPS', lat: S.gps.lat, lng: S.gps.lng, _ic: 'locate' }] : [];
       current = [...extra, ...saved, ...recent, ...K.PLACES.map((p) => ({ ...p, _ic: p.icon || 'pin' }))];
       const mapRow = !single ? `<button class="lrow" id="onMap"><span class="ic">${K.ic('pin')}</span><span class="t">${target === 'pick' ? 'Set pickup on map' : 'Set destination on map'}</span></button>` : '';
       res.innerHTML = (target === 'pick' ? mapRow : '') + rows(current, (p) => p._ic) + (target === 'drop' ? mapRow : '');
@@ -582,6 +586,13 @@
         S.stops = [...(S.stops || []), { lat: p.lat, lng: p.lng, address: p.name }].slice(0, 2);
         close(); prepareQuote(); return;
       }
+      if (saveAs && p._act === 'map') {
+        close();
+        const c = S.gps || S.pickup || map.getCenter();
+        S.pinSave = { key: saveAs, label: opts.label, onSaved: opts.onSaved, back: S.view };
+        map.setView([c.lat, c.lng], 17); S.view = 'droppin'; render(); return;
+      }
+      if (saveAs && p._act === 'gps') p = { ...p, name: await K.reverse(p.lat, p.lng).catch(() => 'My location') };
       if (saveAs) {
         try {
           const out = await K.api('/me', { savedPlaces: { [saveAs]: { lat: p.lat, lng: p.lng, address: p.name, label: opts.label } } }, 'PATCH');
@@ -1002,13 +1013,24 @@
   }
 
   function vDropPin() {
+    const ps = S.pinSave, name = ps ? (ps.label || (ps.key === 'home' ? 'Home' : ps.key === 'work' ? 'Work' : 'this place')) : '';
     sheet.innerHTML = `
       <div class="grabber"></div>
-      <h2 style="text-align:center">Set your destination</h2>
-      <div class="lrow" style="cursor:default"><span class="ic">${K.ic('flag')}</span><span class="grow"><span class="t ellipsis" id="pinAddr" style="display:block">Move the map to your destination</span></span></div>
-      <div class="sheet-foot"><button class="btn btn-primary btn-block btn-lg" id="confirm">Confirm destination</button></div>`;
+      <h2 style="text-align:center">${ps ? `Set ${K.esc(name)} on the map` : 'Set your destination'}</h2>
+      <div class="lrow" style="cursor:default"><span class="ic">${K.ic(ps ? 'pin' : 'flag')}</span><span class="grow"><span class="t ellipsis" id="pinAddr" style="display:block">${ps ? 'Move the map to the spot' : 'Move the map to your destination'}</span></span></div>
+      <div class="sheet-foot"><button class="btn btn-primary btn-block btn-lg" id="confirm">${ps ? `Save as ${K.esc(name)}` : 'Confirm destination'}</button>${ps ? '<button class="btn btn-block" id="pinCancel">Cancel</button>' : ''}</div>`;
     onPinMove();
-    K.$('#confirm').onclick = () => { if (S.pinDrop) chooseDrop(S.pinDrop); };
+    const leave = () => { S.pinSave = null; S.view = 'home'; render(); };
+    if (ps) K.$('#pinCancel').onclick = leave;
+    K.$('#confirm').onclick = async () => {
+      if (!S.pinDrop) return;
+      if (!ps) { chooseDrop(S.pinDrop); return; }
+      const d = S.pinDrop, address = d.address || (d.name !== 'Pinned location' ? d.name : await K.reverse(d.lat, d.lng).catch(() => 'Pinned location'));
+      try {
+        const out = await K.api('/me', { savedPlaces: { [ps.key]: { lat: d.lat, lng: d.lng, address, label: ps.label } } }, 'PATCH');
+        saveUser(out.user); K.toast(`${name} saved`); const after = ps.onSaved; leave(); if (after) after();
+      } catch (e) { K.toast(e.message); }
+    };
   }
 
   async function book() {
@@ -1389,11 +1411,11 @@
           <span class="row" style="justify-content:center;gap:8px;margin-top:6px">${P.logo}<span class="small bold">${P.name}</span></span>
           ${t.pointsEarned ? `<span class="points-pill">★ +${t.pointsEarned} Flytte Rewards point${t.pointsEarned > 1 ? 's' : ''}</span>` : ''}
         </div>
-        ${tipHtml(t)}
         ${!t.riderRated ? `
           <h3 style="margin-top:6px">Rate your ${who(t)}</h3>
           <div class="row" style="justify-content:center;gap:8px">${photo(d, 'photo')}<span style="text-align:left"><b>${K.esc(d.name || '')}</b><br><span class="small muted">${K.esc(d.plate || '')}</span></span></div>
           <div class="stars" role="radiogroup" aria-label="Rate your ${who(t)}">${[1, 2, 3, 4, 5].map((n) => `<button data-n="${n}" role="radio" aria-checked="${n === S.rating}" aria-label="${n} star${n > 1 ? 's' : ''}" class="${n <= S.rating ? 'on' : ''}">${K.starSvg}</button>`).join('')}</div>` : ''}
+        ${tipHtml(t)}
         <button class="btn btn-link btn-block" id="details" style="min-height:36px">View details</button>
         <button class="link-report" data-report style="margin:0 auto">Driver or vehicle didn’t match?</button>
       </div>
@@ -1792,7 +1814,8 @@
     S.when = null; S.passenger = null; S.promoCode = null; S.tipped = false; S.womanDriver = false; S.stops = [];
     if (S.errandHome) { S.pickup = S.errandHome; S.errandHome = null; }
     S.errand = null;
-    if (S.service === 'errand') S.service = (S.user && S.user.ridePrefs && S.user.ridePrefs.service) || 'boda';
+    // After an errand or parcel, Home is back to the rider's usual ride.
+    if (['errand', 'parcel'].includes(S.service)) S.service = (S.user && S.user.ridePrefs && S.user.ridePrefs.service) || 'boda';
     S.summary = null; applyPrefs();
     loadGrowth();
     S.messages = []; S.unread = 0; routedPhase = null; phaseKm = null;
@@ -2426,7 +2449,6 @@
       <h3 class="set-h">Payments</h3><div class="set-card list">
         ${row('pay', 'card', 'Payment methods', K.esc(P.name))}
         ${row('summary', 'chart', 'Monthly summary', sm ? `${sm.totals.trips} trip${sm.totals.trips === 1 ? '' : 's'} · ${K.ugx(sm.totals.spent)} this month` : 'Trips, spending and statements')}
-        ${S.config.emailReceipts || u.email ? row('email', 'mail', 'Email receipts', u.email && u.emailVerified ? K.esc(u.email) : 'Add your email') : ''}
       </div>
       <h3 class="set-h">Places & safety</h3><div class="set-card list">
         ${row('places', 'pin', 'Saved places', places ? `${places} saved` : 'Home, work and your own places')}
@@ -2437,18 +2459,17 @@
       <h3 class="set-h">Work, shops and school</h3><div class="set-card list">
         ${row('biz', 'work', 'Flytte for Business', bizCompanies('business').length ? K.esc(bizCompanies('business').map((c) => c.name).join(', ')) : 'Company rides, billed monthly')}
         ${row('shop', 'send', 'Flytte for Shops', bizCompanies('merchant').length ? K.esc(bizCompanies('merchant').map((c) => c.name).join(', ')) : 'Deliveries for your customers')}
-        ${row('school', 'shield', 'School runs', S.plans && S.plans.length ? `${S.plans.length} child${S.plans.length === 1 ? '' : 'ren'} · same driver every day` : 'Vetted drivers, a PIN at the school gate')}
+        ${row('school', 'flag', 'School runs', S.plans && S.plans.length ? `${S.plans.length} child${S.plans.length === 1 ? '' : 'ren'} · same driver every day` : 'Vetted drivers, a PIN at the school gate')}
       </div>
-      <h3 class="set-h">Account</h3><div class="set-card list">
-        ${row('profile', 'user', 'Profile and sign-in', 'Name, photo, phone number, password')}
+      <h3 class="set-h">You</h3><div class="set-card list">
+        ${row('profile', 'user', 'Profile and sign-in', ['Name, photo, phone', S.config.emailReceipts || u.email ? 'email' : '', !S.config.smsLogin ? 'password' : ''].filter(Boolean).join(', '))}
         ${row('devices', 'lock', 'Signed-in devices', 'See where you’re signed in')}
-        ${row('invite', 'gift', 'Invite friends', `Get ${K.ugx((S.config.growth || { referral: {} }).referral.referrer || 0)} for each friend`)}
+        ${row('invite', 'gift', 'Invite friends', `Share your link · get ${K.ugx((S.config.growth || { referral: {} }).referral.referrer || 0)} for each friend`)}
         ${row('settings', 'settings', 'Settings', 'Appearance, language, privacy')}
       </div>
       <h3 class="set-h">Help</h3><div class="set-card list">
         ${row('help', 'help', 'Help centre', 'Answers, your reports, contact us')}
         ${row('rate', 'star', 'Rate Flytte', 'Tell us how we’re doing')}
-        ${row('share', 'share', 'Share Flytte', 'Send friends your invite link')}
       </div>
       <div class="set-card list" style="margin-top:22px">${row('out', 'logout', 'Log out', '', '')}</div>
       <p class="tiny faint" style="text-align:center;margin-top:18px">Flytte ${K.esc(S.config.version || '')}</p>`;
@@ -2499,7 +2520,7 @@
         <h3 class="set-h">Name</h3><div class="set-card"><form id="nf" class="row" style="gap:8px"><input id="nm" class="fill" value="${K.esc(u.name)}" autocomplete="name" aria-label="Full name" style="margin:0"><button class="btn btn-primary" type="submit">Save</button></form></div>
         <h3 class="set-h">Sign-in</h3><div class="set-card list">
           ${row('phone', 'phone', 'Phone number', `${K.esc(prettyPhone(u.phone))} · confirmed`, '<span class="small muted">Change</span>')}
-          ${S.config.emailReceipts || u.email ? row('email', 'mail', 'Email', u.email ? `${K.esc(u.email)}${u.emailVerified ? ' · confirmed' : ' · not confirmed'}` : 'Not added') : ''}
+          ${S.config.emailReceipts || u.email ? row('email', 'mail', 'Email and receipts', u.email ? `${K.esc(u.email)}${u.emailVerified ? ' · confirmed' : ' · not confirmed'}` : 'Add your email to get trip receipts') : ''}
           ${!S.config.smsLogin ? row('pw', 'lock', 'Password', 'Change your password') : ''}
         </div>`;
       const inp = K.$('#picIn', sp.body);
@@ -2583,11 +2604,11 @@
     const p = { ...(S.user.ridePrefs || {}) };
     const draw = () => {
       sp.body.innerHTML = `<p class="small muted" style="margin:0 4px 6px">Used for every booking. You can still change them on the ride options.</p>
-        <h3 class="set-h">Usual ride</h3><div class="set-card list">${S.config.services.filter((s) => !['parcel', 'errand'].includes(s.id)).map((s) => `<button class="set-row" data-svc="${s.id}" role="radio" aria-checked="${p.service === s.id}"><span class="grow"><b>${K.esc(svcName(s.id))}</b></span>${p.service === s.id ? K.ic('check') : ''}</button>`).join('')}</div>
+        <h3 class="set-h">Usual ride</h3><div class="set-card list" role="radiogroup" aria-label="Usual ride">${S.config.services.filter((s) => ['boda', 'car', 'comfort'].includes(s.id)).map((s) => { const on = (p.service || 'boda') === s.id; return `<button class="set-row" data-svc="${s.id}" role="radio" aria-checked="${on}"><span class="grow"><b>${K.esc(svcName(s.id))}</b>${!p.service && on ? '<small>Default</small>' : ''}</span>${on ? K.ic('check') : ''}</button>`; }).join('')}</div>
         <h3 class="set-h">Driver</h3><div class="set-card list"><button class="set-row" id="wd" role="switch" aria-checked="${!!p.womanDriver}"><span class="grow"><b>Always ask for a woman driver</b><small>It can take a little longer to find one</small></span><span class="set-switch${p.womanDriver ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
         <h3 class="set-h">Pickup note</h3><div class="set-card"><input id="pn" maxlength="120" placeholder="e.g. Call me when you arrive" value="${K.esc(p.note || '')}" aria-label="Default pickup note" style="margin:0"></div>
         <button class="btn btn-primary btn-block btn-lg" id="sv" style="margin-top:18px">Save preferences</button>`;
-      sp.body.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { p.service = p.service === b.dataset.svc ? null : b.dataset.svc; p.note = K.$('#pn', sp.body).value; draw(); });
+      sp.body.querySelectorAll('[data-svc]').forEach((b) => b.onclick = () => { p.service = b.dataset.svc; p.note = K.$('#pn', sp.body).value; draw(); });
       K.$('#wd', sp.body).onclick = () => { p.womanDriver = !p.womanDriver; p.note = K.$('#pn', sp.body).value; draw(); };
       K.$('#sv', sp.body).onclick = async () => {
         p.note = K.$('#pn', sp.body).value;
@@ -2687,9 +2708,20 @@
       <h3 class="set-h">Your reports</h3><div id="reps">${K.skeleton('list', 1)}</div>
       <h3 class="set-h">Contact us</h3><div class="set-card list">
         ${row('trip', 'receipt', 'Problem with a trip', 'Open the trip in Activity and tap Get help')}
-        ${S.config.supportPhone ? `<a class="set-row" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="row-ic">${K.ic('phone', 'sm')}</span><span class="grow"><b>Call support</b><small>${K.esc(S.config.supportPhone)}</small></span>${K.ic('chev', 'sm')}</a>` : ''}
+        ${row('msg', 'msg', 'Write to us', 'Anything else: your account, payments, an idea')}
+        ${S.config.supportPhone ? `<a class="set-row" href="https://wa.me/${K.esc(S.config.supportPhone.replace(/\D/g, ''))}" target="_blank" rel="noopener"><span class="row-ic">${K.ic('msg', 'sm')}</span><span class="grow"><b>WhatsApp us</b><small>${K.esc(S.config.supportPhone)}</small></span>${K.ic('chev', 'sm')}</a>
+        <a class="set-row" href="tel:${K.esc(S.config.supportPhone.replace(/\s/g, ''))}"><span class="row-ic">${K.ic('phone', 'sm')}</span><span class="grow"><b>Call support</b><small>${K.esc(S.config.supportPhone)}</small></span>${K.ic('chev', 'sm')}</a>` : ''}
       </div>`;
     K.$('[data-a="trip"]', sp.body).onclick = () => { sp.close(); openTab('activity'); };
+    K.$('[data-a="msg"]', sp.body).onclick = () => {
+      const m = K.modal(`<h2>Write to us</h2><p class="small muted">The Flytte team reads every message and replies by phone or in the app.</p>
+        <textarea id="hm" rows="5" maxlength="1000" placeholder="How can we help?"></textarea><p class="error" id="err"></p>
+        <button class="btn btn-primary btn-block btn-lg" id="sv">Send</button>`);
+      K.$('#sv', m.el).onclick = async () => {
+        try { await K.api('/support/message', { message: K.$('#hm', m.el).value }); m.close(); K.toast('Sent. We’ll get back to you soon.', 4000); }
+        catch (e) { K.$('#err', m.el).textContent = e.message; }
+      };
+    };
     const label = { lost_item: 'Lost item', wrong_charge: 'Charged the wrong amount', long_route: 'Longer route', driver_behaviour: 'Driver behaviour', safety: 'Safety concern', other: 'Something else' };
     try {
       const list = await K.api('/me/reports');
