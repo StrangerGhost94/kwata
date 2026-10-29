@@ -422,6 +422,23 @@
     p.classList.toggle('scrolled', top > 0 && tr.bottom <= barBottom + 2);
   }, true);
 
+  // ---------- Mobile Money networks ----------
+  // Uganda: MTN 076, 077, 078; Airtel 070, 074, 075. Works from +256… or 07… numbers.
+  K.momoNet = (phone) => {
+    const d = String(phone || '').replace(/\D/g, '').replace(/^256/, '').replace(/^0/, '');
+    if (/^7[678]\d{7}$/.test(d)) return 'mtn';
+    if (/^7[045]\d{7}$/.test(d)) return 'airtel';
+    return null;
+  };
+  K.momoName = (net) => (net === 'mtn' ? 'MTN MoMo' : net === 'airtel' ? 'Airtel Money' : 'Mobile Money');
+  K.momoUssd = (net) => (net === 'mtn' ? '*165#' : net === 'airtel' ? '*185#' : null);
+  // Small marks in each network's colours, for the payment pickers.
+  K.momoLogo = (net) => net === 'mtn'
+    ? '<svg viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#FFCC00"/><ellipse cx="17" cy="17" rx="14" ry="8.8" fill="none" stroke="#111" stroke-width="2"/><text x="17" y="19.9" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="7.6" fill="#111">MTN</text></svg>'
+    : net === 'airtel'
+      ? '<svg viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#E40000"/><path d="M13.2 13.6c.9-3.6 6.6-4.6 8.4-1.6 1 1.7-.2 3.4-2 3.9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><text x="17" y="25.5" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="8.4" fill="#fff" letter-spacing="-.2">airtel</text></svg>'
+      : `<svg viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#1F2A44"/><rect x="11" y="7" width="12" height="20" rx="2.6" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17" cy="23.2" r="1.2" fill="#fff"/></svg>`;
+
   // After a payment is started: a Flutterwave link opens its checkout; a Mobile Money prompt (Relworx)
   // shows "Check your phone" and waits for the payer to approve. Resolves 'success', 'failed', 'pending'
   // (still waiting when they closed it) or 'redirect'.
@@ -429,15 +446,16 @@
     if (!out) return Promise.resolve('failed');
     if (out.link) { location.href = out.link; return Promise.resolve('redirect'); }
     if (!out.pending) return Promise.resolve('success');
+    const net = K.momoNet(out.phone);
     return new Promise((resolve) => {
       let done = false, timer = null;
       const started = Date.now();
       const m = K.modal(`<div class="momo-wait" aria-live="polite">
-          <div class="momo-phone" aria-hidden="true">${K.ic('phone')}<i></i></div>
+          <div class="momo-phone" aria-hidden="true"><span class="momo-mark">${K.momoLogo(net)}</span><i></i></div>
           <h2>Check your phone</h2>
-          <p class="muted">We sent a Mobile Money prompt for <b>${K.ugx(out.amount)}</b> to <b>${K.esc(K.prettyPhone(out.phone))}</b>. Enter your PIN on your phone to approve it.</p>
+          <p class="muted">We sent ${net ? 'an' : 'a'} ${K.momoName(net)} prompt for <b>${K.ugx(out.amount)}</b> to <b>${K.esc(K.prettyPhone(out.phone))}</b>. Enter your PIN on your phone to approve it.</p>
           <p class="small muted" id="mwState"><span class="spin"></span> Waiting for you to approve…</p>
-          <p class="tiny faint">No prompt? Dial *165# (MTN) or *185# (Airtel) and check Approvals.</p>
+          <p class="tiny faint">${K.momoUssd(net) ? `No prompt within a minute? Dial ${K.momoUssd(net)} and check your pending approvals.` : 'No prompt within a minute? Check your Mobile Money menu for pending approvals.'}</p>
         </div>
         <button class="btn btn-block" data-close style="margin-top:6px">Close</button>`, { onClose: () => finish(null) });
       const finish = (result) => {

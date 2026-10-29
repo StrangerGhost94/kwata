@@ -22,8 +22,8 @@
 
   // ---------- payment preference ----------
   const PAY = {
-    mtn: { name: 'MTN Mobile Money', logo: '<span class="paylogo mtn">MTN</span>', method: 'momo' },
-    airtel: { name: 'Airtel Money', logo: '<span class="paylogo airtel">a</span>', method: 'momo' },
+    mtn: { name: 'MTN MoMo', logo: `<span class="paylogo mtn">${K.momoLogo('mtn')}</span>`, method: 'momo' },
+    airtel: { name: 'Airtel Money', logo: `<span class="paylogo airtel">${K.momoLogo('airtel')}</span>`, method: 'momo' },
     card: { name: 'Card', logo: `<span class="paylogo card">${K.ic('card', 'sm')}</span>`, method: 'card' },
     cash: { name: 'Cash', logo: `<span class="paylogo cash">${K.ic('cash', 'sm')}</span>`, method: 'cash' },
     wallet: { name: 'Flytte Wallet', logo: `<span class="paylogo wallet">${K.ic('wallet', 'sm')}</span>`, method: 'wallet' },
@@ -31,8 +31,29 @@
   };
   // Mobile Money and card only work once online payments are switched on.
   const payOK = (k) => k === 'business' ? bizCompanies('business').length > 0 : k === 'card' ? !!(S.config && S.config.paymentsAvailable && S.config.cardPayments !== false) : !['mtn', 'airtel'].includes(k) || !!(S.config && S.config.paymentsAvailable);
-  const pref = () => (PAY[S.user && S.user.payPref] && payOK(S.user.payPref) ? S.user.payPref : 'cash');
-  const payOfTrip = (t) => t.paymentMethod === 'momo' ? (S.user.payPref === 'airtel' ? 'airtel' : 'mtn') : t.paymentMethod;
+  // Mobile Money is one choice: MTN or Airtel follows the number the prompt goes to.
+  const momoKey = () => K.momoNet(S.user && (S.user.payPhone || S.user.phone)) || (S.user && S.user.payPref === 'airtel' ? 'airtel' : 'mtn');
+  const pref = () => { const p = S.user && S.user.payPref; if (!PAY[p] || !payOK(p)) return 'cash'; return ['mtn', 'airtel'].includes(p) ? momoKey() : p; };
+  const payOfTrip = (t) => t.paymentMethod === 'momo' ? momoKey() : t.paymentMethod;
+  // The number Mobile Money prompts go to. Saving it also switches MTN/Airtel to match.
+  function changeMomoNumber(onSaved) {
+    const m = K.modal(`<h2>Mobile Money number</h2><p class="small muted">Payment prompts go to this MTN or Airtel number. You approve them with your Mobile Money PIN.</p>
+      <label for="mm">Phone number</label><input id="mm" type="tel" inputmode="tel" autocomplete="tel" value="${K.esc(prettyPhone(S.user.payPhone))}">
+      <p class="small muted" id="mmNet" style="margin:6px 0 0"></p>
+      <p class="error" id="err"></p><button class="btn btn-primary btn-block btn-lg" id="sv">Save</button>`);
+    const inp = K.$('#mm', m.el), hint = K.$('#mmNet', m.el);
+    const show = () => { const n = K.momoNet(inp.value); hint.textContent = n ? `${K.momoName(n)} number` : inp.value.replace(/\D/g, '').length >= 9 ? 'This isn’t an MTN or Airtel Uganda number.' : ''; };
+    inp.oninput = show; show();
+    K.$('#sv', m.el).onclick = async () => {
+      const n = K.momoNet(inp.value);
+      if (!n) { K.$('#err', m.el).textContent = 'Enter an MTN (076, 077, 078) or Airtel (070, 074, 075) number.'; return; }
+      try {
+        const body = { payPhone: inp.value };
+        if (['mtn', 'airtel'].includes(S.user.payPref)) body.payPref = n;
+        S.user = (await K.api('/me', body, 'PATCH')).user; m.close(); K.toast('Number saved'); onSaved && onSaved();
+      } catch (e) { K.$('#err', m.el).textContent = e.message; }
+    };
+  }
   const prettyPhone = (p) => K.prettyPhone(p);
   // What riders call the person who comes: "driver" (cars and bodas alike), "courier" for parcels.
   // ("Rider" would clash with riders, the passengers.)
@@ -1380,7 +1401,7 @@
       <div class="sheet-foot">
         ${needsPay ? `<p class="error" id="err" role="alert" style="margin:0 0 6px;min-height:0">${S.config.paymentsAvailable ? '' : `${P.name} isn’t available yet. Pay your ${who(t)} ${K.ugx(t.payable)} in cash.`}</p>
           ${S.user.walletBalance >= t.payable ? `<button class="btn btn-primary btn-block btn-lg" id="payWallet">Pay ${K.ugx(t.payable)} from Flytte Wallet</button>` : ''}
-          ${S.config.paymentsAvailable ? `<button class="btn ${S.user.walletBalance >= t.payable ? 'btn-outline' : 'btn-primary'} btn-block btn-lg" id="pay">Pay ${K.ugx(t.payable)}${S.user.walletBalance >= t.payable ? ` by ${P.name}` : ''}</button>` : ''}
+          ${S.config.paymentsAvailable ? `<button class="btn ${S.user.walletBalance >= t.payable ? 'btn-outline' : 'btn-primary'} btn-block btn-lg" id="pay">Pay ${K.ugx(t.payable)} with ${P.name}</button>${t.paymentMethod === 'momo' ? `<div class="momo-num" style="justify-content:center"><span>Prompt goes to <b>${K.esc(prettyPhone(S.user.payPhone))}</b></span><button type="button" id="chNum">Change</button></div>` : ''}` : ''}
           <button class="btn ${S.config.paymentsAvailable ? 'btn-outline' : 'btn-primary'} btn-block btn-lg" id="cashPaid">I paid in cash</button>` : ''}
         ${!t.riderRated ? `<button class="btn ${needsPay ? '' : 'btn-primary'} btn-block btn-lg" id="rate" ${S.rating || !needsPay ? '' : 'disabled'}>${S.rating || needsPay ? `Rate ${who(t)}` : 'Done'}</button>
           ${needsPay ? '' : `<p class="small muted" id="rateHint" style="text-align:center;margin:6px 0 0">${S.rating ? '' : 'Rating is optional'}</p>`}` : (!needsPay ? '<button class="btn btn-primary btn-block btn-lg" id="done">Done</button>' : '')}
@@ -1391,6 +1412,7 @@
       const rb = K.$('#rate'); rb.disabled = false; rb.textContent = `Rate ${who(t)}`;
       const h = K.$('#rateHint'); if (h) h.textContent = '';
     });
+    const chn = K.$('#chNum'); if (chn) chn.onclick = () => changeMomoNumber(render);
     const pay = K.$('#pay');
     if (pay) pay.onclick = async () => {
       pay.disabled = true;
@@ -2731,11 +2753,11 @@
     const sp = subPage('Payment methods', onBack);
     const draw = () => {
       const cur = pref();
-      const sub = { mtn: prettyPhone(S.user.payPhone), airtel: prettyPhone(S.user.payPhone), card: 'Visa or Mastercard, paid at the end', cash: 'Pay your rider or driver directly', wallet: 'Balance ' + K.ugx(S.user.walletBalance), business: (bizCompanies('business')[0] ? budgetText(bizCompanies('business')[0]) : '') };
+      const sub = { mtn: `${prettyPhone(S.user.payPhone)} · prompt on your phone`, airtel: `${prettyPhone(S.user.payPhone)} · prompt on your phone`, card: 'Visa or Mastercard, paid at the end', cash: 'Pay your rider or driver directly', wallet: 'Balance ' + K.ugx(S.user.walletBalance), business: (bizCompanies('business')[0] ? budgetText(bizCompanies('business')[0]) : '') };
       const live = S.config.paymentsAvailable;
       sp.body.innerHTML = `<p class="small muted" style="margin:0 0 12px">Your default is used for every trip. Change it any time.</p>
         <div role="radiogroup" aria-label="Default payment method">
-        ${Object.keys(PAY).filter((k) => k !== 'business' || payOK(k)).map((k) => payOK(k)
+        ${Object.keys(PAY).filter((k) => (k !== 'business' || payOK(k)) && (!['mtn', 'airtel'].includes(k) || k === momoKey())).map((k) => payOK(k)
           ? `<button class="pay-item ${k === cur ? 'on' : ''}" data-p="${k}" role="radio" aria-checked="${k === cur}">${PAY[k].logo}<span class="grow"><b>${PAY[k].name}</b><span>${sub[k]}</span></span>${k === cur ? '<span class="default-badge">Default</span>' : ''}</button>`
           : `<div class="pay-item off" role="radio" aria-checked="false" aria-disabled="true">${PAY[k].logo}<span class="grow"><b>${PAY[k].name}</b><span>Not available yet</span></span><span class="soon-badge">Coming soon</span></div>`).join('')}
         </div>
@@ -2746,15 +2768,7 @@
         try { S.user = (await K.api('/me', { payPref: b.dataset.p }, 'PATCH')).user; } catch (e) { K.toast(e.message); return; }
         if (onPick) { sp.close(); onPick(); } else draw();
       });
-      if (live) K.$('#num', sp.page).onclick = () => {
-        const m = K.modal(`<h2>Mobile Money number</h2><p class="small muted">We send MTN or Airtel payment prompts to this number.</p>
-          <label for="mm">Phone number</label><input id="mm" type="tel" inputmode="tel" value="${K.esc(prettyPhone(S.user.payPhone))}">
-          <p class="error" id="err"></p><button class="btn btn-primary btn-block btn-lg" id="sv">Save</button>`);
-        K.$('#sv', m.el).onclick = async () => {
-          try { S.user = (await K.api('/me', { payPhone: K.$('#mm', m.el).value }, 'PATCH')).user; m.close(); draw(); K.toast('Number saved'); }
-          catch (e) { K.$('#err', m.el).textContent = e.message; }
-        };
-      };
+      if (live) K.$('#num', sp.page).onclick = () => changeMomoNumber(draw);
       if (live) K.$('#top', sp.page).onclick = () => openWallet(draw);
     };
     draw();
@@ -2836,7 +2850,9 @@
       ${live ? `<p class="small muted">Top up once with Mobile Money and pay for trips in one tap.</p>
       <div class="chips">${[10000, 20000, 50000, 100000].map((a) => `<button class="chip" data-amt="${a}">${K.ugx(a)}</button>`).join('')}</div>
       <label for="amt">Amount (UGX)</label><input id="amt" type="number" inputmode="numeric" min="1000" max="2000000" step="500" value="20000">
-      <div class="row" style="margin-top:12px"><button class="btn btn-primary fill" data-m="momo">MTN / Airtel</button>${S.config.cardPayments === false ? '' : `<button class="btn fill" data-m="card">${K.ic('card', 'sm')} Card</button>`}</div>
+      <button class="btn btn-primary btn-block btn-lg momo-btn" data-m="momo" style="margin-top:12px">${PAY[momoKey()].logo}<span>Top up with ${PAY[momoKey()].name}</span></button>
+      <div class="momo-num"><span>Prompt goes to <b>${K.esc(prettyPhone(S.user.payPhone))}</b></span><button type="button" id="chNum">Change</button></div>
+      ${S.config.cardPayments === false ? '' : `<button class="btn btn-block" data-m="card" style="margin-top:8px">${K.ic('card', 'sm')} Top up with a card</button>`}
       ${S.config.paymentsDemo ? '<p class="tiny faint" style="margin-top:8px">Test mode: top-ups are added instantly without charging you.</p>' : ''}` : '<p class="small muted">Wallet top-ups by Mobile Money and card are coming soon. Credit from Flytte Rewards and invites lands here, and you can use it to pay for trips.</p>'}
       <p class="error" id="err" role="alert"></p>
       <div class="set-card list" style="margin:14px 0 4px"><button class="set-row" id="lockRow" role="switch" aria-checked="${!!S.user.walletLock}"><span class="ic-lock">${K.ic('lock')}</span>
@@ -2845,6 +2861,7 @@
       ${w.transactions.length ? `<h3>History</h3>${w.transactions.map((x) => `<div class="tx"><span>${K.esc(x.note || x.type)}<br><span class="tiny faint">${K.when(x.created_at)}</span></span><span class="${x.amount > 0 ? 'pos' : 'neg'}">${x.amount > 0 ? '+' : ''}${K.ugx(x.amount)}</span></div>`).join('')}` : ''}`;
     m.el.querySelectorAll('[data-amt]').forEach((b) => b.onclick = () => { K.$('#amt', m.el).value = b.dataset.amt; });
     bindWalletLock(m, after);
+    const chn = K.$('#chNum', m.el); if (chn) chn.onclick = () => { m.close(); setTimeout(() => changeMomoNumber(() => openWallet(after)), 280); };
     m.el.querySelectorAll('[data-m]').forEach((b) => b.onclick = async () => {
       const amount = Math.round(+K.$('#amt', m.el).value);
       if (!(amount >= 1000 && amount <= 2000000)) { K.$('#err', m.el).textContent = 'Enter an amount between UGX 1,000 and 2,000,000.'; return; }
