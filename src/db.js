@@ -377,6 +377,8 @@ async function migrate() {
     note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  ALTER TABLE app_feedback ALTER COLUMN stars DROP NOT NULL;
+  ALTER TABLE app_feedback ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'rating';
   CREATE TABLE IF NOT EXISTS fare_splits (
     trip_id INTEGER PRIMARY KEY,
     rider_id INTEGER NOT NULL,

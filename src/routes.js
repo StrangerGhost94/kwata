@@ -646,6 +646,15 @@ r.get('/me/reports', auth.requireAuth(), wrap(async (req, res) => {
   res.json(rows.map((i) => ({ id: i.id, tripId: i.trip_id, kind: i.kind, details: i.details, status: i.status, reply: i.reply, at: i.created_at })));
 }));
 
+// "Write to us" from Help: a message that isn't about one trip. The team reads it in Admin → Customer help.
+r.post('/support/message', auth.requireAuth('rider', 'driver'), limit(5, 3600e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
+  const note = clean((req.body || {}).message, 1000);
+  if (note.length < 5) return bad(res, 'Write a few words so we know how to help.');
+  await db.query("INSERT INTO app_feedback(user_id, stars, note, kind) VALUES ($1, NULL, $2, 'message')", [req.user.id, note]);
+  rt.io.to('admin').emit('admin:issue', { tripId: '-', user: req.user.name, role: req.user.role, kind: 'message', label: 'Message from Help' });
+  res.json({ ok: true });
+}));
+
 // "Rate Flytte": a few stars and an optional note, read by the team in Admin → Customer help.
 r.post('/feedback', auth.requireAuth(), limit(5, 3600e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
   const stars = Math.round(Number((req.body || {}).stars));
@@ -1081,7 +1090,7 @@ r.post('/trips/:id/arrived', auth.requireAuth('driver'), wrap(async (req, res) =
   const t = await driverStep(req, res, ['accepted'], 'arrived', ', arrived_at = NOW()');
   if (!t) return;
   await rt.broadcast(t.id);
-  rt.notify(t.rider_id, 'toast', { text: t.service === 'errand' ? `${String(req.user.name).split(' ')[0]} is at the shop` : t.service === 'parcel' ? 'Your courier is here' : 'Your ride is here 👋' });
+  rt.notify(t.rider_id, 'toast', { arrived: true, tripId: t.id, text: t.service === 'errand' ? `${String(req.user.name).split(' ')[0]} is at the shop` : t.service === 'parcel' ? 'Your courier is here' : 'Your ride is here 👋' });
   res.json({ ok: true });
 }));
 
@@ -1768,9 +1777,10 @@ r.post('/admin/changes/:id', admin, wrap(async (req, res) => {
 }));
 
 r.get('/admin/feedback', admin, wrap(async (req, res) => {
-  const { rows } = await db.query(`SELECT f.stars, f.note, f.created_at, u.name, u.phone FROM app_feedback f JOIN users u ON u.id = f.user_id ORDER BY f.id DESC LIMIT 100`);
-  const avg = await db.one('SELECT COUNT(*)::int AS n, COALESCE(AVG(stars), 0)::float AS avg FROM app_feedback');
-  res.json({ count: avg.n, average: Math.round(avg.avg * 10) / 10, items: rows.map((x) => ({ stars: x.stars, note: x.note, at: x.created_at, name: x.name, phone: x.phone })) });
+  const { rows } = await db.query(`SELECT f.stars, f.note, f.kind, f.created_at, u.name, u.phone, u.role FROM app_feedback f JOIN users u ON u.id = f.user_id ORDER BY f.id DESC LIMIT 100`);
+  const avg = await db.one("SELECT COUNT(*)::int AS n, COALESCE(AVG(stars), 0)::float AS avg FROM app_feedback WHERE kind = 'rating'");
+  const items = rows.map((x) => ({ stars: x.stars, note: x.note, kind: x.kind, at: x.created_at, name: x.name, phone: x.phone, role: x.role }));
+  res.json({ count: avg.n, average: Math.round(avg.avg * 10) / 10, items: items.filter((x) => x.kind === 'rating'), messages: items.filter((x) => x.kind === 'message') });
 }));
 r.get('/admin/issues', admin, wrap(async (req, res) => {
   const { rows } = await db.query(`SELECT i.*, u.name, u.phone, t.pickup_address, t.drop_address, t.fare, t.payment_method, t.completed_at, t.created_at AS trip_at,

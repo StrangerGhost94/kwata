@@ -555,6 +555,7 @@
     main.innerHTML = `<h1>Customer help</h1><p class="muted">Reports riders and drivers send from a trip. Call them if it’s urgent; your reply reaches them in the app and as a notification.</p>
       <h2>Open (${open.length})</h2>${open.map(card).join('') || '<p class="muted">Nothing waiting.</p>'}
       ${done.length ? `<h2 style="margin-top:24px">Resolved</h2>${done.slice(0, 40).map(card).join('')}` : ''}
+      ${fb && fb.messages && fb.messages.length ? `<h2 style="margin-top:24px">Messages from Help</h2>${fb.messages.slice(0, 30).map((f) => `<div class="card" style="margin-bottom:8px"><span class="small muted">${K.esc(f.name)} (${f.role === 'driver' ? 'driver' : 'rider'}) · <a href="tel:${K.esc(f.phone)}">${K.esc(f.phone)}</a> · ${K.when(f.at)}</span><p style="margin:6px 0 0">${K.esc(f.note)}</p></div>`).join('')}` : ''}
       ${fb && fb.count ? `<h2 style="margin-top:24px">App ratings · ★ ${fb.average} from ${fb.count}</h2>${fb.items.slice(0, 30).map((f) => `<div class="card" style="margin-bottom:8px"><b>${'★'.repeat(f.stars)}${'☆'.repeat(5 - f.stars)}</b> <span class="small muted">${K.esc(f.name)} · ${K.when(f.at)}</span>${f.note ? `<p style="margin:6px 0 0">${K.esc(f.note)}</p>` : ''}</div>`).join('')}` : ''}`;
     main.querySelectorAll('[data-reply]').forEach((b) => b.onclick = async () => {
       const ta = K.$('#rp' + b.dataset.reply, main);

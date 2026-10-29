@@ -1511,7 +1511,7 @@ html.launch-dark .sp-load { background: rgba(255,255,255,.14); }
 .veh-shot.has { border-style: solid; padding: 6px; }
 .veh-shot.has img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; }
 
-.link-report { display: block; background: none; border: 0; padding: 8px 0; margin: 6px 0 0; color: var(--stop); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 44px; }
+.link-report { display: block; background: none; border: 0; padding: 8px 0; margin: 6px 0 0; color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong, var(--line)); cursor: pointer; min-height: 44px; }
 .modal .lrow .tick { visibility: hidden; color: var(--stop); }
 .modal .lrow.on { background: #FDECEC; }
 .modal .lrow.on .tick { visibility: visible; }
