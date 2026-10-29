@@ -555,6 +555,7 @@ r.patch('/me', auth.requireAuth(), wrap(async (req, res) => {
   if (payPhone !== undefined) {
     const pp = auth.normalizePhone(payPhone, auth.ccOf(req.user.phone));
     if (!pp) return bad(res, 'Enter a valid Mobile Money number.');
+    if (!/^\+2567[0145678]\d{7}$/.test(pp)) return bad(res, 'Enter an MTN (076, 077, 078) or Airtel (070, 074, 075) Uganda number.');
     await db.query('UPDATE users SET pay_phone = $1 WHERE id = $2', [pp, req.user.id]);
   }
   if (name !== undefined && clean(name, 80).length < 2) return bad(res, 'Enter your full name.');

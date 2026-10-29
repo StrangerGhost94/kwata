@@ -112,6 +112,9 @@ const statusOf = async (ref) => { await sleep(3100); return (await call('/paymen
     const k = await call('/wallet/topup', { amount: 2000, method: 'momo' }, ke.token);
     ok(k.status === 503 && /Ugandan/.test(k.body.error), 'a non-Ugandan number is told it needs an MTN or Airtel number');
     ok((await call('/payments/FLY-TOP-1-deadbeef/status')).status === 404, 'an unknown payment reference is not found');
+    const patch = (body) => fetch(BASE + '/api/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + rider.token }, body: JSON.stringify(body) });
+    ok((await patch({ payPhone: '0791234567' })).status === 400, 'a Mobile Money number that isn’t MTN or Airtel Uganda is refused');
+    ok((await patch({ payPhone: '0701234567' })).status === 200, 'an Airtel number is accepted');
   } finally {
     app.kill(); mock.close();
     fs.rmSync(dir, { recursive: true, force: true });
