@@ -112,6 +112,16 @@ const statusOf = async (ref) => { await sleep(3100); return (await call('/paymen
     const k = await call('/wallet/topup', { amount: 2000, method: 'momo' }, ke.token);
     ok(k.status === 503 && /Ugandan/.test(k.body.error), 'a non-Ugandan number is told it needs an MTN or Airtel number');
     ok((await call('/payments/FLY-TOP-1-deadbeef/status')).status === 404, 'an unknown payment reference is not found');
+
+    // Choosing the network and number at payment time.
+    let r = await call('/wallet/topup', { amount: 2000, method: 'momo', network: 'airtel', phone: '0772123456' }, rider.token);
+    ok(r.status === 400 && /isn’t an Airtel number/.test(r.body.error), 'Airtel with an MTN number is refused with a clear message');
+    r = await call('/wallet/topup', { amount: 2000, method: 'momo', network: 'mtn', phone: '0701234567' }, rider.token);
+    ok(r.status === 400 && /isn’t an MTN number/.test(r.body.error), 'MTN with an Airtel number is refused');
+    r = await call('/wallet/topup', { amount: 2000, method: 'momo', network: 'airtel', phone: '0752 111 222' }, rider.token);
+    ok(r.status === 200 && r.body.pending && reqs[reqs.length - 1].msisdn === '+256752111222', 'the prompt goes to the number chosen for that payment');
+    const me = (await call('/me', null, rider.token)).body.user;
+    ok(me.payPhone === '+256752111222' && me.payPref === 'airtel', 'and that number is remembered for next time');
     const patch = (body) => fetch(BASE + '/api/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + rider.token }, body: JSON.stringify(body) });
     ok((await patch({ payPhone: '0791234567' })).status === 400, 'a Mobile Money number that isn’t MTN or Airtel Uganda is refused');
     ok((await patch({ payPhone: '0701234567' })).status === 200, 'an Airtel number is accepted');

@@ -33,12 +33,30 @@ function newRef(prefix) {
 }
 
 // `payer`: someone other than the account holder pays (a friend's share of a split fare).
-async function createCheckout({ user, amount, purpose, tripId, method, baseUrl, payer, companyId }) {
+// The number the payer chose for this payment ("network" is mtn or airtel; the number must be on it).
+// It's remembered as their Mobile Money number. Returns { phone } (null when none was sent) or { error }.
+const NET_PREFIX = { mtn: /^\+2567[678]\d{7}$/, airtel: /^\+2567[045]\d{7}$/ };
+async function chosenPhone(user, body) {
+  const b = body || {};
+  if (!b.phone) return { phone: null };
+  const d = String(b.phone).replace(/\D/g, '').replace(/^256/, '').replace(/^0/, '');
+  const phone = /^7\d{8}$/.test(d) ? '+256' + d : null;
+  const net = b.network === 'airtel' ? 'airtel' : b.network === 'mtn' ? 'mtn' : null;
+  if (!phone) return { error: 'Enter a Ugandan mobile number, e.g. 0772 123456.' };
+  if (net && !NET_PREFIX[net].test(phone)) return { error: net === 'mtn' ? 'That isn’t an MTN number. MTN numbers start with 076, 077 or 078.' : 'That isn’t an Airtel number. Airtel numbers start with 070, 074 or 075.' };
+  if (!NET_PREFIX.mtn.test(phone) && !NET_PREFIX.airtel.test(phone)) return { error: 'Mobile Money works with MTN and Airtel Uganda numbers.' };
+  const pref = NET_PREFIX.mtn.test(phone) ? 'mtn' : 'airtel';
+  await db.query("UPDATE users SET pay_phone = $1, pay_pref = CASE WHEN pay_pref IN ('mtn','airtel') OR pay_pref IS NULL THEN $2 ELSE pay_pref END WHERE id = $3", [phone, pref, user.id]);
+  user.pay_phone = phone;
+  return { phone };
+}
+
+async function createCheckout({ user, amount, purpose, tripId, method, baseUrl, payer, companyId, phone }) {
   amount = Math.round(amount);
   if (!available()) throw new PaymentsUnavailable('Mobile Money and card payments aren’t available yet. Pay with cash for now.');
   if (!(amount > 0)) throw new PaymentsUnavailable('Nothing to pay.');
   if (method === 'card' && !cards()) throw new PaymentsUnavailable('Card payments aren’t available yet. Pay with MTN or Airtel Mobile Money.');
-  if (method !== 'card' && relworx()) return relworxRequest({ user, amount, purpose, tripId, payer, companyId });
+  if (method !== 'card' && relworx()) return relworxRequest({ user, amount, purpose, tripId, payer: payer || (phone ? { phone, name: user.name } : null), companyId });
   const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : purpose === 'debt' ? 'FLY-DBT' : purpose === 'split' ? 'FLY-SPL' : purpose === 'pass' ? 'FLY-PAS' : purpose === 'company' ? 'FLY-BIZ' : 'FLY-TRP');
   await db.query(
     'INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount, payer_name, company_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
@@ -226,4 +244,4 @@ function webhookAuthentic(req) {
   return FLW_HASH.length > 0 && got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
-module.exports = { enabled, relworx, cards, checkPending, demo, available, PaymentsUnavailable, createCheckout, verifyAndApply, webhookAuthentic, _applyPayment: applyPayment };
+module.exports = { chosenPhone, enabled, relworx, cards, checkPending, demo, available, PaymentsUnavailable, createCheckout, verifyAndApply, webhookAuthentic, _applyPayment: applyPayment };

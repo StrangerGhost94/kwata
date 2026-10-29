@@ -439,6 +439,64 @@
       ? '<svg viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#E40000"/><path d="M13.2 13.6c.9-3.6 6.6-4.6 8.4-1.6 1 1.7-.2 3.4-2 3.9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><text x="17" y="25.5" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="8.4" fill="#fff" letter-spacing="-.2">airtel</text></svg>'
       : `<svg viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#1F2A44"/><rect x="11" y="7" width="12" height="20" rx="2.6" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17" cy="23.2" r="1.2" fill="#fff"/></svg>`;
 
+  // "Pay with Mobile Money": choose MTN or Airtel, then the number on that network, then send the prompt.
+  // `send({ network, phone })` starts the payment and returns what the server answered; this then shows
+  // "Check your phone". Resolves like K.awaitPayment: 'success' | 'failed' | 'pending' | 'redirect' | null (closed).
+  K.payMomo = function ({ amount, title, saved, send }) {
+    return new Promise((resolve) => {
+      let net = K.momoNet(saved), settled = false;
+      const NET = { mtn: { re: /^7[678]\d{7}$/, eg: '0772 123456', hint: 'MTN numbers start with 076, 077 or 078' }, airtel: { re: /^7[045]\d{7}$/, eg: '0701 234567', hint: 'Airtel numbers start with 070, 074 or 075' } };
+      const m = K.modal(`<h2>${K.esc(title || 'Pay with Mobile Money')}</h2>
+        ${amount ? `<p class="money" style="margin:2px 0 10px">${K.ugx(amount)}</p>` : ''}
+        <p class="set-h" style="margin:4px 0 8px">Choose your network</p>
+        <div class="momo-nets" role="radiogroup" aria-label="Mobile Money network">
+          ${['mtn', 'airtel'].map((n) => `<button type="button" class="momo-net" data-net="${n}" role="radio" aria-checked="${net === n}"><span class="paylogo ${n}">${K.momoLogo(n)}</span><b>${n === 'mtn' ? 'MTN MoMo' : 'Airtel Money'}</b></button>`).join('')}
+        </div>
+        <div id="numBox" ${net ? '' : 'hidden'}>
+          <label for="momoNum" id="numLbl"></label>
+          <input id="momoNum" type="tel" inputmode="tel" autocomplete="tel" placeholder="">
+          <p class="small muted" id="numHint" style="margin:6px 0 0"></p>
+        </div>
+        <p class="error" id="err" role="alert"></p>
+        <button class="btn btn-primary btn-block btn-lg" id="go" ${net ? '' : 'disabled'}>Send payment prompt</button>
+        <p class="tiny faint" style="text-align:center;margin-top:8px">You approve it on your phone with your Mobile Money PIN.</p>`,
+      { onClose: () => { if (!settled) { settled = true; resolve(null); } } });
+      const inp = K.$('#momoNum', m.el), hint = K.$('#numHint', m.el), err = K.$('#err', m.el), go = K.$('#go', m.el);
+      const digits = () => inp.value.replace(/\D/g, '').replace(/^256/, '').replace(/^0/, '');
+      const check = () => {
+        if (!net) return false;
+        const d = digits(), okNet = NET[net].re.test(d), other = net === 'mtn' ? 'airtel' : 'mtn';
+        hint.textContent = !d ? NET[net].hint : okNet ? `${K.momoName(net)} · ${K.prettyPhone('+256' + d)}` : d.length >= 9 && NET[other].re.test(d) ? `That’s an ${K.momoName(other)} number. Choose ${other === 'mtn' ? 'MTN' : 'Airtel'} above, or enter your ${net === 'mtn' ? 'MTN' : 'Airtel'} number.` : d.length >= 9 ? NET[net].hint : '';
+        hint.classList.toggle('error', d.length >= 9 && !okNet);
+        go.disabled = !okNet;
+        return okNet;
+      };
+      const pickNet = (n) => {
+        net = n;
+        m.el.querySelectorAll('[data-net]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.net === n)));
+        K.$('#numBox', m.el).hidden = false;
+        K.$('#numLbl', m.el).textContent = `Your ${n === 'mtn' ? 'MTN' : 'Airtel'} number`;
+        inp.placeholder = NET[n].eg;
+        if (K.momoNet(saved) === n && !inp.value) inp.value = K.prettyPhone(saved);
+        else if (K.momoNet(inp.value) && K.momoNet(inp.value) !== n) inp.value = K.momoNet(saved) === n ? K.prettyPhone(saved) : '';
+        err.textContent = ''; check();
+        setTimeout(() => inp.focus({ preventScroll: true }), 50);
+      };
+      m.el.querySelectorAll('[data-net]').forEach((b) => b.onclick = () => pickNet(b.dataset.net));
+      if (net) pickNet(net);
+      inp.oninput = check;
+      go.onclick = async () => {
+        if (!check()) return;
+        go.disabled = true; go.innerHTML = '<span class="spin"></span> Sending…'; err.textContent = '';
+        let out;
+        try { out = await send({ network: net, phone: '+256' + digits() }); }
+        catch (e) { err.textContent = e.message; go.disabled = false; go.textContent = 'Send payment prompt'; return; }
+        settled = true; m.close();
+        resolve(await K.awaitPayment(out));
+      };
+    });
+  };
+
   // After a payment is started: a Flutterwave link opens its checkout; a Mobile Money prompt (Relworx)
   // shows "Check your phone" and waits for the payer to approve. Resolves 'success', 'failed', 'pending'
   // (still waiting when they closed it) or 'redirect'.
