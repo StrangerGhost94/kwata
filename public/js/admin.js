@@ -403,7 +403,7 @@
         <div><label for="ppc">Flytte Pass discount (% off each ride)</label><input id="ppc" type="number" min="0" max="50" step="1" value="${(s.pass || {}).percent ?? 10}"></div>
         <div><label for="ppm">Flytte Pass most off one ride (UGX)</label><input id="ppm" type="number" min="0" step="500" value="${(s.pass || {}).maxDiscount ?? 3000}"></div>
         <div><label for="ppe">Sell Flytte Pass</label><select id="ppe"><option value="1" ${(s.pass || {}).enabled !== false ? 'selected' : ''}>Yes</option><option value="0" ${(s.pass || {}).enabled === false ? 'selected' : ''}>No</option></select></div>
-        <div><label for="bcl">New business account limit (UGX)</label><input id="bcl" type="number" min="0" step="10000" value="${(s.business || {}).creditLimit ?? 300000}"></div>
+        <div><label for="bcl">Credit for new business accounts (UGX, 0 = prepaid)</label><input id="bcl" type="number" min="0" step="10000" value="${(s.business || {}).creditLimit ?? 0}"></div>
         <div><label for="sp">Support phone</label><input id="sp" type="tel" value="${K.esc(s.supportPhone || '')}" placeholder="Not set: hidden in the apps"></div>
       </div>
       <h2 style="margin-top:26px">Dynamic pricing</h2>
@@ -451,11 +451,11 @@
     const list = await K.api('/admin/companies');
     const owed = list.reduce((a, c) => a + c.balanceDue, 0);
     main.innerHTML = `<h1>Business accounts</h1>
-      <p class="muted" style="max-width:720px">Companies pay for their staff’s rides and shops pay for deliveries at the end of the month. ${list.length} accounts · ${K.ugx(owed)} owed in all. Raise a limit for an account that pays on time; pause one that doesn’t.</p>
-      ${list.length ? `<div class="table-wrap"><table><thead><tr><th>Account</th><th>Type</th><th>People</th><th>This month</th><th>Owed</th><th>Limit</th><th></th></tr></thead><tbody>
+      <p class="muted" style="max-width:720px">Companies top up a wallet that pays for their staff’s rides; shops’ deliveries are paid the same way. New accounts are prepaid. Give credit (a limit) only to accounts you trust to pay their bill. ${list.length} accounts · ${K.ugx(owed)} owed on credit. Pausing an account cancels its scheduled rides.</p>
+      ${list.length ? `<div class="table-wrap"><table><thead><tr><th>Account</th><th>Type</th><th>People</th><th>This month</th><th>Wallet</th><th>Owed</th><th>Credit limit</th><th></th></tr></thead><tbody>
       ${list.map((c) => `<tr><td><b>${K.esc(c.name)}</b><br><span class="small muted">${K.esc(c.adminName || '')} ${K.esc(c.adminPhone || '')}${c.email ? ' · ' + K.esc(c.email) : ''}</span></td>
         <td>${c.kind === 'merchant' ? 'Shop' : 'Company'}${c.status !== 'active' ? ' <span class="badge warn">Paused</span>' : ''}</td><td>${c.people}</td><td>${c.monthTrips} · ${K.ugx(c.monthSpent)}</td>
-        <td><b>${K.ugx(c.balanceDue)}</b></td><td><input type="number" min="0" step="10000" value="${c.creditLimit}" data-lim="${c.id}" style="width:120px;margin:0"></td>
+        <td>${K.ugx(c.wallet || 0)}</td><td><b>${K.ugx(c.balanceDue)}</b></td><td><input type="number" min="0" step="10000" value="${c.creditLimit}" data-lim="${c.id}" style="width:120px;margin:0"></td>
         <td style="white-space:nowrap"><button class="btn btn-sm" data-save="${c.id}">Save</button> <button class="btn btn-sm ${c.status === 'active' ? 'btn-danger-soft' : ''}" data-st="${c.id}" data-to="${c.status === 'active' ? 'paused' : 'active'}">${c.status === 'active' ? 'Pause' : 'Resume'}</button></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="muted">No business or shop accounts yet. Riders open them from Account → Flytte for Business or Flytte for Shops.</p>'}`;
     main.querySelectorAll('[data-save]').forEach((b) => b.onclick = async () => { try { await K.api(`/admin/companies/${b.dataset.save}`, { creditLimit: +main.querySelector(`[data-lim="${b.dataset.save}"]`).value }); K.toast('Limit saved'); } catch (e) { K.toast(e.message); } });

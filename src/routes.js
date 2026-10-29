@@ -150,6 +150,7 @@ async function createAccount(body, role, { approved = false } = {}) {
     }
     return u;
   });
+  if (role === 'rider') await require('./business').claimInvites(user.id, user.phone).catch((e) => console.error('invites', e.message));
   return { user };
 }
 
@@ -805,10 +806,12 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const promo = paymentMethod === 'business' ? { discount: 0 } : await growth.discountFor(req.user.id, service, fare, req.body.promoCode || (locked && locked.promoCode));
   let company = null;
   if (paymentMethod === 'business') {
-    const ok = await biz.canCharge(req.user.id, companyId, fare);
+    const ok = await biz.canCharge(req.user.id, companyId, fare, service);
     if (ok.error) return bad(res, ok.error);
     company = ok.company;
   }
+  const tripReason = company ? clean(req.body.tripReason, 120) || null : null;
+  if (company && company.require_reason && !merchant && !tripReason) return res.status(400).json({ error: `${company.name} asks for a reason for work trips, e.g. “Client meeting”.`, code: 'NEED_REASON' });
   const discount = promo.discount || 0;
   const passSaving = myPass ? surgeSaved + (promo.pass ? discount : 0) : 0;
   if (paymentMethod === 'wallet' && walletlock.needsPass(req.user, req.body.walletPass)) return walletLocked(res);
@@ -841,11 +844,11 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await db.one(`
     INSERT INTO trips(rider_id, service, pickup_lat, pickup_lng, pickup_address, drop_lat, drop_lng, drop_address,
       distance_km, duration_min, fare, payment_method, pin, share_token, parcel, notes,
-      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver, stops, errand, pass_saving, company_id, merchant)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING id`,
+      discount, promo_code, promo_label, scheduled_for, passenger, drop_code, status, woman_driver, stops, errand, pass_saving, company_id, merchant, trip_reason)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30) RETURNING id`,
   [req.user.id, service, pickup.lat, pickup.lng, pickup.address, drop.lat, drop.lng, drop.address,
     km, min, fare, paymentMethod, pin, share, parcelJson, notes ? clean(notes, 200) || null : null,
-    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true, stops.length ? JSON.stringify(stops.map((x) => ({ lat: x.lat, lng: x.lng, address: x.address }))) : null, errandJson, passSaving, company ? company.id : null, merchant]);
+    discount, promo.code || null, discount ? promo.label : null, scheduledFor, passengerJson, dropCode, scheduledFor ? 'scheduled' : 'requested', req.body.womanDriver === true, stops.length ? JSON.stringify(stops.map((x) => ({ lat: x.lat, lng: x.lng, address: x.address }))) : null, errandJson, passSaving, company ? company.id : null, merchant, tripReason]);
 
   if (req.body.quoteId) surge.dropQuote(req.body.quoteId);
   if (!scheduledFor) { surge.recordRequest(service, pickup.lat, pickup.lng); rt.dispatch(t.id).catch(console.error); }
@@ -928,6 +931,11 @@ r.post('/trips/:id/cancel', auth.requireAuth('rider', 'driver'), wrap(async (req
     if (!fresh) return;
     done = true;
     if (!due || !t.driver_id) return;
+    if (t.payment_method === 'business' && t.company_id) {
+      fee = await biz.chargeFee(tx, t, due, 'cancel');
+      if (fee) await tx.query('UPDATE trips SET cancel_fee = $1 WHERE id = $2', [fee, t.id]);
+      return;
+    }
     if (passFree) {
       await tx.query('UPDATE drivers SET earnings_balance = earnings_balance + $1 WHERE user_id = $2', [due, t.driver_id]);
       await tx.query("INSERT INTO transactions(user_id, type, amount, trip_id, note) VALUES ($1,'cancel_fee',$2,$3,'Cancellation fee, paid by Flytte (the rider has Flytte Pass)')", [t.driver_id, due, t.id]);
@@ -1130,7 +1138,10 @@ r.post('/trips/:id/noshow', auth.requireAuth('driver'), wrap(async (req, res) =>
     if (!fresh) return;
     done = true;
     const want = s.drivers.noShowFee;
-    if (want > 0) {
+    if (want > 0 && t.payment_method === 'business' && t.company_id) {
+      fee = await biz.chargeFee(tx, { ...t, driver_id: req.user.id }, want, 'no_show');
+      if (fee) await tx.query('UPDATE trips SET no_show_fee = $1 WHERE id = $2', [fee, t.id]);
+    } else if (want > 0) {
       const rider = await tx.one('SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE', [t.rider_id]);
       if (rider && rider.wallet_balance >= want) {
         fee = want;
@@ -1274,6 +1285,7 @@ r.post('/trips/:id/complete', auth.requireAuth('driver'), wrap(async (req, res) 
   });
   rt.setDriverFree(req.user.id, t.id);
   if (t.plan_id) require('./school').afterCompleted({ ...t, driver_id: req.user.id }).catch(console.error);
+  if (t.company_id && t.payment_method === 'business') biz.notifyLow({ id: t.company_id }).catch(() => {});
   await rt.broadcast(t.id);
   places.learnFromTrip(t.id).catch((e) => console.error('learn places:', e.message));
   for (const b of bonuses) rt.notify(req.user.id, 'toast', { text: `🎉 Bonus reached: ${b.title}. UGX ${b.reward.toLocaleString()} added to your balance.` });
@@ -1402,7 +1414,7 @@ r.post('/wallet/topup', auth.requireAuth('rider'), wrap(async (req, res) => {
 }));
 
 // ---------- Payments (Flutterwave) ----------
-const paidText = (p) => p.purpose === 'pass' ? 'Flytte Pass is on ✨ Enjoy your rides.' : p.purpose === 'split'
+const paidText = (p) => p.purpose === 'pass' ? 'Flytte Pass is on ✨ Enjoy your rides.' : p.purpose === 'company_topup' ? `UGX ${Number(p.amount).toLocaleString()} added to the company wallet ✅` : p.purpose === 'split'
   ? `${p.payer_name || 'A friend'} paid their share. UGX ${Number(p.amount).toLocaleString()} is in your Flytte Wallet.` : 'Payment received ✅';
 // A Mobile Money payment just went through: update the trip and tell the person.
 async function paymentSettled(p) {
@@ -1922,7 +1934,7 @@ r.get('/admin/companies', admin, wrap(async (req, res) => {
       (SELECT u.name FROM company_members m JOIN users u ON u.id = m.user_id WHERE m.company_id = c.id AND m.role = 'admin' ORDER BY m.added_at LIMIT 1) AS admin_name,
       (SELECT u.phone FROM company_members m JOIN users u ON u.id = m.user_id WHERE m.company_id = c.id AND m.role = 'admin' ORDER BY m.added_at LIMIT 1) AS admin_phone
     FROM companies c ORDER BY c.balance_due DESC, c.id DESC LIMIT 500`, [from]);
-  res.json(rows.map((c) => ({ id: c.id, kind: c.kind, name: c.name, email: c.email, status: c.status, balanceDue: c.balance_due, creditLimit: c.credit_limit,
+  res.json(rows.map((c) => ({ id: c.id, kind: c.kind, name: c.name, email: c.email, status: c.status, balanceDue: c.balance_due, creditLimit: c.credit_limit, wallet: c.wallet_balance,
     people: c.people, monthTrips: c.month_trips, monthSpent: c.month_spent, adminName: c.admin_name, adminPhone: c.admin_phone })));
 }));
 r.post('/admin/companies/:id', admin, wrap(async (req, res) => {
@@ -1932,6 +1944,7 @@ r.post('/admin/companies/:id', admin, wrap(async (req, res) => {
   const lim = b.creditLimit !== undefined ? Math.max(0, Math.min(50000000, Math.round(Number(b.creditLimit) || 0))) : c.credit_limit;
   const status = ['active', 'paused'].includes(b.status) ? b.status : c.status;
   await db.query('UPDATE companies SET credit_limit = $1, status = $2 WHERE id = $3', [lim, status, c.id]);
+  if (status === 'paused' && c.status !== 'paused') await require('./business').cancelScheduled(c.id);
   res.json({ ok: true });
 }));
 

@@ -18,10 +18,12 @@ const reg = (name) => { const phone = '077' + rnd().slice(1); return api('/auth/
 
 (async () => {
   const admin = await api('/auth/login', { phone: '0700000000', password: 'admin123' });
+  // This file checks accounts on credit; test/bizwallet.js checks prepaid (wallet) accounts.
+  await api('/admin/settings', { business: { creditLimit: 300000 } }, admin.token, 'PUT');
   const boss = await reg('Biz Boss'), staff = await reg('Biz Staff');
   const co = await api('/business', { name: 'Acme Uganda Ltd', email: 'accounts@acme.test' }, boss.token);
   ok(co.id && co.companies[0].role === 'admin', 'a rider can open a company account and is its admin');
-  ok((await call('/business/' + co.id + '/members', { phone: '0779999' + rnd().slice(0, 3), budget: 10000 }, boss.token)).status === 400, 'only people already on Flytte can be added');
+  { const inv = await call('/business/' + co.id + '/members', { phone: '0779999' + rnd().slice(0, 3), budget: 10000 }, boss.token); ok(inv.status === 200 && inv.body.invited, 'someone not on Flytte yet is invited instead'); }
   await api(`/business/${co.id}/members`, { phone: staff.phone, budget: 9000 }, boss.token);
   const mine = await api('/business/me', null, staff.token);
   ok(mine.companies.length === 1 && mine.companies[0].budget === 9000 && mine.companies[0].role === 'staff', 'staff see the account and their budget');
@@ -89,6 +91,7 @@ const reg = (name) => { const phone = '077' + rnd().slice(1); return api('/auth/
   for (const id of [p1.id, p2.id, own.id]) await call(`/trips/${id}/cancel`, { reason: 'test' }, shopOwner.token);
   ok((await call('/trips', { service: 'parcel', paymentMethod: 'business', companyId: co.id, merchant: true, pickup: office, drop: client, parcel: { recipientName: 'X', recipientPhone: '0772000000', item: 'Y' } }, boss.token)).status === 400, 'only shop accounts send shop deliveries');
 
+  await api('/admin/settings', { business: { creditLimit: 0 } }, admin.token, 'PUT');
   ds.close();
   console.log(failed ? `${failed} FAILED` : 'all business checks passed');
   process.exit(failed ? 1 : 0);

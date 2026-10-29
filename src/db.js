@@ -321,6 +321,20 @@ async function migrate() {
   ALTER TABLE trips ADD COLUMN IF NOT EXISTS company_id INTEGER;
   ALTER TABLE trips ADD COLUMN IF NOT EXISTS merchant BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE payments ADD COLUMN IF NOT EXISTS company_id INTEGER;
+  ALTER TABLE companies ADD COLUMN IF NOT EXISTS wallet_balance INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE companies ADD COLUMN IF NOT EXISTS allowed_services TEXT;
+  ALTER TABLE companies ADD COLUMN IF NOT EXISTS require_reason BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE companies ADD COLUMN IF NOT EXISTS low_alert_at TIMESTAMPTZ;
+  ALTER TABLE trips ADD COLUMN IF NOT EXISTS trip_reason TEXT;
+  CREATE TABLE IF NOT EXISTS company_invites (
+    company_id INTEGER NOT NULL,
+    phone TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'staff',
+    monthly_budget INTEGER NOT NULL DEFAULT 0,
+    invited_by INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (company_id, phone)
+  );
   ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider TEXT;
   ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider_internal TEXT;
   ALTER TABLE payments ADD COLUMN IF NOT EXISTS phone TEXT;

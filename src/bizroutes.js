@@ -25,7 +25,7 @@ module.exports = function mount(r, { wrap, bad, limit, clean, baseUrl, point }) 
   };
   const tripRow = (t) => ({
     id: t.id, at: t.created_at, completedAt: t.completed_at, status: t.status, service: t.service, from: t.pickup_address, to: t.drop_address,
-    amount: t.fare - (t.discount || 0), by: t.rider_name, byPhone: t.rider_phone, merchant: t.merchant,
+    amount: t.fare - (t.discount || 0), by: t.rider_name, byPhone: t.rider_phone, merchant: t.merchant, reason: t.trip_reason || null,
     customer: t.parcel ? JSON.parse(t.parcel) : null, track: t.share_token ? `/t/${t.share_token}` : null,
   });
   const shopOf = (b) => {
@@ -69,10 +69,15 @@ module.exports = function mount(r, { wrap, bad, limit, clean, baseUrl, point }) 
     const list = await biz.trips(c.id, new Date(Date.now() - 45 * 86400e3), new Date(Date.now() + 86400e3));
     const month = list.filter((t) => t.status === 'completed' && new Date(t.created_at) >= m.from);
     const { rows: reqs } = c.kind === 'merchant' ? await db.query("SELECT * FROM delivery_requests WHERE company_id = $1 AND status = 'new' ORDER BY id DESC LIMIT 50", [c.id]) : { rows: [] };
+    const { rows: invites } = await db.query('SELECT phone, role, monthly_budget, created_at FROM company_invites WHERE company_id = $1 ORDER BY created_at DESC', [c.id]);
+    const s = await getSettings();
     res.json({
       id: c.id, kind: c.kind, name: c.name, email: c.email, slug: c.slug, link: c.slug ? `${baseUrl(req)}/shop/${c.slug}` : null,
       shop: c.shop_lat ? { address: c.shop_address, lat: c.shop_lat, lng: c.shop_lng } : null,
       balanceDue: c.balance_due, creditLimit: c.credit_limit, payments: payments.available(),
+      wallet: c.wallet_balance, available: await biz.available(c), low: c.wallet_balance < s.business.lowBalance,
+      allowedServices: biz.allowedList(c), requireReason: !!c.require_reason,
+      invites: invites.map((i) => ({ phone: i.phone, role: i.role, budget: i.monthly_budget, at: i.created_at })),
       month: { label: m.label, trips: month.length, spent: month.reduce((a, t) => a + t.fare - (t.discount || 0), 0) },
       staff: staff.map((x) => ({ userId: x.user_id, name: x.name, phone: x.phone, role: x.role, budget: x.monthly_budget, active: x.active, spent: x.spent, me: x.user_id === req.user.id })),
       trips: list.slice(0, 40).map(tripRow),
@@ -91,6 +96,13 @@ module.exports = function mount(r, { wrap, bad, limit, clean, baseUrl, point }) 
     const shop = b.shop !== undefined ? shopOf(b) : null;
     await db.query('UPDATE companies SET name = $1, email = $2, shop_address = COALESCE($3, shop_address), shop_lat = COALESCE($4, shop_lat), shop_lng = COALESCE($5, shop_lng) WHERE id = $6',
       [name, email, shop ? shop.address : null, shop ? shop.lat : null, shop ? shop.lng : null, c.id]);
+    if (b.allowedServices !== undefined) {
+      const ok = ['boda', 'car', 'comfort', 'parcel', 'airport'];
+      const list = Array.isArray(b.allowedServices) ? [...new Set(b.allowedServices.filter((x) => ok.includes(x)))] : null;
+      if (list && !list.length) return bad(res, 'Allow at least one ride type.');
+      await db.query('UPDATE companies SET allowed_services = $1 WHERE id = $2', [list && list.length < ok.length ? list.join(',') : null, c.id]);
+    }
+    if (b.requireReason !== undefined) await db.query('UPDATE companies SET require_reason = $1 WHERE id = $2', [b.requireReason === true, c.id]);
     res.json({ ok: true });
   }));
 
@@ -101,9 +113,15 @@ module.exports = function mount(r, { wrap, bad, limit, clean, baseUrl, point }) 
     const phone = auth.normalizePhone(b.phone, auth.ccOf(req.user.phone));
     if (!phone) return bad(res, 'Enter their phone number, e.g. 0772 123456.');
     const u = await db.one("SELECT id, name, role FROM users WHERE phone = $1", [phone]);
-    if (!u || u.role !== 'rider') return bad(res, 'Nobody has signed up to Flytte with that number yet. Ask them to get the app, then add them.');
     const budget = Math.max(0, Math.min(10000000, Math.round(Number(b.budget) || 0)));
     const role = b.role === 'admin' ? 'admin' : 'staff';
+    if (u && u.role !== 'rider') return bad(res, 'That number belongs to a Flytte driver account. Ask them for the number they ride with.');
+    if (!u) {
+      // Not on Flytte yet: they join this account as soon as they sign up with this number.
+      await db.query(`INSERT INTO company_invites(company_id, phone, role, monthly_budget, invited_by) VALUES ($1,$2,$3,$4,$5)
+        ON CONFLICT (company_id, phone) DO UPDATE SET role = EXCLUDED.role, monthly_budget = EXCLUDED.monthly_budget`, [c.id, phone, role, budget, req.user.id]);
+      return res.json({ ok: true, invited: true, phone, link: `${baseUrl(req)}/`, text: `${req.user.name.split(' ')[0]} added you to ${c.name} on Flytte, so your work rides are paid by the company. Get the app and sign up with this number: ${baseUrl(req)}` });
+    }
     await db.query(`INSERT INTO company_members(company_id, user_id, role, monthly_budget) VALUES ($1,$2,$3,$4)
       ON CONFLICT (company_id, user_id) DO UPDATE SET active = TRUE, role = EXCLUDED.role, monthly_budget = EXCLUDED.monthly_budget`, [c.id, u.id, role, budget]);
     rt.notify(u.id, 'toast', { text: `You’ve been added to ${c.name} on Flytte for Business. Choose it as your payment for work trips.` });
@@ -123,6 +141,12 @@ module.exports = function mount(r, { wrap, bad, limit, clean, baseUrl, point }) 
     }
     const budget = b.budget === undefined ? m.monthly_budget : Math.max(0, Math.min(10000000, Math.round(Number(b.budget) || 0)));
     await db.query('UPDATE company_members SET role = $1, active = $2, monthly_budget = $3 WHERE company_id = $4 AND user_id = $5', [role, active, budget, c.id, uid]);
+    if (!active && m.active) await biz.cancelScheduled(c.id, uid);
+    res.json({ ok: true });
+  }));
+  r.post('/business/:id/invites/remove', auth.requireAuth('rider'), wrap(async (req, res) => {
+    const c = await admin(req, res); if (!c) return;
+    await db.query('DELETE FROM company_invites WHERE company_id = $1 AND phone = $2', [c.id, String((req.body || {}).phone || '')]);
     res.json({ ok: true });
   }));
 
@@ -131,16 +155,31 @@ module.exports = function mount(r, { wrap, bad, limit, clean, baseUrl, point }) 
     const c = await admin(req, res); if (!c) return;
     const m = monthRange(req.query.month);
     const rows = (await biz.trips(c.id, m.from, m.to)).filter((t) => t.status === 'completed');
-    const { rows: paid } = await db.query("SELECT amount, note, created_at FROM company_ledger WHERE company_id = $1 AND kind = 'payment' AND created_at >= $2 AND created_at < $3 ORDER BY id", [c.id, m.from, m.to]);
+    const { rows: paid } = await db.query("SELECT amount, note, kind, created_at FROM company_ledger WHERE company_id = $1 AND kind IN ('payment','topup','fee') AND created_at >= $2 AND created_at < $3 ORDER BY id", [c.id, m.from, m.to]);
     const byPerson = {};
     for (const t of rows) { const k = t.rider_name; byPerson[k] = byPerson[k] || { name: k, trips: 0, spent: 0 }; byPerson[k].trips++; byPerson[k].spent += t.fare - (t.discount || 0); }
     res.json({
-      company: c.name, month: m.key, label: m.label, balanceDue: c.balance_due,
+      company: c.name, month: m.key, label: m.label, balanceDue: c.balance_due, wallet: c.wallet_balance,
+      fees: paid.filter((p) => p.kind === 'fee').reduce((a, p) => a + p.amount, 0),
       trips: rows.map((t) => ({ ...tripRow(t), when: prettyTime(t.completed_at || t.created_at) })),
       total: rows.reduce((a, t) => a + t.fare - (t.discount || 0), 0),
       people: Object.values(byPerson).sort((a, b) => b.spent - a.spent),
-      payments: paid.map((p) => ({ amount: -p.amount, note: p.note, when: prettyTime(p.created_at) })),
+      payments: paid.filter((p) => p.kind !== 'fee').map((p) => ({ amount: -p.amount, note: p.note, kind: p.kind, when: prettyTime(p.created_at) })),
+      feeRows: paid.filter((p) => p.kind === 'fee').map((p) => ({ amount: p.amount, note: p.note, when: prettyTime(p.created_at) })),
     });
+  }));
+
+  // Top up the company wallet (any admin), by Mobile Money.
+  r.post('/business/:id/topup', auth.requireAuth('rider'), limit(20, 3600e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
+    const c = await admin(req, res); if (!c) return;
+    const amount = Math.round(Number((req.body || {}).amount));
+    if (!(amount >= 1000 && amount <= 20000000)) return bad(res, 'Top up between UGX 1,000 and 20,000,000.');
+    const pick = await payments.chosenPhone(req.user, req.body);
+    if (pick.error) return bad(res, pick.error);
+    let out;
+    try { out = await payments.createCheckout({ user: req.user, amount, purpose: 'company_topup', method: 'momo', baseUrl: baseUrl(req), companyId: c.id, phone: pick.phone }); }
+    catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
+    res.json(out);
   }));
 
   r.post('/business/:id/pay', auth.requireAuth('rider'), limit(10, 3600e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {

@@ -1024,12 +1024,22 @@
     const body = { service: S.service, paymentMethod: PAY[pref()].method, companyId: pref() === 'business' ? (bizCompanies('business')[0] || {}).id : undefined, pickup: S.pickup, drop: S.drop, distanceKm: S.route.km, durationMin: S.route.freeMin, quoteId: S.quote.quoteId, expectedFare: opt && baseOf(opt), promoCode: S.promoCode || undefined, scheduledFor: S.when || undefined, passenger: S.passenger || undefined, notes: S.note || undefined, womanDriver: S.womanDriver || undefined, stops: S.stops.length ? S.stops : undefined };
     if (S.service === 'parcel') body.parcel = S.parcel;
     if (S.service === 'errand') body.errand = S.errand;
+    // Work trip: the company may ask why (it shows on their statement).
+    const co = body.paymentMethod === 'business' ? bizCompanies('business')[0] : null;
+    if (co && (co.requireReason || S.tripReason)) {
+      if (!S.tripReason) {
+        const reason = await askTripReason(co);
+        if (!reason) { btn.disabled = false; btn.textContent = `Request ${svcName(S.service)}`; return; }
+        S.tripReason = reason;
+      }
+      body.tripReason = S.tripReason;
+    }
     // A locked wallet needs the rider's fingerprint, face or a code before paying from it.
     if (body.paymentMethod === 'wallet' && S.user.walletLock) {
       body.walletPass = await K.walletLock.unlock({ amount: opt ? payOf(opt) : undefined });
       if (!body.walletPass) { btn.disabled = false; btn.textContent = `Request ${svcName(S.service)}`; return; }
     }
-    try { onTrip(await K.api('/trips', body, 'POST', { timeout: 45000 })); }
+    try { onTrip(await K.api('/trips', body, 'POST', { timeout: 45000 })); S.tripReason = null; }
     catch (e) {
       if (/too long|reach Flytte/.test(e.message)) { // slow network: the request may have landed
         const a = await K.api('/trips/active').catch(() => null);
@@ -1037,9 +1047,23 @@
       }
       btn.disabled = false; btn.textContent = `Request ${svcName(S.service)}`;
       if (e.code === 'WALLET_LOCK') { S.user.walletLock = true; book(); return; }   // locked on another phone meanwhile
+      if (e.code === 'NEED_REASON') { S.tripReason = null; const c2 = bizCompanies('business')[0]; if (c2) c2.requireReason = true; book(); return; }
       if (/Prices have just changed/.test(e.message)) { K.toast(e.message, 5000); refreshQuote(); return; }
       err.textContent = e.message;
     }
+  }
+
+  function askTripReason(co) {
+    return new Promise((resolve) => {
+      let done = false;
+      const m = K.modal(`<h2>What’s this trip for?</h2><p class="small muted">${K.esc(co.name)} asks for a reason on work trips. It shows on the company statement.</p>
+        <div class="chips wrap">${['Client meeting', 'Site visit', 'Delivery', 'Office errand', 'Airport'].map((x) => `<button type="button" class="chip" data-r="${x}">${x}</button>`).join('')}</div>
+        <label for="tr">Or type it</label><input id="tr" maxlength="120" placeholder="e.g. Meeting at Stanbic">
+        <button class="btn btn-primary btn-block btn-lg" id="ok" style="margin-top:12px">Request ride</button>`, { onClose: () => { if (!done) { done = true; resolve(null); } } });
+      const inp = K.$('#tr', m.el);
+      m.el.querySelectorAll('[data-r]').forEach((b) => b.onclick = () => { inp.value = b.dataset.r; });
+      K.$('#ok', m.el).onclick = () => { const v = inp.value.trim(); if (v.length < 2) { inp.focus(); return; } done = true; m.close(); resolve(v); };
+    });
   }
 
   // Asked once, right after the first booking: the moment the value is obvious.
@@ -2086,21 +2110,25 @@
         ${d && d.link ? `<h3 class="set-h">Your order link</h3><div class="set-card"><p class="small" style="margin:0 0 4px"><b>${K.esc(d.link.replace(/^https?:\/\//, ''))}</b></p><p class="tiny muted" style="margin:0 0 10px">Customers open it, say what they ordered and where to bring it. You get the request here.</p>
             <div class="row" style="gap:8px"><a class="btn btn-sm fill" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(`Order from ${d.name} and get it delivered by Flytte: ${d.link}`)}">${K.ic('msg', 'sm')} WhatsApp</a><button class="btn btn-sm fill" id="copy">Copy link</button></div></div>` : ''}` : '';
       if (!d) {
-        sp.body.innerHTML = `${merchant ? shopBits : ''}<div class="set-card" style="margin-top:14px"><p style="margin:0"><b>${K.esc(c0.name)}</b></p><p class="small muted" style="margin:4px 0 0">${merchant ? 'You can send deliveries for this shop.' : budgetText(c0)}</p></div>
+        sp.body.innerHTML = `${merchant ? shopBits : ''}<div class="set-card" style="margin-top:14px"><p style="margin:0"><b>${K.esc(c0.name)}</b></p><p class="small muted" style="margin:4px 0 0">${merchant ? 'You can send deliveries for this shop.' : budgetText(c0)}</p>${!merchant && c0.allowedServices ? `<p class="small muted" style="margin:4px 0 0">Allowed: ${c0.allowedServices.map((x) => svcName(x)).join(', ')}</p>` : ''}${c0.funded === false ? '<p class="small error" style="margin:6px 0 0">The company wallet is empty. Ask your admin to top it up.</p>' : ''}</div>
           ${merchant ? '' : '<p class="small muted" style="margin:14px 2px">To ride on this account, choose it as your payment method when you book.</p><button class="btn btn-primary btn-block" id="usePay">Use for my next ride</button>'}`;
       } else {
         const pct = d.creditLimit ? Math.min(100, Math.round((d.balanceDue / d.creditLimit) * 100)) : 0;
         sp.body.innerHTML = `
-          <div class="biz-bill"><div class="row" style="justify-content:space-between;align-items:flex-start"><span><small>Owed to Flytte</small><b>${K.ugx(d.balanceDue)}</b></span>
-            ${d.balanceDue >= 1000 && d.payments ? '<button class="btn btn-sm btn-primary" id="pay">Pay now</button>' : ''}</div>
-            <span class="acct-meter" aria-hidden="true"><i style="width:${pct}%"></i></span><span class="tiny">Account limit ${K.ugx(d.creditLimit)} · ${d.month.label}: ${d.month.trips} ${merchant ? 'deliveries' : 'trips'}, ${K.ugx(d.month.spent)}</span></div>
+          <div class="biz-bill"><div class="row" style="justify-content:space-between;align-items:flex-start"><span><small>Company wallet</small><b>${K.ugx(d.wallet)}</b></span>
+            ${d.payments ? '<button class="btn btn-sm btn-primary" id="topup">Top up</button>' : ''}</div>
+            <span class="tiny">${merchant ? 'Deliveries' : 'Staff rides'} are paid from this. ${d.month.label}: ${d.month.trips} ${merchant ? 'deliveries' : 'trips'}, ${K.ugx(d.month.spent)}.</span>
+            ${d.low ? `<span class="biz-low">${K.ic('info', 'sm')} ${d.wallet <= 0 && !d.creditLimit ? `${merchant ? 'Deliveries' : 'Staff rides'} can’t be charged until you top up.` : 'Running low. Top up so nobody is stuck.'}</span>` : ''}
+            ${d.creditLimit ? `<span class="biz-credit"><span>Credit from Flytte · owed <b>${K.ugx(d.balanceDue)}</b> of ${K.ugx(d.creditLimit)}</span>${d.balanceDue >= 1000 && d.payments ? '<button class="btn btn-sm" id="pay">Pay bill</button>' : ''}</span><span class="acct-meter" aria-hidden="true"><i style="width:${pct}%"></i></span>` : ''}</div>
           ${shopBits}
           <h3 class="set-h">${merchant ? 'Staff who can send deliveries' : 'Staff'}</h3><div class="set-card list">
             ${d.staff.map((x) => `<button class="set-row${x.active ? '' : ' off'}" data-uid="${x.userId}"><span class="row-ic">${K.ic('user', 'sm')}</span><span class="grow"><b>${K.esc(x.name)}${x.me ? ' (you)' : ''}</b><small>${x.active ? `${x.role === 'admin' ? 'Admin · ' : ''}${merchant ? K.esc(K.prettyPhone(x.phone)) : x.budget ? `${K.ugx(x.spent)} of ${K.ugx(x.budget)}` : `${K.ugx(x.spent)} · no limit`}` : 'Removed'}</small></span>${K.ic('chev', 'sm')}</button>`).join('')}
-            <button class="set-row" id="add"><span class="row-ic">${K.ic('plus', 'sm')}</span><span class="grow"><b>Add someone</b><small>By the phone number they use on Flytte</small></span>${K.ic('chev', 'sm')}</button></div>
+            ${(d.invites || []).map((i) => `<div class="set-row" style="cursor:default"><span class="row-ic">${K.ic('send', 'sm')}</span><span class="grow"><b>${K.esc(K.prettyPhone(i.phone))}</b><small>Invited · joins when they sign up with this number</small></span><button class="btn btn-sm" data-uninvite="${K.esc(i.phone)}">Remove</button></div>`).join('')}
+            <button class="set-row" id="add"><span class="row-ic">${K.ic('plus', 'sm')}</span><span class="grow"><b>Add someone</b><small>By phone number, even if they don’t have Flytte yet</small></span>${K.ic('chev', 'sm')}</button></div>
           ${!merchant ? `<h3 class="set-h">Recent trips</h3>${d.trips.length ? `<div class="set-card list">${d.trips.slice(0, 8).map((t) => `<div class="set-row" style="cursor:default"><span class="row-ic">${K.ic('pin', 'sm')}</span><span class="grow"><b>${K.esc(t.by)}</b><small>${K.esc(String(t.to).split(',')[0])} · ${K.when(t.at)}</small></span><b class="small">${t.status === 'completed' ? K.ugx(t.amount) : K.esc(t.status.replace('_', ' '))}</b></div>`).join('')}</div>` : '<div class="set-card"><p class="small muted" style="margin:0">No trips yet. Add your staff, and they choose the company account when they book.</p></div>'}` : ''}
           <div class="set-card list" style="margin-top:14px">
             <button class="set-row" id="stmt"><span class="row-ic">${K.ic('receipt', 'sm')}</span><span class="grow"><b>Monthly statements</b><small>Every ${merchant ? 'delivery' : 'trip'}, download for your accounts</small></span>${K.ic('chev', 'sm')}</button>
+            ${merchant ? '' : `<button class="set-row" id="rules"><span class="row-ic">${K.ic('settings', 'sm')}</span><span class="grow"><b>Ride rules</b><small>${d.allowedServices ? d.allowedServices.map((x) => svcName(x)).join(', ') + ' only' : 'Any ride type'}${d.requireReason ? ' · trip reason required' : ''}</small></span>${K.ic('chev', 'sm')}</button>`}
             <button class="set-row" id="edit"><span class="row-ic">${K.ic('edit', 'sm')}</span><span class="grow"><b>Account details</b><small>${K.esc(d.name)}${d.email ? ' · ' + K.esc(d.email) : ''}</small></span>${K.ic('chev', 'sm')}</button></div>`;
       }
       const $ = (s) => K.$(s, sp.page);
@@ -2108,6 +2136,9 @@
       if ($('#copy')) $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(d.link); K.toast('Link copied'); } catch { K.toast(d.link, 6000); } };
       if ($('#usePay')) $('#usePay').onclick = async () => { try { S.user = (await K.api('/me', { payPref: 'business' }, 'PATCH')).user; K.toast(`${c0.name} is now your payment method`); } catch (e) { K.toast(e.message); } };
       if ($('#pay')) $('#pay').onclick = () => payStatement(d, load);
+      if ($('#topup')) $('#topup').onclick = () => topUpCompany(d, load);
+      if ($('#rules')) $('#rules').onclick = () => editRules(d, load);
+      sp.body.querySelectorAll('[data-uninvite]').forEach((b) => b.onclick = async () => { try { await K.api(`/business/${id}/invites/remove`, { phone: b.dataset.uninvite }); load(); } catch (e) { K.toast(e.message); } });
       if ($('#add')) $('#add').onclick = () => addStaff(d, load);
       if ($('#stmt')) $('#stmt').onclick = () => openStatement(d);
       if ($('#edit')) $('#edit').onclick = () => editCompany(d, load);
@@ -2185,7 +2216,7 @@
 
   function addStaff(d, after) {
     const shop = d.kind === 'merchant';
-    const m = K.modal(`<h2>Add someone</h2><p class="small muted">They need the Flytte app, signed up with this number.</p>
+    const m = K.modal(`<h2>Add someone</h2><p class="small muted">Their phone number on Flytte. If they don’t have the app yet, they join as soon as they sign up with it.</p>
       <label for="ph">Phone number</label><input id="ph" type="tel" inputmode="tel" placeholder="0772 123456">
       ${shop ? '' : '<label for="bd">Monthly budget (UGX, 0 = no limit)</label><input id="bd" type="number" inputmode="numeric" min="0" step="1000" value="100000">'}
       <label class="check-row"><input type="checkbox" id="ad"> Make them an admin too</label>
@@ -2193,7 +2224,11 @@
     K.$('#sv', m.el).onclick = async () => {
       try {
         const out = await K.api(`/business/${d.id}/members`, { phone: K.$('#ph', m.el).value, budget: shop ? 0 : +K.$('#bd', m.el).value, role: K.$('#ad', m.el).checked ? 'admin' : 'staff' });
-        m.close(); K.toast(`${K.first(out.name)} added`); after();
+        m.close(); after();
+        if (!out.invited) { K.toast(`${K.first(out.name)} added`); return; }
+        const inv = K.modal(`<h2>Invite sent to the account</h2><p class="muted">${K.esc(K.prettyPhone(out.phone))} isn’t on Flytte yet. They’ll join ${K.esc(d.name)} as soon as they sign up with this number.</p>
+          <a class="btn btn-primary btn-block btn-lg" target="_blank" rel="noopener" href="${waLink(out.phone, out.text)}">${K.ic('msg', 'sm')} Send them the app on WhatsApp</a><button class="btn btn-block" style="margin-top:8px" data-close>Done</button>`);
+        inv.el.querySelector('a').addEventListener('click', () => setTimeout(inv.close, 300));
       } catch (e) { K.$('#err', m.el).textContent = e.message; }
     };
   }
@@ -2230,15 +2265,44 @@
       catch (e) { K.$('#err', m.el).textContent = e.message; }
     };
   }
+  function topUpCompany(d, after) {
+    const m = K.modal(`<h2>Top up ${K.esc(d.name)}</h2><p class="small muted">${d.kind === 'merchant' ? 'Deliveries' : 'Staff rides'} are paid from the company wallet. Wallet now: <b>${K.ugx(d.wallet)}</b></p>
+      <div class="chips">${[50000, 100000, 200000, 500000].map((a) => `<button class="chip" data-amt="${a}">${K.ugx(a)}</button>`).join('')}</div>
+      <label for="ta">Amount (UGX)</label><input id="ta" type="number" inputmode="numeric" min="1000" step="1000" value="100000">
+      <p class="error" id="err"></p><button class="btn btn-primary btn-block btn-lg" id="go">Continue</button>`);
+    m.el.querySelectorAll('[data-amt]').forEach((b) => b.onclick = () => { K.$('#ta', m.el).value = b.dataset.amt; });
+    K.$('#go', m.el).onclick = async () => {
+      const amount = Math.round(+K.$('#ta', m.el).value);
+      if (!(amount >= 1000)) { K.$('#err', m.el).textContent = 'Top up at least UGX 1,000.'; return; }
+      m.close();
+      const r = await K.payMomo({ amount, title: `Top up ${d.name}`, saved: S.user.payPhone, send: (x) => K.api(`/business/${d.id}/topup`, { amount, ...x }) });
+      if (r === 'success') { K.toast(`${K.ugx(amount)} added to the company wallet ✅`); after(); }
+    };
+  }
+  function editRules(d, after) {
+    const types = S.config.services.filter((x) => ['boda', 'car', 'comfort', 'parcel', 'airport'].includes(x.id));
+    const on = new Set(d.allowedServices || types.map((x) => x.id));
+    const m = K.modal(`<h2>Ride rules</h2><p class="small muted">What your staff can book on the company account.</p>
+      <h3 class="set-h">Ride types allowed</h3><div class="set-card list">${types.map((x) => `<label class="set-row check-row" style="margin:0"><input type="checkbox" data-t="${x.id}" ${on.has(x.id) ? 'checked' : ''}><span class="grow"><b>${K.esc(svcName(x.id))}</b></span></label>`).join('')}</div>
+      <div class="set-card list" style="margin-top:12px"><label class="set-row check-row" style="margin:0"><input type="checkbox" id="rr" ${d.requireReason ? 'checked' : ''}><span class="grow"><b>Ask for a trip reason</b><small>e.g. “Client meeting”. It shows on the statement.</small></span></label></div>
+      <p class="error" id="err"></p><button class="btn btn-primary btn-block btn-lg" id="sv">Save rules</button>`);
+    K.$('#sv', m.el).onclick = async () => {
+      const list = [...m.el.querySelectorAll('[data-t]')].filter((x) => x.checked).map((x) => x.dataset.t);
+      try { await K.api(`/business/${d.id}`, { allowedServices: list, requireReason: K.$('#rr', m.el).checked }, 'PATCH'); m.close(); K.toast('Rules saved'); loadBiz(); after(); }
+      catch (e) { K.$('#err', m.el).textContent = e.message; }
+    };
+  }
+
   async function openStatement(d) {
     const sp = subPage('Statements');
     let month = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 7);
     const shift = (n) => { const [y, mo] = month.split('-').map(Number); const x = new Date(Date.UTC(y, mo - 1 + n, 1)); month = x.toISOString().slice(0, 7); load(); };
     const csv = (s) => {
       const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-      const lines = [['Date', 'Booked by', 'From', 'To', d.kind === 'merchant' ? 'Customer' : 'Type', 'Amount (UGX)'].map(q).join(',')];
-      for (const t of s.trips) lines.push([t.when, t.by, t.from, t.to, t.customer ? t.customer.recipientName : t.service, t.amount].map(q).join(','));
-      lines.push(['', '', '', '', 'Total', s.total].map(q).join(','));
+      const lines = [['Date', 'Booked by', 'From', 'To', d.kind === 'merchant' ? 'Customer' : 'Type', 'Reason', 'Amount (UGX)'].map(q).join(',')];
+      for (const t of s.trips) lines.push([t.when, t.by, t.from, t.to, t.customer ? t.customer.recipientName : t.service, t.reason || '', t.amount].map(q).join(','));
+      for (const f of s.feeRows || []) lines.push([f.when, '', '', '', 'Fee', f.note, f.amount].map(q).join(','));
+      lines.push(['', '', '', '', '', 'Total', s.total + (s.fees || 0)].map(q).join(','));
       const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
       const a = document.createElement('a'); a.href = url; a.download = `Flytte ${s.company} ${s.month}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
     };
@@ -2250,8 +2314,9 @@
         <div class="stats3"><div><b>${s.trips.length}</b><span>${d.kind === 'merchant' ? 'Deliveries' : 'Trips'}</span></div><div><b>${K.ugx(s.total).replace('UGX ', '')}</b><span>Total (UGX)</span></div><div><b>${K.ugx(s.balanceDue).replace('UGX ', '')}</b><span>Owed now</span></div></div>
         ${s.people.length > 1 ? `<h3 class="set-h">By person</h3><div class="set-card list">${s.people.map((p) => `<div class="set-row" style="cursor:default"><span class="grow"><b>${K.esc(p.name)}</b><small>${p.trips} trip${p.trips === 1 ? '' : 's'}</small></span><b class="small">${K.ugx(p.spent)}</b></div>`).join('')}</div>` : ''}
         <h3 class="set-h">${d.kind === 'merchant' ? 'Deliveries' : 'Trips'}</h3>
-        ${s.trips.length ? `<div class="set-card list">${s.trips.map((t) => `<div class="set-row" style="cursor:default"><span class="grow"><b>${K.esc(String(t.to).split(',')[0])}</b><small>${K.esc(t.when)} · ${K.esc(t.customer ? t.customer.recipientName : t.by)}</small></span><b class="small">${K.ugx(t.amount)}</b></div>`).join('')}</div>` : '<div class="set-card"><p class="small muted" style="margin:0">Nothing this month.</p></div>'}
-        ${s.payments.length ? `<h3 class="set-h">Payments</h3><div class="set-card list">${s.payments.map((p) => `<div class="set-row" style="cursor:default"><span class="grow"><b>${K.esc(p.note)}</b><small>${K.esc(p.when)}</small></span><b class="small pos">${K.ugx(p.amount)}</b></div>`).join('')}</div>` : ''}
+        ${s.trips.length ? `<div class="set-card list">${s.trips.map((t) => `<div class="set-row" style="cursor:default"><span class="grow"><b>${K.esc(String(t.to).split(',')[0])}</b><small>${K.esc(t.when)} · ${K.esc(t.customer ? t.customer.recipientName : t.by)}${t.reason ? ' · ' + K.esc(t.reason) : ''}</small></span><b class="small">${K.ugx(t.amount)}</b></div>`).join('')}</div>` : '<div class="set-card"><p class="small muted" style="margin:0">Nothing this month.</p></div>'}
+        ${s.feeRows && s.feeRows.length ? `<h3 class="set-h">Cancellation and no-show fees</h3><div class="set-card list">${s.feeRows.map((p) => `<div class="set-row" style="cursor:default"><span class="grow"><b>${K.esc(p.note)}</b><small>${K.esc(p.when)}</small></span><b class="small">${K.ugx(p.amount)}</b></div>`).join('')}</div>` : ''}
+        ${s.payments.length ? `<h3 class="set-h">Top-ups and payments</h3><div class="set-card list">${s.payments.map((p) => `<div class="set-row" style="cursor:default"><span class="grow"><b>${K.esc(p.note)}</b><small>${K.esc(p.when)}</small></span><b class="small pos">${K.ugx(p.amount)}</b></div>`).join('')}</div>` : ''}
         ${s.trips.length ? '<button class="btn btn-block btn-lg" id="dl" style="margin-top:16px">Download for Excel (CSV)</button>' : ''}`;
       K.$('#prev', sp.page).onclick = () => shift(-1);
       K.$('#next', sp.page).onclick = () => shift(1);
