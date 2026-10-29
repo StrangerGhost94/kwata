@@ -57,7 +57,7 @@ async function createCheckout({ user, amount, purpose, tripId, method, baseUrl, 
   if (!(amount > 0)) throw new PaymentsUnavailable('Nothing to pay.');
   if (method === 'card' && !cards()) throw new PaymentsUnavailable('Card payments aren’t available yet. Pay with MTN or Airtel Mobile Money.');
   if (method !== 'card' && relworx()) return relworxRequest({ user, amount, purpose, tripId, payer: payer || (phone ? { phone, name: user.name } : null), companyId });
-  const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : purpose === 'debt' ? 'FLY-DBT' : purpose === 'split' ? 'FLY-SPL' : purpose === 'pass' ? 'FLY-PAS' : purpose === 'company' ? 'FLY-BIZ' : 'FLY-TRP');
+  const tx_ref = newRef(purpose === 'topup' ? 'FLY-TOP' : purpose === 'debt' ? 'FLY-DBT' : purpose === 'split' ? 'FLY-SPL' : purpose === 'pass' ? 'FLY-PAS' : purpose === 'company' || purpose === 'company_topup' ? 'FLY-BIZ' : 'FLY-TRP');
   await db.query(
     'INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount, payer_name, company_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
     [tx_ref, user.id, purpose, tripId || null, amount, payer ? payer.name : null, companyId || null]
@@ -148,7 +148,7 @@ async function applyPayment(tx_ref, providerRef) {
     } else if (p.purpose === 'pass') {
       await t.query("INSERT INTO transactions(user_id, type, amount, note) VALUES ($1,'pass',0,$2)", [p.user_id, `Flytte Pass paid by Mobile Money (${tx_ref})`]);
       await require('./pass').grant(t, p.user_id, p.amount, 'momo');
-    } else if (p.purpose === 'company') {
+    } else if (p.purpose === 'company' || p.purpose === 'company_topup') {
       await require('./business').applyPayment(t, p);
     } else if (p.purpose === 'trip' && p.trip_id) {
       await ledger.markTripPaid(t, p.trip_id);
@@ -176,12 +176,12 @@ async function relworxRequest({ user, amount, purpose, tripId, payer, companyId 
   const phone = String((payer && payer.phone) || user.pay_phone || user.phone || '');
   if (!MSISDN.test(phone)) throw new PaymentsUnavailable('Mobile Money needs a Ugandan MTN or Airtel number, e.g. 0772 123456. Change it in Payment methods.');
   if (amount < 500) throw new PaymentsUnavailable('Mobile Money payments start at UGX 500.');
-  const tx_ref = newRef({ topup: 'FLY-TOP', debt: 'FLY-DBT', split: 'FLY-SPL', pass: 'FLY-PAS', company: 'FLY-BIZ' }[purpose] || 'FLY-TRP');
+  const tx_ref = newRef({ topup: 'FLY-TOP', debt: 'FLY-DBT', split: 'FLY-SPL', pass: 'FLY-PAS', company: 'FLY-BIZ', company_topup: 'FLY-BIZ' }[purpose] || 'FLY-TRP');
   await db.query(
     "INSERT INTO payments(tx_ref, user_id, purpose, trip_id, amount, payer_name, company_id, provider, phone) VALUES ($1,$2,$3,$4,$5,$6,$7,'relworx',$8)",
     [tx_ref, user.id, purpose, tripId || null, amount, payer ? payer.name : null, companyId || null, phone]
   );
-  const description = { topup: 'Flytte wallet top-up', debt: 'Flytte commission', split: 'Share of a Flytte trip', pass: 'Flytte Pass', company: 'Flytte for Business bill' }[purpose] || `Flytte trip ${tripId}`;
+  const description = { topup: 'Flytte wallet top-up', debt: 'Flytte commission', split: 'Share of a Flytte trip', pass: 'Flytte Pass', company: 'Flytte for Business bill', company_topup: 'Flytte for Business wallet' }[purpose] || `Flytte trip ${tripId}`;
   let res;
   try { res = await relworxCall('/api/mobile-money/request-payment', { method: 'POST', body: { account_no: RW_ACC, reference: tx_ref, msisdn: phone, currency: 'UGX', amount, description } }); }
   catch (e) {

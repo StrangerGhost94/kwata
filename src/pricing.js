@@ -33,7 +33,8 @@ const DEFAULTS = {
   // Flytte Pass: monthly subscription (see src/pass.js).
   pass: { enabled: true, price: 15000, days: 30, percent: 10, maxDiscount: 3000 },
   // Flytte for Business: the credit a new company account starts with (see src/business.js).
-  business: { enabled: true, creditLimit: 300000 },
+  // New accounts are prepaid (top up the company wallet); the team can give an account credit in Admin.
+  business: { enabled: true, creditLimit: 0, lowBalance: 20000 },
   supportPhone: '',      // set the real line in Admin → Pricing (or SUPPORT_PHONE). Hidden in the apps until set.
   // Dynamic pricing (see src/surge.js). Caps keep fares affordable in Kampala.
   dynamic: { enabled: true, sensitivity: 0.35, maxBoda: 1.8, maxCar: 2.0, weather: true },
@@ -176,7 +177,8 @@ async function updateSettings(patch) {
     } else if (key === 'business') {
       const c = { ...current.business, ...(value || {}) };
       const n = Math.round(Number(c.creditLimit));
-      value = { enabled: c.enabled !== false && c.enabled !== 'false', creditLimit: Number.isFinite(n) ? Math.min(50000000, Math.max(0, n)) : 300000 };
+      const lb = Math.round(Number(c.lowBalance));
+      value = { enabled: c.enabled !== false && c.enabled !== 'false', creditLimit: Number.isFinite(n) ? Math.min(50000000, Math.max(0, n)) : 0, lowBalance: Number.isFinite(lb) ? Math.min(5000000, Math.max(0, lb)) : 20000 };
     } else if (key === 'supportPhone') {
       value = String(value || '').trim();
       if (value && !/^\+?[0-9][0-9 ]{7,17}$/.test(value)) continue; // digits, spaces and an optional +
