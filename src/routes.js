@@ -390,6 +390,12 @@ r.post('/wallet/lock/options', auth.requireAuth('rider'), limit(20, 10 * 60e3), 
 r.post('/wallet/lock/register', auth.requireAuth('rider'), limit(20, 10 * 60e3), wl((req) => walletlock.register(req)));
 r.post('/wallet/unlock/options', auth.requireAuth('rider'), limit(30, 10 * 60e3), wl((req) => walletlock.authOptions(req)));
 r.post('/wallet/unlock', auth.requireAuth('rider'), limit(30, 10 * 60e3), wl((req) => walletlock.authenticate(req)));
+// Store apps: the phone's biometric secure storage instead of passkeys (src/walletlock.js).
+r.post('/wallet/lock/device', auth.requireAuth('rider'), limit(20, 10 * 60e3), wl(async (req) => {
+  if (walletlock.needsPass(req.user, (req.body || {}).pass)) throw Object.assign(new Error('Confirm it’s you first.'), { status: 403 });
+  return walletlock.registerDevice(req);
+}));
+r.post('/wallet/unlock/device', auth.requireAuth('rider'), limit(30, 10 * 60e3), wl((req) => walletlock.unlockDevice(req)));
 r.post('/wallet/unlock/code', auth.requireAuth('rider'), limit(10, 10 * 60e3), wl(async (req) => {
   const code = String((req.body || {}).code || '').replace(/\D/g, '');
   if (code.length !== 6) throw Object.assign(new Error('Enter the 6-digit code.'), { status: 400 });
@@ -536,6 +542,8 @@ r.post('/me/delete', auth.requireAuth('rider', 'driver'), limit(5, 10 * 60e3), w
     }
     await t.query('DELETE FROM push_subscriptions WHERE user_id = $1', [u.id]);
     await t.query('DELETE FROM native_push_tokens WHERE user_id = $1', [u.id]);
+    await t.query('DELETE FROM wallet_devices WHERE user_id = $1', [u.id]);
+    await t.query('DELETE FROM passkeys WHERE user_id = $1', [u.id]);
     await t.query('DELETE FROM otp_codes WHERE phone = $1', [oldPhone]);
   });
   if (u.role === 'driver') { try { rt.forceOffline(u.id); } catch {} }

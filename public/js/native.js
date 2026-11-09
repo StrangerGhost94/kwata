@@ -13,6 +13,10 @@
   const Haptics = has('Haptics') ? plugin('Haptics') : null;
   const FM = has('FirebaseMessaging') ? plugin('FirebaseMessaging') : null;
   const BG = APP === 'driver' && has('BackgroundGeolocation') ? plugin('BackgroundGeolocation') : null;
+  const LN = PLATFORM === 'android' && APP === 'rider' && has('LocalNotifications') ? plugin('LocalNotifications') : null;
+  const Review = APP === 'rider' && has('InAppReview') ? plugin('InAppReview') : null;
+  const Shortcuts = has('AppShortcuts') ? plugin('AppShortcuts') : null;
+  const Bio = APP === 'rider' && has('NativeBiometric') ? plugin('NativeBiometric') : null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
 
   K.native = true;
@@ -23,7 +27,7 @@
   // ---------- haptics ----------
   if (Haptics) {
     K.haptic = (style) => { if (K.reduced()) return; Haptics.impact({ style: style || 'LIGHT' }).catch(() => {}); };
-    K.hapticNotify = (type) => { if (K.reduced()) return; Haptics.notification({ type: type || 'SUCCESS' }).catch(() => {}); };
+    K.hapticNotify = (type) => { if (K.reduced()) return; Haptics.notification({ type: type || 'SUCCESS' }).catch(() => {}); };   // the web vibration pattern isn't needed here
   }
 
   // ---------- push alerts (Firebase Cloud Messaging; src/fcm.js sends them) ----------
@@ -108,6 +112,92 @@
       }
       if (!on && watcher) { BG.removeWatcher({ id: watcher }).catch(() => {}); watcher = null; }
       K.geo.wantOn = !!on;
+    };
+  }
+
+  // ---------- live trip on the lock screen (Android) ----------
+  // While a trip is on, an ongoing notification shows who's coming, the plate and where things are,
+  // and taps back into the trip. It's quiet (updates don't buzz) and goes when the trip ends.
+  // iPhones get the trip alerts instead (on the way, almost here, arrived, trip done).
+  if (LN) {
+    const ID = 4201;
+    let channel = null, shown = null;
+    const first = (n) => String(n || '').trim().split(/\s+/)[0] || 'Your driver';
+    K.onTrip = async (t) => {
+      try {
+        const live = t && ['accepted', 'arrived', 'in_progress'].includes(t.status) && t.driver;
+        if (!live) { if (shown) { shown = null; await LN.cancel({ notifications: [{ id: ID }] }); } return; }
+        if ((await LN.checkPermissions()).display !== 'granted') return;   // alerts were never allowed: don't ask from here
+        if (!channel) channel = LN.createChannel({ id: 'trip_live', name: 'Live trip', description: 'Your current trip, on the lock screen', importance: 2, visibility: 1, vibration: false }).catch(() => {});
+        await channel;
+        const d = t.driver, who = first(d.name), plate = d.plate ? ` · ${d.plate}` : '';
+        const car = d.vehicle || '';
+        const text = {
+          accepted: [`${who} is on the way${plate}`, `${car ? car + ' · ' : ''}Pickup: ${String((t.pickup && t.pickup.address) || '').split(',')[0]}`],
+          arrived: [`${who} has arrived${plate}`, `Meet them at the pickup${car ? ' · ' + car : ''}`],
+          in_progress: [`On your way to ${String((t.drop && t.drop.address) || 'your destination').split(',')[0]}`, `With ${who}${plate}`],
+        }[t.status];
+        const key = t.id + t.status;
+        if (shown === key) return;
+        shown = key;
+        await LN.schedule({ notifications: [{ id: ID, title: text[0], body: text[1], channelId: 'trip_live', ongoing: true, autoCancel: false,
+          smallIcon: 'ic_stat_flytte', iconColor: '#073B42', extra: { tripId: t.id } }] });
+      } catch {}
+    };
+    // Ended while the app was closed: don't leave a stale card behind.
+    LN.cancel({ notifications: [{ id: ID }] }).catch(() => {});
+  }
+
+  // ---------- "Enjoying Flytte?" ----------
+  // After a 5-star trip, ask the store to show its own rating prompt: from the second 5-star trip,
+  // and at most every four months. The store decides whether it actually appears.
+  if (Review) {
+    K.onGreatRating = () => {
+      const n = Number(store.get('flytte_five_stars') || 0) + 1;
+      store.set('flytte_five_stars', String(n));
+      const last = Number(store.get('flytte_review_asked') || 0);
+      if (n < 2 || Date.now() - last < 120 * 86400e3) return;
+      store.set('flytte_review_asked', String(Date.now()));
+      setTimeout(() => Review.requestReview().catch(() => {}), 1200);   // after the thank-you, not over it
+    };
+  }
+
+  // ---------- quick actions on the app icon (long-press) ----------
+  // The list itself is in capacitor.config.ts, so it's there before the app is first opened.
+  if (Shortcuts) {
+    const go = { boda: '/?service=boda', parcel: '/?service=parcel', airport: '/?service=airport', online: '/driver?go=online', earnings: '/driver?tab=earnings' };
+    Shortcuts.addListener('click', ({ shortcutId }) => { if (go[shortcutId]) location.href = go[shortcutId]; });
+  }
+
+  // ---------- wallet lock with the phone's own fingerprint / Face ID ----------
+  // A random secret kept in the Keychain (iPhone) or Keystore (Android) that only opens after a live
+  // biometric check; the server keeps a hash (src/walletlock.js). Replaces passkeys in the app.
+  if (Bio && K.walletLock && K.walletLock.engine) {
+    const SERVER = location.hostname + '/flytte-wallet', DEV = 'flytte_wallet_device';
+    const eng = K.walletLock.engine;
+    const hex = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
+    // Cancelled or not recognised: try again. Anything else (code 21: the secret is gone, e.g. new fingerprints): set up again.
+    const cancelled = (e) => ['10', '11', '15', '16', '17'].includes(String(e && e.code)) || /cancel/i.test(String(e && e.message));
+    let kind = 0;
+    eng.supported = async () => { try { const r = await Bio.isAvailable({ useFallback: false }); kind = r.biometryType || 0; return !!r.isAvailable; } catch { return false; } };
+    eng.bioName = () => (kind === 2 ? 'Face ID' : kind === 1 ? 'Touch ID' : PLATFORM === 'ios' ? 'Face ID or Touch ID' : 'fingerprint or face unlock');
+    eng.prepare = async () => null;
+    eng.create = async () => {
+      const deviceId = hex(24), secret = hex(32);
+      try {
+        await Bio.setCredentials({ server: SERVER, username: deviceId, password: secret, accessControl: 2 });   // BIOMETRY_ANY
+      } catch (e) { throw new Error(cancelled(e) ? 'Not set up. Try again when you’re ready.' : 'This phone couldn’t save your wallet lock. Check that fingerprint or face unlock is set up.'); }
+      const out = await K.api('/wallet/lock/device', { deviceId, secret, device: PLATFORM === 'ios' ? 'iPhone (Flytte app)' : 'Android phone (Flytte app)' });
+      store.set(DEV, deviceId);
+      return out;
+    };
+    eng.options = async () => (store.get(DEV) ? { native: true } : { none: true });
+    eng.assert = async () => {
+      let c;
+      try { c = await Bio.getSecureCredentials({ server: SERVER, reason: 'Confirm it’s you to pay from your Flytte Wallet', title: 'Flytte Wallet', subtitle: 'Confirm it’s you' }); }
+      catch (e) { if (!cancelled(e)) store.set(DEV, null); throw new Error(cancelled(e) ? 'Not confirmed. Try again, or use a code.' : 'Your fingerprint or face changed on this phone. Use a code instead.'); }
+      try { return (await K.api('/wallet/unlock/device', { deviceId: c.username, secret: c.password })).pass; }
+      catch (e) { store.set(DEV, null); throw e; }
     };
   }
 

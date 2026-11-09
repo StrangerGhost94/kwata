@@ -21,6 +21,7 @@ const APPS = {
       NSLocationWhenInUseUsageDescription: 'Flytte uses your location to set your pickup point, show drivers near you and share your trip with people you choose.',
       NSCameraUsageDescription: 'Flytte uses the camera when you take a profile photo.',
       NSPhotoLibraryUsageDescription: 'Flytte opens your photos when you choose a profile photo.',
+      NSFaceIDUsageDescription: 'Flytte uses Face ID to confirm it’s you before money leaves your Flytte Wallet, if you turn on the wallet lock.',
     },
     backgroundModes: ['remote-notification'],
   },
@@ -51,6 +52,12 @@ function android(app, cfg) {
   const perms = ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'CAMERA', 'POST_NOTIFICATIONS', 'VIBRATE'];
   for (const p of perms) {
     if (!s.includes(`android.permission.${p}"`)) s = s.replace('</manifest>', `    <uses-permission android:name="android.permission.${p}" />\n</manifest>`);
+  }
+  // The lock-screen trip card is shown straight away, never scheduled: drop the exact-alarm permission
+  // the notifications plugin brings, which Google Play only allows for alarm and calendar apps.
+  if (app === 'rider' && !s.includes('SCHEDULE_EXACT_ALARM')) {
+    if (!s.includes('xmlns:tools=')) s = s.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android"', '<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"');
+    s = s.replace('</manifest>', '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove" />\n</manifest>');
   }
   for (const f of ['android.hardware.location.gps', 'android.hardware.camera']) {
     if (!s.includes(`"${f}"`)) s = s.replace('</manifest>', `    <uses-feature android:name="${f}" android:required="false" />\n</manifest>`);

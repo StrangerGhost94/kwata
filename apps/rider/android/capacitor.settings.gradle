@@ -10,3 +10,15 @@ project(':capacitor-haptics').projectDir = new File('../../node_modules/@capacit
 
 include ':capacitor-firebase-messaging'
 project(':capacitor-firebase-messaging').projectDir = new File('../../node_modules/@capacitor-firebase/messaging/android')
+
+include ':capacitor-local-notifications'
+project(':capacitor-local-notifications').projectDir = new File('../../node_modules/@capacitor/local-notifications/android')
+
+include ':capacitor-community-in-app-review'
+project(':capacitor-community-in-app-review').projectDir = new File('../../node_modules/@capacitor-community/in-app-review/android')
+
+include ':capawesome-capacitor-app-shortcuts'
+project(':capawesome-capacitor-app-shortcuts').projectDir = new File('../../node_modules/@capawesome/capacitor-app-shortcuts/android')
+
+include ':capgo-capacitor-native-biometric'
+project(':capgo-capacitor-native-biometric').projectDir = new File('../../node_modules/@capgo/capacitor-native-biometric/android')
