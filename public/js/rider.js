@@ -48,7 +48,7 @@
     root.innerHTML = `
       <div class="app" id="app">
         <div id="map" aria-label="Map"></div>
-        <div class="center-pin hidden" id="cpin" aria-hidden="true">${K.logo('#FFC400', '#141414', 46)}</div>
+        <div class="center-pin hidden" id="cpin" aria-hidden="true">${K.logo(K.BRAND.teal, K.BRAND.gold, 46)}</div>
         <div class="topbar" id="topbar"></div>
         <section class="sheet" id="sheet" aria-live="polite"></section>
         <nav class="tabbar" id="tabs" aria-label="Main">
@@ -1401,7 +1401,7 @@
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
     const needsPay = t.paymentStatus === 'pending' && ['momo', 'card'].includes(t.paymentMethod);
     const P = PAY[payOfTrip(t)];
-    const colors = ['#FFC400', '#141414', '#12A150', '#FF8A00', '#2F6BFF'];
+    const colors = ['#F2B544', '#073B42', '#0E6E73', '#12A150', '#FF8A00'];
     const confetti = Array.from({ length: 26 }, (_, i) => `<i style="background:${colors[i % 5]};--x:${Math.round(Math.cos(i * 0.9) * (90 + (i % 4) * 30))}px;--y:${Math.round(Math.sin(i * 0.9) * 60 - 20)}px;--r:${i * 47}deg;animation-delay:${(i % 6) * 0.03}s"></i>`).join('');
     sheet.innerHTML = `
       <div class="grabber"></div>

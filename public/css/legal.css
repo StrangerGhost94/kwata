@@ -6,7 +6,12 @@ body { font: 16px/1.6 -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, '
 .lg-top { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: calc(12px + env(safe-area-inset-top)) 18px 12px;
   background: color-mix(in srgb, var(--lg-bg) 88%, transparent); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border-bottom: .5px solid var(--lg-line); }
 .lg-top a { color: inherit; text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
-.lg-top svg { width: 26px; height: 19px; }
+.lg-top svg { width: 12px; height: 22px; }
+.lg-top .fl-word { font-family: 'Plus Jakarta Sans', inherit; font-weight: 700; letter-spacing: -.02em; font-size: 1.15rem; color: #073B42; }
+html.theme-dark .lg-top .fl-word { color: #fff; }
+html.theme-dark .lg-top svg path { fill: #F2B544; }
+@font-face { font-family: 'Plus Jakarta Sans'; font-style: normal; font-display: swap; font-weight: 200 800;
+  src: url(/fonts/plus-jakarta-sans-latin-wght-normal.woff2) format('woff2'); }
 main { max-width: 720px; margin: 0 auto; padding: 22px 20px calc(48px + env(safe-area-inset-bottom)); }
 h1 { font-size: 2rem; letter-spacing: -.03em; line-height: 1.15; margin: 6px 0 4px; }
 .lg-date { color: var(--lg-ink2); font-size: .9rem; margin: 0 0 18px; }

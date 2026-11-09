@@ -6,7 +6,7 @@
   </defs>
   <ellipse cx="124" cy="136" rx="88" ry="5" fill="#000" opacity=".16" filter="url(#soft)"/>
   <path d="M46 72 L30 34 H48 L82 72 Z" fill="#2B2D31"/>
-  <path d="M38 52 L44 66" stroke="#F2B705" stroke-width="4" stroke-linecap="round"/>
+  <path d="M38 52 L44 66" stroke="#F2B544" stroke-width="4" stroke-linecap="round"/>
   <path d="M36 74 L58 68 L66 78 Z" fill="#3A3D44"/>
   <path d="M30 80 C30 72 38 68 50 68 H196 C212 68 224 76 226 84 C224 92 212 98 196 98 H54 C40 98 30 90 30 80 Z" fill="url(#f)"/>
   <path d="M200 74 C210 74 216 78 218 82 H204 Z" fill="#2B2F38"/>
