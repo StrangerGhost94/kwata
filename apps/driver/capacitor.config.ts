@@ -16,13 +16,21 @@ const config: CapacitorConfig = {
     allowNavigation: [host, 'checkout.flutterwave.com', '*.flutterwave.com'],
   },
   // Only the plugins this app needs (location with the screen off is for drivers only).
-  includePlugins: ['@capacitor/app', '@capacitor/haptics', '@capacitor-firebase/messaging', '@capacitor-community/background-geolocation'],
+  includePlugins: ['@capacitor/app', '@capacitor/haptics', '@capacitor-firebase/messaging', '@capacitor-community/background-geolocation',
+    '@capawesome/capacitor-app-shortcuts'],
   backgroundColor: '#073B42',
   // The legacy bridge keeps location updates coming after 5 minutes in the background (plugin docs).
   android: { appendUserAgent: 'FlytteApp/driver', allowMixedContent: false, useLegacyBridge: true },
   ios: { appendUserAgent: 'FlytteApp/driver', contentInset: 'never' },
   plugins: {
     FirebaseMessaging: { presentationOptions: ['badge', 'sound', 'alert'] },
+    // Long-press the app icon (handled in public/js/native.js and public/js/driver.js).
+    AppShortcuts: {
+      shortcuts: [
+        { id: 'online', title: 'Go online', iosIcon: 'power' },
+        { id: 'earnings', title: 'Earnings', iosIcon: 'chart.bar' },
+      ],
+    },
   },
   // Avoids a Swift package name clash in the Firebase plugin (its README, iOS setup).
   experimental: { ios: { spm: { packageOptions: { '@capacitor-firebase/messaging': { symlink: true } } } } },

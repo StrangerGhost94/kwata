@@ -14,6 +14,14 @@ Both are Capacitor apps (`apps/rider`, `apps/driver`) that load the live web app
 - flytte.co links opening the app
 - an "Update to continue" screen for versions that are too old
 
+The rider app also has:
+- the live trip on the Android lock screen (who's coming, plate, status)
+- the store's own rating prompt after a second 5-star trip, at most every four months
+- long-press shortcuts on the icon: Book a boda, Send a parcel, Ride to the airport
+- the wallet lock with the phone's own Face ID, Touch ID or fingerprint
+
+The driver app has long-press shortcuts too: Go online, Earnings.
+
 Web deploys reach the apps straight away. Only native changes need a new store version.
 
 ## What's already in the repo
@@ -64,6 +72,7 @@ To redraw them: `node tools/store-assets.js` and `node tools/store-screenshots.j
 | `APPSTORE_ID_RIDER`, `APPSTORE_ID_DRIVER` | the numeric App Store IDs, once the apps exist in App Store Connect | the "Update" button on iPhone |
 | `MIN_APP_VERSION` (or `_RIDER` / `_DRIVER`) | e.g. `1.0.0`; leave unset until needed | forcing very old versions to update |
 | `SUPPORT_EMAIL` | default `support@flytte.co` | the support page and the apps |
+| `FLW_CARD_WALLETS` | `googlepay,applepay` (either or both), once Flutterwave has switched them on for your account and UGX | Google Pay / Apple Pay on card checkout. Apple Pay appears on the website in Safari; Apple turns it off inside apps' web pages, so the iPhone app shows cards. |
 | `REVIEW_CODE`, `REVIEW_RIDER_PHONE`, `REVIEW_DRIVER_PHONE`, `REVIEW_PIN` | see section 5 | app review only |
 
 ## 4. Build and upload
@@ -132,6 +141,7 @@ The answers below match `public/privacy.html` and the iOS privacy manifest (`Pri
   - Purchases: purchase history (trips, wallet)
   - Identifiers: device ID (push token)
 - Data not linked to you: diagnostics (crash data).
+- Face ID / Touch ID for the wallet lock isn't data collection: the check happens on the phone, and only a random secret's hash reaches Flytte.
 
 **Google Data safety**:
 - Data is encrypted in transit: **yes**.
@@ -160,6 +170,7 @@ The answers below match `public/privacy.html` and the iOS privacy manifest (`Pri
 - **Content rating.** Complete the questionnaires. There is no violence, gambling or mature content, but there is user-to-user chat with a driver during a trip.
 - **Target audience.** Set both apps to 18 and over, as the terms require.
 - **Ads.** None.
+- **Exact alarms (rider app).** Not used: the setup script removes the permission the notifications plugin would add, so Play won't ask about it.
 - **Export compliance (iOS).** Already answered in Info.plist (`ITSAppUsesNonExemptEncryption = NO`): standard HTTPS only.
 - **Uganda.** Register with the Personal Data Protection Office, and name the registered company in the privacy policy. Check the details with a local lawyer.
 

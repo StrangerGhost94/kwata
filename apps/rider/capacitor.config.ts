@@ -16,12 +16,21 @@ const config: CapacitorConfig = {
     allowNavigation: [host, 'checkout.flutterwave.com', '*.flutterwave.com'],
   },
   // Only the plugins this app needs.
-  includePlugins: ['@capacitor/app', '@capacitor/haptics', '@capacitor-firebase/messaging'],
+  includePlugins: ['@capacitor/app', '@capacitor/haptics', '@capacitor-firebase/messaging', '@capacitor/local-notifications',
+    '@capacitor-community/in-app-review', '@capawesome/capacitor-app-shortcuts', '@capgo/capacitor-native-biometric'],
   backgroundColor: '#073B42',
   android: { appendUserAgent: 'FlytteApp/rider', allowMixedContent: false },
   ios: { appendUserAgent: 'FlytteApp/rider', contentInset: 'never' },
   plugins: {
     FirebaseMessaging: { presentationOptions: ['badge', 'sound', 'alert'] },
+    // Long-press the app icon (handled in public/js/native.js).
+    AppShortcuts: {
+      shortcuts: [
+        { id: 'boda', title: 'Book a boda', iosIcon: 'scooter' },
+        { id: 'parcel', title: 'Send a parcel', iosIcon: 'shippingbox' },
+        { id: 'airport', title: 'Ride to the airport', iosIcon: 'airplane' },
+      ],
+    },
   },
   // Avoids a Swift package name clash in the Firebase plugin (its README, iOS setup).
   experimental: { ios: { spm: { packageOptions: { '@capacitor-firebase/messaging': { symlink: true } } } } },

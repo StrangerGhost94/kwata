@@ -68,12 +68,16 @@ async function createCheckout({ user, amount, purpose, tripId, method, baseUrl, 
     return { demo: true, tx_ref, status: 'successful' };
   }
 
+  // Card payments can also offer Google Pay and Apple Pay on Flutterwave's checkout, when they're
+  // switched on for the Flytte account: FLW_CARD_WALLETS=googlepay,applepay. Apple Pay shows on the
+  // website in Safari; Apple turns it off inside apps' web pages, so the iPhone app shows cards.
+  const cardOptions = () => ['card', ...String(process.env.FLW_CARD_WALLETS || '').split(',').map((x) => x.trim().toLowerCase()).filter((x) => ['googlepay', 'applepay'].includes(x))].join(',');
   const body = {
     tx_ref,
     amount,
     currency: 'UGX',
     redirect_url: `${baseUrl}/api/payments/callback`,
-    payment_options: method === 'card' ? 'card' : 'mobilemoneyuganda',
+    payment_options: method === 'card' ? cardOptions() : 'mobilemoneyuganda',
     customer: payer ? {
       email: `${payer.phone.replace('+', '')}@riders.flytte.app`,
       phonenumber: payer.phone,

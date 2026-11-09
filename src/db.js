@@ -243,6 +243,15 @@ async function migrate() {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   CREATE INDEX IF NOT EXISTS native_push_user_idx ON native_push_tokens(user_id);
+  CREATE TABLE IF NOT EXISTS wallet_devices (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id TEXT UNIQUE NOT NULL,
+    secret_hash TEXT NOT NULL,
+    device TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ
+  );
   CREATE TABLE IF NOT EXISTS driver_events (
     id SERIAL PRIMARY KEY,
     driver_id INTEGER NOT NULL,

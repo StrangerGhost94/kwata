@@ -76,5 +76,7 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Flytte uses Face ID to confirm it’s you before money leaves your Flytte Wallet, if you turn on the wallet lock.</string>
 </dict>
 </plist>

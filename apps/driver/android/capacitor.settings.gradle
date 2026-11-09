@@ -13,3 +13,6 @@ project(':capacitor-firebase-messaging').projectDir = new File('../../node_modul
 
 include ':capacitor-community-background-geolocation'
 project(':capacitor-community-background-geolocation').projectDir = new File('../../node_modules/@capacitor-community/background-geolocation/android')
+
+include ':capawesome-capacitor-app-shortcuts'
+project(':capawesome-capacitor-app-shortcuts').projectDir = new File('../../node_modules/@capawesome/capacitor-app-shortcuts/android')

@@ -16,6 +16,9 @@
     }
   } catch {}
   K.KAMPALA = { lat: 0.3136, lng: 32.5811 };
+  // Map markers are pictures, not buttons: everything they show is also in the sheet below, so
+  // screen readers and keyboards skip them instead of meeting a row of unnamed "buttons".
+  if (window.L && L.Marker) L.Marker.mergeOptions({ keyboard: false });
 
   // ---------- error reporting ----------
   // Script errors on the phone go to the server log, and to Sentry when it's set up (src/monitor.js).
@@ -385,6 +388,17 @@
     el.classList.remove('push-in'); el.classList.add('push-out');
     setTimeout(() => { el.remove(); after && after(); }, K.reduced() ? 0 : 330);
   };
+
+  // A notification-style haptic for moments that matter (driver accepted or arrived, trip done,
+  // new request): the store app uses the phone's own success / warning patterns (native.js);
+  // the web vibrates with `pattern` when given, else a light tap.
+  K.hapticNotify = (type = 'SUCCESS', pattern) => {
+    try { if (K.reduced()) return; if (pattern && navigator.vibrate) navigator.vibrate(pattern); else K.haptic(); } catch {}
+  };
+  // Hooks the store app listens to (native.js): trip changes (lock-screen trip card), and a
+  // 5-star rating (the store's own review prompt). No-ops on the web.
+  K.onTrip = () => {};
+  K.onGreatRating = () => {};
 
   // Light haptic tap (tab change, sheet snapping to a stop, swipe-to-dismiss). Android uses the
   // vibration API; iOS 18+ gives a system haptic when a switch control is toggled. Silent elsewhere.
@@ -1444,6 +1458,9 @@
         clientExtensionResults: c.getClientExtensionResults ? c.getClientExtensionResults() : {} };
       return (await K.api('/wallet/unlock', { credential })).pass;
     }
+    // How the fingerprint / face step works: passkeys on the web. The store apps swap in the phone's
+    // own biometric secure storage (native.js), because passkeys don't work in every app web view.
+    const engine = { supported, prepare, create, bioName, options: () => K.api('/wallet/unlock/options', {}), assert };
     // The confirm sheet: fingerprint/face first, a one-time code as the fallback. Resolves to a pass or null.
     function unlock({ amount, title } = {}) {
       return new Promise((resolve) => {
@@ -1455,21 +1472,21 @@
           <p class="muted">${amount ? `Pay <b>${K.ugx(amount)}</b> from your Flytte Wallet.` : 'Your Flytte Wallet is locked.'}</p>
           <p class="error" role="alert"></p>
           <div data-step>
-            <button class="btn btn-primary btn-block btn-lg" data-bio disabled>Use ${bioName()}</button>
+            <button class="btn btn-primary btn-block btn-lg" data-bio disabled>Use ${engine.bioName()}</button>
             <button class="btn btn-ghost btn-block" data-code>Use a code instead</button>
           </div></div>`, { onClose: () => { if (!done) { done = true; resolve(null); } } });
         const err = K.$('.error', m.el), bio = K.$('[data-bio]', m.el);
-        supported().then((ok) => ok ? K.api('/wallet/unlock/options', {}) : null).then((o) => {
+        engine.supported().then((ok) => ok ? engine.options() : null).then((o) => {
           if (o && !o.none) { opts = o; bio.disabled = false; } else { bio.hidden = true; }
         }).catch(() => { bio.hidden = true; });
         bio.onclick = async () => {
           if (!opts) return;
           err.textContent = ''; bio.disabled = true;
           const o = opts; opts = null;
-          try { finish(await assert(o)); }
+          try { finish(await engine.assert(o)); }
           catch (e) {
             err.textContent = e.name === 'NotAllowedError' ? 'Not confirmed. Try again, or use a code.' : e.message;
-            try { opts = await K.api('/wallet/unlock/options', {}); bio.disabled = !opts || !!opts.none; } catch {}
+            try { opts = await engine.options(); bio.disabled = !opts || !!opts.none; } catch {}
           }
         };
         K.$('[data-code]', m.el).onclick = async () => {
@@ -1498,7 +1515,7 @@
         };
       });
     }
-    return { supported, prepare, create, unlock, bioName };
+    return { supported: () => engine.supported(), prepare: (p) => engine.prepare(p), create: (o) => engine.create(o), unlock, bioName: () => engine.bioName(), engine };
   })();
 
   K.openSettings = function ({ role = APP, onBack } = {}) {
@@ -1702,7 +1719,7 @@
     let startX = 0, x = 0, dragging = false, done = false;
     const max = () => el.clientWidth - knob.offsetWidth - 10;
     const set = (v) => { x = Math.max(0, Math.min(max(), v)); knob.style.transform = `translateX(${x}px)`; el.querySelector('.label').style.opacity = 1 - x / max(); };
-    const finish = () => { if (done) return; done = true; set(max()); K.haptic(); onDone && onDone(); };
+    const finish = () => { if (done) return; done = true; set(max()); K.hapticNotify('SUCCESS'); onDone && onDone(); };
     knob.addEventListener('pointerdown', (e) => { dragging = true; startX = e.clientX - x; knob.setPointerCapture(e.pointerId); knob.style.transition = 'none'; });
     knob.addEventListener('pointermove', (e) => { if (dragging) set(e.clientX - startX); });
     knob.addEventListener('pointerup', () => {

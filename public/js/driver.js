@@ -233,6 +233,14 @@
     await Promise.all([loadEarnings(), loadOverview(), loadChanges()]);
     const active = await K.api('/trips/active').catch(() => null);
     if (active) onTrip(active); else render();
+    // Home-screen shortcuts (store app): /driver?go=online and /driver?tab=earnings.
+    const q = new URLSearchParams(location.search), go = q.get('go'), tab = q.get('tab');
+    if (go || tab) history.replaceState(null, '', location.pathname);
+    if (tab === 'earnings' && !active) openTab('earnings');
+    if (go === 'online' && !active && !S.online) {
+      const t0 = Date.now();
+      (function whenPlaced() { if (S.online) return; if (S.loc) setOnline(true); else if (Date.now() - t0 < 20000) setTimeout(whenPlaced, 500); else K.toast('Set your position to go online: turn on location or tap the map.', 5000); })();
+    }
   }
 
   // ---------- application status (screen 16 + review) ----------
@@ -403,7 +411,7 @@
     if (S.trip && S.trip.status === 'completed' && !lineUp) S.trip = null;
     S.offer = o; S.offer.left = o.expiresIn;
     openTab('home');
-    try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400]); } catch {}
+    K.hapticNotify('WARNING', [400, 150, 400, 150, 400]);
     beep();
     clearInterval(offerTimer);
     offerTimer = setInterval(() => {
@@ -477,6 +485,7 @@
     const id = S.offer.id;
     clearInterval(offerTimer);
     K.$('#yes').disabled = K.$('#no').disabled = true;
+    if (accept) K.haptic('MEDIUM');
     sock.emit('trip:respond', { tripId: id, accept }, (res) => {
       S.offer = null;
       if (!res.ok) { K.toast(res.error); clearTarget(); render(); return; }

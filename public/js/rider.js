@@ -296,7 +296,7 @@
         <div id="locHost">${locHtml()}</div>
         <div class="where">
           <button class="where-go" id="whereBtn">${K.ic('search')}<span class="on-txt">Where to?</span><span class="off-txt">No connection</span></button>
-          <button class="when-pill ${S.when ? 'on' : ''}" id="homeWhen" aria-label="Pickup time">${K.ic('clock', 'sm')}<span>${S.when ? K.esc(whenLabel(S.when)) : 'Now'}</span>${K.ic('chevDown', 'sm')}</button>
+          <button class="when-pill ${S.when ? 'on' : ''}" id="homeWhen" aria-label="Pickup time: ${S.when ? K.esc(whenLabel(S.when)) : 'Now'}">${K.ic('clock', 'sm')}<span>${S.when ? K.esc(whenLabel(S.when)) : 'Now'}</span>${K.ic('chevDown', 'sm')}</button>
         </div>
         <div id="suggHost"></div>
         <div class="quick" id="quickHost">${quickHtml()}</div>
@@ -1473,6 +1473,7 @@
       // No stars chosen = "not now": the server records it so this screen doesn't come back.
       try { await K.api(`/trips/${t.id}/rate`, S.rating ? { stars: S.rating } : { skip: true }); }
       catch (e) { rate.disabled = false; K.toast(`Rating not saved: ${e.message}`, 4500); return; }
+      if (S.rating === 5) K.onGreatRating();   // store app: maybe the store's own "rate Flytte" prompt
       S.trip.riderRated = true; S.rating = 0;
       if (needsPay) render(); else { K.toast('Thanks for riding with Flytte'); reset(); }
     };
@@ -1661,10 +1662,11 @@
     else if (t.status === 'cancelled') { if (t.cancelledBy === 'rider') { reset(); return; } S.view = 'none'; K.toast(`Your ${who(t)} cancelled. Try again.`); }
     nightToast(t);
     if (prev !== t.status) {
-      if (t.status === 'accepted') { vibrate(); loadMessages(); }   // the banner and headline already say who's coming
-      if (t.status === 'arrived') { vibrate(); chime(); }
-      if (t.status === 'completed') S.note = '';
+      if (t.status === 'accepted') { K.hapticNotify('SUCCESS', [120, 80, 120]); loadMessages(); }   // the banner and headline already say who's coming
+      if (t.status === 'arrived') { K.hapticNotify('WARNING', [120, 80, 120]); chime(); }
+      if (t.status === 'completed') { S.note = ''; K.hapticNotify('SUCCESS'); }
     }
+    K.onTrip(t);
     S.pickup = t.pickup; S.drop = t.drop;
     document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
     root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === 'home' ? 'page' : 'false'));
@@ -2479,10 +2481,10 @@
     const pct = tier && tier.next ? Math.min(100, Math.round((pts / tier.at) * 100)) : 100;
     el.innerHTML = `
       <div class="page-title">Account</div>
-      <button class="acct-head" data-a="profile" aria-label="Edit your profile">${avatar(u)}
+      <button class="acct-head" data-a="profile">${avatar(u)}
         <span class="grow"><b>${K.esc(u.name)}</b><span class="small muted">${K.esc(prettyPhone(u.phone))}</span>
           <span class="acct-badges"><span>${K.ic('check', 'sm')}Phone</span>${u.email && u.emailVerified ? `<span>${K.ic('check', 'sm')}Email</span>` : ''}</span></span>
-        <span class="small muted">Edit</span></button>
+        <span class="small muted">Edit<span class="sr-only"> your profile</span></span></button>
       <div class="acct-stats">
         <div><b>${sm ? sm.allTime.trips : '–'}</b><span>trips</span></div>
         <div><b>★ ${u.rating || 'New'}</b><span>rating</span></div>
