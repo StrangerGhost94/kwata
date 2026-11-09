@@ -751,7 +751,9 @@
     // so the eye settles on it before it moves, even when the installed app loads slowly.
     const hold = new Promise((r) => setTimeout(r, Math.max(300, (quick ? 700 : 1100) - performance.now())));
     const pageReady = new Promise((r) => { const t0 = performance.now(); (function look() { const a = document.querySelector('.auth2'); if (a || performance.now() - t0 > 4000) r(a); else requestAnimationFrame(look); })(); });
-    Promise.all([pageReady, photoReady, hold]).then(([auth]) => {
+    // The wordmark font must be in before the logo is measured, or the glide starts from the fallback font's size and jumps.
+    const fontReady = document.fonts && document.fonts.load ? Promise.race([document.fonts.load('700 1em "Plus Jakarta Sans"').catch(() => {}), new Promise((r) => setTimeout(r, 1500))]) : Promise.resolve();
+    Promise.all([pageReady, photoReady, hold, fontReady]).then(([auth]) => {
       if (!auth) { sp.classList.add('out'); setTimeout(() => sp.remove(), 300); return; }
       auth.querySelectorAll('.auth-body > *').forEach((el, i) => el.style.setProperty('--i', Math.min(i, 8)));
       auth.classList.add('intro');

@@ -23,6 +23,9 @@ if (CANONICAL) app.use((req, res, next) => {
 // Safety net: a stray failed promise is logged instead of stopping the server (and every live trip).
 process.on('unhandledRejection', (e) => console.error('Unhandled promise rejection:', e));
 app.disable('x-powered-by');
+// Gzip text responses (scripts, styles, pages, JSON): about a quarter of the bytes on a phone's
+// mobile data, so the launch screen settles much sooner. Images and fonts are already compressed.
+app.use(require('compression')());
 app.use(express.json({ limit: '3mb' })); // room for compressed document photos
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
