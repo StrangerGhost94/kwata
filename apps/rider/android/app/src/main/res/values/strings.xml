@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Flytte</string>
+    <string name="title_activity_main">Flytte</string>
+    <string name="package_name">co.flytte.rider</string>
+    <string name="custom_url_scheme">co.flytte.rider</string>
+</resources>

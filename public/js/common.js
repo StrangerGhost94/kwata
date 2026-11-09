@@ -26,7 +26,7 @@
     function report(e) {
       try {
         const msg = String(e.message || e).slice(0, 300);
-        if (!msg || sent.has(msg) || sent.size >= 5 || /^Script error\.?$/.test(msg)) return;
+        if (!msg || sent.has(msg) || sent.size >= 5 || /^Script error\.?$|^ResizeObserver loop/.test(msg)) return;   // browser noise, not our bugs
         sent.add(msg);
         const s = JSON.parse(localStorage.getItem(KEY) || 'null');
         fetch('/api/client-error', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', ...(s && s.token ? { Authorization: 'Bearer ' + s.token } : {}) },

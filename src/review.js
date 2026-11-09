@@ -25,6 +25,8 @@ const ANCHOR = { lat: 0.3136, lng: 32.5811 };   // central Kampala: where review
 const BOT_DRIVER_PHONE = '+256000000901';        // not a real number, so it can never clash with a person
 const BOT_RIDER_PHONE = '+256000000902';
 const STEP_MS = 2000;
+// Store screenshots use everyday names; reviewers see who the demo characters are.
+const plain = () => process.env.REVIEW_PLAIN_NAMES === '1';
 const SPEED = Math.max(1, Number(process.env.REVIEW_SPEED) || 1);   // tests run the demo trips faster
 
 const code = () => String(process.env.REVIEW_CODE || '').trim();
@@ -72,12 +74,12 @@ async function setup(realtime, port) {
   base = `http://127.0.0.1:${port}/api`;
   if (!on()) return;
   try {
-    if (riderPhone()) ids.rider = (await ensureUser(riderPhone(), 'App Review', 'rider')).id;
-    if (driverPhone()) ids.driver = (await ensureUser(driverPhone(), 'App Review Driver', 'driver', { plate: 'UBR 101R', make: 'Toyota Premio', color: 'Silver' })).id;
-    ids.botDriver = (await ensureUser(BOT_DRIVER_PHONE, 'Moses (demo driver)', 'driver', { plate: 'UBR 901D', make: 'Toyota Corolla', color: 'White' })).id;
-    ids.botRider = (await ensureUser(BOT_RIDER_PHONE, 'Grace (demo rider)', 'rider')).id;
+    if (riderPhone()) ids.rider = (await ensureUser(riderPhone(), plain() ? 'Sarah Namubiru' : 'App Review', 'rider')).id;
+    if (driverPhone()) ids.driver = (await ensureUser(driverPhone(), plain() ? 'David Okello' : 'App Review Driver', 'driver', { plate: 'UBR 101R', make: 'Toyota Premio', color: 'Silver' })).id;
+    ids.botDriver = (await ensureUser(BOT_DRIVER_PHONE, plain() ? 'Moses Kato' : 'Moses (demo driver)', 'driver', { plate: 'UBR 901D', make: 'Toyota Corolla', color: 'White' })).id;
+    ids.botRider = (await ensureUser(BOT_RIDER_PHONE, plain() ? 'Grace Achieng' : 'Grace (demo rider)', 'rider')).id;
     Object.values(ids).forEach((id) => id && demoIds.add(id));
-    rt.botDriver(ids.botDriver, { name: 'Moses (demo driver)', plate: 'UBR 901D' });
+    rt.botDriver(ids.botDriver, { name: plain() ? 'Moses Kato' : 'Moses (demo driver)', plate: 'UBR 901D' });
     console.log('Review mode on: review accounts ready', JSON.stringify({ rider: !!ids.rider, driver: !!ids.driver }));
   } catch (e) { console.error('review setup:', e.message); }
 }

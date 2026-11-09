@@ -1,0 +1,23 @@
+{
+  "name": "flytte-store-apps",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Flytte and Flytte Driver for Google Play and the App Store (Capacitor shells around flytte.co)",
+  "scripts": {
+    "sync": "node scripts/prepare-www.js && npm run sync:rider && npm run sync:driver && node scripts/configure-native.js",
+    "sync:rider": "cd rider && npx cap sync",
+    "sync:driver": "cd driver && npx cap sync",
+    "assets": "node ../tools/brand-icons.js --apps",
+    "open:rider:android": "cd rider && npx cap open android",
+    "open:rider:ios": "cd rider && npx cap open ios",
+    "open:driver:android": "cd driver && npx cap open android",
+    "open:driver:ios": "cd driver && npx cap open ios"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0"
+  },
+  "workspaces": [
+    "rider",
+    "driver"
+  ]
+}

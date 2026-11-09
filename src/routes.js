@@ -1697,6 +1697,12 @@ r.post('/push/unsubscribe', auth.requireAuth(), wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// The store app's driver position with the screen off: sent by native HTTP, because Android slows
+// the web view's own connections after a few minutes in the background (public/js/native.js).
+r.post('/driver/location', auth.requireAuth('driver'), limit(120, 60e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
+  res.json({ ok: rt.driverLocation(req.user.id, req.body || {}) });
+}));
+
 r.post('/driver/withdraw', auth.requireAuth('driver'), wrap(async (req, res) => {
   const s = await getSettings();
   const amount = Math.round(Number(req.body.amount));

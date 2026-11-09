@@ -476,18 +476,7 @@ function init(server) {
         }
       });
 
-      handle('driver:location', (loc = {}) => {
-        let lat = Number(loc.lat), lng = Number(loc.lng);
-        const demoSpot = Number.isFinite(lat) && Number.isFinite(lng) && review.mapLocation(u.id, lat, lng);
-        if (demoSpot) ({ lat, lng } = demoSpot);   // an app reviewer abroad drives in central Kampala
-        if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return;
-        d.lat = lat; d.lng = lng; d.heading = Number(loc.heading) || null; d.updatedAt = Date.now();
-        if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
-        // About a minute away from the pickup: tell the rider to head out.
-        if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId && haversineKm(d, d.pickup) < 0.35) riderAlert(d.trip, 'near');
-        if (d.queuedTripId) io.to(`trip:${d.queuedTripId}`).emit('driver:location', { tripId: d.queuedTripId, lat, lng, heading: d.heading });
-        if (d.home && haversineKm(d, d.home) < 0.8) { d.home = null; notify(u.id, 'driver:home', { on: false, arrived: true }); }
-      });
+      handle('driver:location', (loc = {}) => { driverLocation(u.id, loc); });
 
       handle('trip:respond', async ({ tripId, accept } = {}, cb) => {
         try {
@@ -518,6 +507,23 @@ function init(server) {
 }
 
 function messages(tripId) { return chats.get(tripId) || []; }
+
+// A driver's position, from the socket or (store app with the screen off) from POST /api/driver/location.
+function driverLocation(userId, loc = {}) {
+  const d = drivers.get(userId);
+  if (!d) return false;
+  let lat = Number(loc.lat), lng = Number(loc.lng);
+  const demoSpot = Number.isFinite(lat) && Number.isFinite(lng) && review.mapLocation(userId, lat, lng);
+  if (demoSpot) ({ lat, lng } = demoSpot);   // an app reviewer abroad drives in central Kampala
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return false;
+  d.lat = lat; d.lng = lng; d.heading = Number(loc.heading) || null; d.updatedAt = Date.now();
+  if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
+  // About a minute away from the pickup: tell the rider to head out.
+  if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId && haversineKm(d, d.pickup) < 0.35) riderAlert(d.trip, 'near');
+  if (d.queuedTripId) io.to(`trip:${d.queuedTripId}`).emit('driver:location', { tripId: d.queuedTripId, lat, lng, heading: d.heading });
+  if (d.home && haversineKm(d, d.home) < 0.8) { d.home = null; notify(userId, 'driver:home', { on: false, arrived: true }); }
+  return true;
+}
 
 // ---------- App review demo driver (src/review.js) ----------
 // Always online, reachable without a phone, and moved by the server instead of by GPS.
@@ -587,7 +593,7 @@ function forceOffline(driverId) {
 }
 
 module.exports = { setWoman, setSchool, nightShareAlert,
-  init, broadcast, messages, dispatch, clearOffer, setDriverFree, respond, botDriver, moveDriver, loadTrip, view, notify, joinTripRoom,
+  init, broadcast, messages, dispatch, clearOffer, setDriverFree, respond, botDriver, moveDriver, driverLocation, loadTrip, view, notify, joinTripRoom,
   liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, setHome, driverState, markPush, updateDriverVehicle, ACTIVE,
   driversSnapshot: () => [...drivers.values()],
   get io() { return io; },

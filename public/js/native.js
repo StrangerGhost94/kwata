@@ -78,7 +78,16 @@
   // Online: a native watcher that keeps running when the phone locks (Android shows a "You're online"
   // notification while it runs). Offline: the normal in-app location, which stops in the background.
   if (BG) {
-    let onPos = null, watcher = null, starting = null;
+    let onPos = null, watcher = null, starting = null, lastHttp = 0;
+    const Http = has('CapacitorHttp') ? plugin('CapacitorHttp') : null;
+    // Screen off: Android slows the web view's own connections after a few minutes in the
+    // background, so the position also goes to the server through native HTTP.
+    function sendNative(loc) {
+      if (!Http || !document.hidden || !K.token() || Date.now() - lastHttp < 8000) return;
+      lastHttp = Date.now();
+      Http.post({ url: location.origin + '/api/driver/location', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + K.token() },
+        data: { lat: loc.latitude, lng: loc.longitude, heading: loc.bearing == null ? null : loc.bearing } }).catch(() => {});
+    }
     const webWatch = K.geo.watch, webClear = K.geo.clear;
     K.geo.watch = (ok, err, opts) => { onPos = ok; return webWatch(ok, err, opts); };
     K.geo.clear = (id) => webClear(id);
@@ -93,6 +102,7 @@
             if (error.code === 'NOT_AUTHORIZED') K.toast('Allow location “Always” for Flytte Driver in Settings, or requests stop reaching you when your screen is off.', 7000);
             return;
           }
+          if (loc) sendNative(loc);
           if (loc && onPos) onPos({ coords: { latitude: loc.latitude, longitude: loc.longitude, heading: loc.bearing == null ? null : loc.bearing, accuracy: loc.accuracy, speed: loc.speed } });
         }).then((id) => { watcher = id; starting = null; if (!K.geo.wantOn) K.geo.background(false); }).catch(() => { starting = null; });
       }
