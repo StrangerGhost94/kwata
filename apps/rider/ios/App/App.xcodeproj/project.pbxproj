@@ -7,8 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F1A7E0010000000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F1A7E0010000000000000001 /* PrivacyInfo.xcprivacy */; };
+		15B4EA9188F41A4EFCA922FE /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 717F35AA7481CE4DC24343E1 /* WidgetKit.framework */; };
+		17C1BE025966A731656B66B2 /* LiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C458CBCBFA29713ABFB2400 /* LiveActivityPlugin.swift */; };
+		2438442AB2CF1F1EBD943FE8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F7BF95A8F25597091EA4C22C /* Foundation.framework */; };
+		283F68AA2B7A6B96E2CA91A8 /* FlytteTripAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A763181ACBA3377E314BFFDD /* FlytteTripAttributes.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
+		3E07D3931C149B9ED65CF1FC /* FlytteTripLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16F61188FDB696812E492B42 /* FlytteTripLiveActivity.swift */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
@@ -16,11 +20,44 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		6AF296DD98FCF16EAE11BE71 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 915BD10768A9A1107AB249F6 /* MainViewController.swift */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		A2C36184D45AEC2CB49AD747 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C39BC456455224FB1C81C148 /* ActivityKit.framework */; };
+		AC027FDD7E4461F959D6051B /* FlytteTripWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 27BB62A217C4F490FC9713C5 /* FlytteTripWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CAF68F87BB559E41E667E144 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D0F04A478B0EB5C8E865A6FE /* SwiftUI.framework */; };
+		D6F7DDC5CF91EA1D5C824AB6 /* FlytteF.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC5D1658F6C238965E907FBB /* FlytteF.swift */; };
+		F1A7E0010000000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F1A7E0010000000000000001 /* PrivacyInfo.xcprivacy */; };
+		FAC230DC0B9956E5297040F5 /* FlytteTripAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A763181ACBA3377E314BFFDD /* FlytteTripAttributes.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		C6895129D77C6BD4E37DBABE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 459101B77B976A84D227F0CD;
+			remoteInfo = FlytteTripWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		DFC9905660019BAF6B4C7820 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AC027FDD7E4461F959D6051B /* FlytteTripWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		F1A7E0010000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		16F61188FDB696812E492B42 /* FlytteTripLiveActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FlytteTripLiveActivity.swift; sourceTree = "<group>"; };
+		27BB62A217C4F490FC9713C5 /* FlytteTripWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FlytteTripWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		2C458CBCBFA29713ABFB2400 /* LiveActivityPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveActivityPlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -30,8 +67,17 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		5CB2A9251D31D0CFE04AFD52 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		717F35AA7481CE4DC24343E1 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/WidgetKit.framework; sourceTree = DEVELOPER_DIR; };
+		915BD10768A9A1107AB249F6 /* MainViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		A763181ACBA3377E314BFFDD /* FlytteTripAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FlytteTripAttributes.swift; sourceTree = "<group>"; };
+		C39BC456455224FB1C81C148 /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/ActivityKit.framework; sourceTree = DEVELOPER_DIR; };
+		D0F04A478B0EB5C8E865A6FE /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/SwiftUI.framework; sourceTree = DEVELOPER_DIR; };
+		DC5D1658F6C238965E907FBB /* FlytteF.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FlytteF.swift; sourceTree = "<group>"; };
+		F1A7E0010000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F7BF95A8F25597091EA4C22C /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -43,15 +89,39 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		52ED47D3865D14583CF8B8FB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2438442AB2CF1F1EBD943FE8 /* Foundation.framework in Frameworks */,
+				15B4EA9188F41A4EFCA922FE /* WidgetKit.framework in Frameworks */,
+				CAF68F87BB559E41E667E144 /* SwiftUI.framework in Frameworks */,
+				A2C36184D45AEC2CB49AD747 /* ActivityKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0A40E3308F9750A3E6562805 /* FlytteTripWidget */ = {
+			isa = PBXGroup;
+			children = (
+				DC5D1658F6C238965E907FBB /* FlytteF.swift */,
+				16F61188FDB696812E492B42 /* FlytteTripLiveActivity.swift */,
+				5CB2A9251D31D0CFE04AFD52 /* Info.plist */,
+			);
+			name = FlytteTripWidget;
+			path = FlytteTripWidget;
+			sourceTree = "<group>";
+		};
 		504EC2FB1FED79650016851F = {
 			isa = PBXGroup;
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
+				AAB285AF13CDB6FF4526024D /* Frameworks */,
+				0A40E3308F9750A3E6562805 /* FlytteTripWidget */,
 			);
 			sourceTree = "<group>";
 		};
@@ -59,6 +129,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				27BB62A217C4F490FC9713C5 /* FlytteTripWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,13 +147,61 @@
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				F1A7E0010000000000000001 /* PrivacyInfo.xcprivacy */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				89FAED83DCD1A0757FDF7608 /* LiveActivity */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		89FAED83DCD1A0757FDF7608 /* LiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				A763181ACBA3377E314BFFDD /* FlytteTripAttributes.swift */,
+				2C458CBCBFA29713ABFB2400 /* LiveActivityPlugin.swift */,
+				915BD10768A9A1107AB249F6 /* MainViewController.swift */,
+			);
+			name = LiveActivity;
+			path = LiveActivity;
+			sourceTree = "<group>";
+		};
+		AAB285AF13CDB6FF4526024D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				EB8573D99998DB5D0241ED63 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		EB8573D99998DB5D0241ED63 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				F7BF95A8F25597091EA4C22C /* Foundation.framework */,
+				717F35AA7481CE4DC24343E1 /* WidgetKit.framework */,
+				D0F04A478B0EB5C8E865A6FE /* SwiftUI.framework */,
+				C39BC456455224FB1C81C148 /* ActivityKit.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		459101B77B976A84D227F0CD /* FlytteTripWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3EC9FE6A7AAD2AF950E7DA30 /* Build configuration list for PBXNativeTarget "FlytteTripWidget" */;
+			buildPhases = (
+				99DF4356C2B35E4A572DCE22 /* Sources */,
+				52ED47D3865D14583CF8B8FB /* Frameworks */,
+				82B5C2A983A83B57635CA487 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FlytteTripWidget;
+			productName = FlytteTripWidget;
+			productReference = 27BB62A217C4F490FC9713C5 /* FlytteTripWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		504EC3031FED79650016851F /* App */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */;
@@ -90,10 +209,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				DFC9905660019BAF6B4C7820 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				44846D505DBC3776D9FF7F10 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -136,6 +257,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				459101B77B976A84D227F0CD /* FlytteTripWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -155,6 +277,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		82B5C2A983A83B57635CA487 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -164,10 +293,32 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				FAC230DC0B9956E5297040F5 /* FlytteTripAttributes.swift in Sources */,
+				17C1BE025966A731656B66B2 /* LiveActivityPlugin.swift in Sources */,
+				6AF296DD98FCF16EAE11BE71 /* MainViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99DF4356C2B35E4A572DCE22 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D6F7DDC5CF91EA1D5C824AB6 /* FlytteF.swift in Sources */,
+				3E07D3931C149B9ED65CF1FC /* FlytteTripLiveActivity.swift in Sources */,
+				283F68AA2B7A6B96E2CA91A8 /* FlytteTripAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		44846D505DBC3776D9FF7F10 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = FlytteTripWidget;
+			target = 459101B77B976A84D227F0CD /* FlytteTripWidget */;
+			targetProxy = C6895129D77C6BD4E37DBABE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -303,9 +454,9 @@
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -326,9 +477,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -344,9 +495,69 @@
 			};
 			name = Release;
 		};
+		909A17663C7FB4CF59D07ABB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FlytteTripWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.flytte.rider.FlytteTripWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F1260F5FBF8FFD619E70E3A3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FlytteTripWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.flytte.rider.FlytteTripWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		3EC9FE6A7AAD2AF950E7DA30 /* Build configuration list for PBXNativeTarget "FlytteTripWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				909A17663C7FB4CF59D07ABB /* Release */,
+				F1260F5FBF8FFD619E70E3A3 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

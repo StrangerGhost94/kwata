@@ -155,6 +155,7 @@ function ios(app, cfg) {
   p = setPlist(p, 'UISupportedInterfaceOrientations', arr(['UIInterfaceOrientationPortrait']));
   p = setPlist(p, 'UIRequiredDeviceCapabilities', arr(['arm64']));
   p = setPlist(p, 'ITSAppUsesNonExemptEncryption', '<false/>');   // only standard HTTPS
+  if (app === 'rider') p = setPlist(p, 'NSSupportsLiveActivities', '<true/>');   // the trip on the lock screen and Dynamic Island
   write(plist, p, pb);
 
   // Entitlements: push, flytte.co links, passkeys for the wallet lock.
@@ -263,4 +264,11 @@ for (const [app, cfg] of Object.entries(APPS)) {
   console.log(cfg.name);
   android(app, cfg);
   ios(app, cfg);
+}
+
+// The rider app's trip Live Activity (widget extension + plugin): an Xcode target, added with the
+// xcodeproj gem (comes with CocoaPods). Skipped with a note when Ruby or the gem isn't there.
+if (fs.existsSync(path.join(ROOT, 'rider/ios/App'))) {
+  try { process.stdout.write(require('child_process').execFileSync('ruby', [path.join(__dirname, 'add-live-activity.rb')], { encoding: 'utf8' })); }
+  catch (e) { console.warn('  Live Activity not added: install the xcodeproj gem (gem install xcodeproj), then run npm run sync again.'); }
 }

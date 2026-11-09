@@ -104,4 +104,19 @@ async function send(userId, payload, { ttl = 60, urgency = 'high' } = {}) {
   return sent;
 }
 
-module.exports = { configured, register, remove, has, send, message };
+// A Live Activity update (the trip on an iPhone's lock screen, src/liveactivity.js). Firebase needs
+// the app install's own token too, so this goes through the rider's newest iPhone install.
+async function sendLiveActivity(userId, activityToken, aps) {
+  if (!configured()) return false;
+  const row = await db.one("SELECT token FROM native_push_tokens WHERE user_id = $1 AND platform = 'ios' AND app = 'rider' ORDER BY updated_at DESC LIMIT 1", [userId]);
+  if (!row) return false;
+  const url = `${process.env.FCM_API_BASE || 'https://fcm.googleapis.com'}/v1/projects/${serviceAccount().project_id}/messages:send`;
+  const body = { message: { token: row.token, apns: { live_activity_token: activityToken, headers: { 'apns-priority': '10' }, payload: { aps } } } };
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + await accessToken(), 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) });
+    if (!r.ok) console.error('live activity push failed', r.status);
+    return r.ok;
+  } catch (e) { console.error('live activity push failed', e.message); return false; }
+}
+
+module.exports = { configured, register, remove, has, send, message, sendLiveActivity };

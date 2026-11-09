@@ -17,6 +17,7 @@
   const Review = APP === 'rider' && has('InAppReview') ? plugin('InAppReview') : null;
   const Shortcuts = has('AppShortcuts') ? plugin('AppShortcuts') : null;
   const Bio = APP === 'rider' && has('NativeBiometric') ? plugin('NativeBiometric') : null;
+  const LA = PLATFORM === 'ios' && APP === 'rider' && has('LiveActivity') ? plugin('LiveActivity') : null;
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
 
   K.native = true;
@@ -115,37 +116,76 @@
     };
   }
 
-  // ---------- live trip on the lock screen (Android) ----------
-  // While a trip is on, an ongoing notification shows who's coming, the plate and where things are,
-  // and taps back into the trip. It's quiet (updates don't buzz) and goes when the trip ends.
-  // iPhones get the trip alerts instead (on the way, almost here, arrived, trip done).
+  // ---------- the trip on the lock screen ----------
+  // Android: a quiet ongoing notification. iPhone: a Live Activity (lock screen and Dynamic Island,
+  // apps/ios-live-activity), which the server keeps current through push while the app is closed
+  // (src/liveactivity.js). Same wording on both, and as the server's.
+  const first = (n) => String(n || '').trim().split(/\s+/)[0] || 'Your driver';
+  const short = (a, d) => String(a || d).split(',')[0];
+  function tripText(t) {
+    const d = t.driver || {}, who = first(d.name), car = d.vehicle || '';
+    const parcel = ['parcel', 'errand'].includes(t.service);
+    const s = {
+      accepted: [`${who} is on the way`, [car, `Pickup: ${short(t.pickup && t.pickup.address, 'your pickup')}`].filter(Boolean).join(' · ')],
+      arrived: [`${who} has arrived`, ['Meet them at the pickup', car].filter(Boolean).join(' · ')],
+      in_progress: [parcel ? 'Your parcel is on its way' : `On your way to ${short(t.drop && t.drop.address, 'your destination')}`, [`With ${who}`, d.plate].filter(Boolean).join(' · ')],
+      completed: [t.service === 'parcel' ? 'Parcel delivered' : 'You’ve arrived', 'Thanks for riding with Flytte'],
+    }[t.status];
+    return s ? { status: t.status, title: s[0], subtitle: s[1], plate: t.status === 'completed' ? '' : (d.plate || '') } : null;
+  }
+  const isLive = (t) => !!(t && ['accepted', 'arrived', 'in_progress'].includes(t.status) && t.driver);
+  const handlers = [];
+  // One update at a time, in order (each waits for the phone), so quick changes never cross.
+  let tripQueue = Promise.resolve();
+  K.onTrip = (t) => (tripQueue = tripQueue.then(() => Promise.all(handlers.map((h) => Promise.resolve().then(() => h(t)).catch(() => {})))));
+
   if (LN) {
     const ID = 4201;
     let channel = null, shown = null;
-    const first = (n) => String(n || '').trim().split(/\s+/)[0] || 'Your driver';
-    K.onTrip = async (t) => {
+    handlers.push(async (t) => {
       try {
-        const live = t && ['accepted', 'arrived', 'in_progress'].includes(t.status) && t.driver;
-        if (!live) { if (shown) { shown = null; await LN.cancel({ notifications: [{ id: ID }] }); } return; }
+        if (!isLive(t)) { if (shown) { shown = null; await LN.cancel({ notifications: [{ id: ID }] }); } return; }
         if ((await LN.checkPermissions()).display !== 'granted') return;   // alerts were never allowed: don't ask from here
         if (!channel) channel = LN.createChannel({ id: 'trip_live', name: 'Live trip', description: 'Your current trip, on the lock screen', importance: 2, visibility: 1, vibration: false }).catch(() => {});
         await channel;
-        const d = t.driver, who = first(d.name), plate = d.plate ? ` · ${d.plate}` : '';
-        const car = d.vehicle || '';
-        const text = {
-          accepted: [`${who} is on the way${plate}`, `${car ? car + ' · ' : ''}Pickup: ${String((t.pickup && t.pickup.address) || '').split(',')[0]}`],
-          arrived: [`${who} has arrived${plate}`, `Meet them at the pickup${car ? ' · ' + car : ''}`],
-          in_progress: [`On your way to ${String((t.drop && t.drop.address) || 'your destination').split(',')[0]}`, `With ${who}${plate}`],
-        }[t.status];
         const key = t.id + t.status;
         if (shown === key) return;
         shown = key;
-        await LN.schedule({ notifications: [{ id: ID, title: text[0], body: text[1], channelId: 'trip_live', ongoing: true, autoCancel: false,
+        const x = tripText(t), plate = t.driver.plate && t.status !== 'in_progress' ? ` · ${t.driver.plate}` : '';
+        await LN.schedule({ notifications: [{ id: ID, title: x.title + plate, body: x.subtitle, channelId: 'trip_live', ongoing: true, autoCancel: false,
           smallIcon: 'ic_stat_flytte', iconColor: '#073B42', extra: { tripId: t.id } }] });
       } catch {}
-    };
+    });
     // Ended while the app was closed: don't leave a stale card behind.
     LN.cancel({ notifications: [{ id: ID }] }).catch(() => {});
+  }
+
+  if (LA) {
+    let current = null;   // { id, status }
+    LA.addListener('pushToken', ({ tripId, token }) => { if (token && K.token()) K.api('/push/live-activity', { tripId, token }).catch(() => {}); });
+    handlers.push(async (t) => {
+      try {
+        if (isLive(t)) {
+          const x = tripText(t);
+          if (!current || current.id !== t.id) {
+            const r = await LA.start({ tripId: t.id, driverName: first(t.driver.name), plate: t.driver.plate || '', vehicle: t.driver.vehicle || '', service: t.service || '', ...x });
+            if (r && r.available === false) return;
+            current = { id: t.id, status: t.status, plate: x.plate };
+          } else if (current.status !== t.status || current.plate !== x.plate) {
+            current.status = t.status; current.plate = x.plate;
+            await LA.update({ tripId: t.id, ...x });
+          }
+        } else if (current && t && t.id === current.id && t.status === 'requested') {
+          // The driver cancelled and Flytte is matching again: keep the card, say so.
+          current.status = 'searching'; current.plate = '';
+          await LA.update({ tripId: t.id, status: 'searching', title: 'Finding you another driver', subtitle: 'Your driver couldn’t make it. We’re matching you again.', plate: '' });
+        } else if (current && (!t || t.id === current.id || t.id > current.id)) {
+          const x = t && t.id === current.id && t.status === 'completed' ? tripText(t) : null;
+          const id = current.id; current = null;
+          await LA.end(x ? { tripId: id, ...x } : { tripId: id });
+        }
+      } catch {}
+    });
   }
 
   // ---------- "Enjoying Flytte?" ----------

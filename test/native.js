@@ -19,7 +19,7 @@ async function call(p, body, token) {
 }
 
 // A stand-in for Capacitor on an Android phone. Every plugin call is recorded in window.__cap.
-function fakeCapacitor(version) {
+function fakeCapacitor([version, platform]) {
   const calls = []; const rec = (name, args) => { calls.push([name, args]); };
   const listeners = {};
   let watchCb = null;
@@ -45,6 +45,12 @@ function fakeCapacitor(version) {
       cancel: async (o) => rec('LN.cancel', o.notifications[0].id),
     },
     InAppReview: { requestReview: async () => rec('Review.requestReview') },
+    LiveActivity: {
+      start: async (o) => { rec('LA.start', o); return { available: true, started: true }; },
+      update: async (o) => { rec('LA.update', o); return { updated: true }; },
+      end: async (o) => { rec('LA.end', o); return { ended: 1 }; },
+      addListener: (e, cb) => { listeners['LA.' + e] = cb; return Promise.resolve({ remove() {} }); },
+    },
     AppShortcuts: { addListener: (e, cb) => { listeners['Shortcuts.' + e] = cb; return Promise.resolve({ remove() {} }); } },
     NativeBiometric: {
       isAvailable: async () => ({ isAvailable: true, biometryType: 3 }),
@@ -54,7 +60,7 @@ function fakeCapacitor(version) {
     CapacitorHttp: { post: async (o) => { const r = await fetch(o.url, { method: 'POST', headers: o.headers, body: JSON.stringify(o.data) }); const data = await r.json(); rec('Http.post', { url: o.url, status: r.status, data }); return { status: r.status, data }; } },
   };
   window.__cap = { calls, listeners, fire: (loc) => watchCb && watchCb(loc) };
-  window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'android', isPluginAvailable: (n) => n in plugins, Plugins: plugins, registerPlugin: (n) => plugins[n] };
+  window.Capacitor = { isNativePlatform: () => true, getPlatform: () => platform || 'android', isPluginAvailable: (n) => n in plugins, Plugins: plugins, registerPlugin: (n) => plugins[n] };
 }
 
 (async () => {
@@ -77,11 +83,11 @@ function fakeCapacitor(version) {
     ok(drv.user && drv.user.role === 'driver', 'signed in as an approved driver');
     b = await chromium.launch({ executablePath: EXE, args: ['--no-sandbox'] });
 
-    async function open(version, app = 'driver', session = drv) {
+    async function open(version, app = 'driver', session = drv, platform = 'android') {
       const c = await b.newContext({ viewport: { width: 390, height: 844 }, geolocation: { latitude: 0.3136, longitude: 32.5811 }, permissions: ['geolocation'] });
       const p = await c.newPage();
       const errors = []; p.on('pageerror', (e) => errors.push(e.message));
-      await p.addInitScript(fakeCapacitor, version);
+      await p.addInitScript(fakeCapacitor, [version, platform]);
       await p.addInitScript(([a, s]) => { localStorage.setItem('flytte_' + a, s); localStorage.setItem('flytte_opened', String(Date.now())); localStorage.setItem('flytte_onboarded', '1'); localStorage.setItem('flytte_loc_asked', '1'); }, [app, JSON.stringify(session)]);
       await p.goto(BASE + (app === 'driver' ? '/driver' : '/'));
       return { c, p, errors };
@@ -161,6 +167,35 @@ function fakeCapacitor(version) {
     await r.p.waitForURL(/service=parcel/, { timeout: 5000 });
     ok(true, 'long-press “Send a parcel” on the icon opens the parcel booking');
     ok(!r.errors.length, 'no script errors in the rider app' + (r.errors.length ? ': ' + r.errors.join(' | ') : ''));
+
+    // ---- the rider app on an iPhone: the trip as a Live Activity
+    const ios = await open('1.4.0', 'rider', rid, 'ios');
+    await ios.p.waitForSelector('#whereBtn', { timeout: 20000 });
+    const tokenPost = ios.p.waitForRequest((q) => q.url().endsWith('/api/push/live-activity'), { timeout: 5000 }).catch(() => null);
+    const la = await ios.p.evaluate(async () => {
+      const t = { id: 31, service: 'car', driver: { name: 'Moses Kato', plate: 'UBR 901D', vehicle: 'White Toyota Corolla' }, pickup: { address: 'Kampala Road, Kampala' }, drop: { address: 'Acacia Mall' } };
+      const step = async (x) => { K.onTrip({ ...t, ...x }); await new Promise((r) => setTimeout(r, 60)); };
+      await step({ status: 'accepted' });
+      __cap.listeners['LA.pushToken']({ tripId: 31, token: 'ab'.repeat(32) });
+      await step({ status: 'accepted' });
+      await step({ status: 'arrived' });
+      await step({ status: 'requested', driver: null });   // the driver cancelled: matching again
+      await step({ status: 'accepted', driver: { name: 'Grace Achieng', plate: 'UBB 222K', vehicle: 'Silver Premio' } });
+      await step({ status: 'in_progress', driver: { name: 'Grace Achieng', plate: 'UBB 222K' } });
+      await step({ status: 'completed', driver: { name: 'Grace Achieng', plate: 'UBB 222K' } });
+      return __cap.calls.filter(([n]) => n.startsWith('LA.') || n.startsWith('LN.'));
+    });
+    const kinds = la.map(([n, a]) => n + (a && a.status ? ':' + a.status : ''));
+    ok(kinds[0] === 'LA.start:accepted' && la[0][1].plate === 'UBR 901D' && la[0][1].title === 'Moses is on the way' && /Pickup: Kampala Road$/.test(la[0][1].subtitle), 'iPhone: a driver accepting starts the Live Activity with who, plate and pickup');
+    ok(!!(await tokenPost), 'its push token goes to the server, for updates while the app is closed');
+    ok(kinds.filter((k) => k === 'LA.start:accepted').length === 1 && kinds.includes('LA.update:arrived'), 'the same step isn’t sent twice; arriving updates it');
+    const again = la.find(([n, a]) => n === 'LA.update' && a.status === 'searching');
+    ok(again && again[1].plate === '' && /another driver/.test(again[1].title), 'a driver cancelling shows “Finding you another driver”');
+    ok(la.some(([n, a]) => n === 'LA.update' && a.status === 'accepted' && a.plate === 'UBB 222K' && /^Grace/.test(a.title)), 'and the new driver and plate when someone else accepts');
+    const fin = la.find(([n]) => n === 'LA.end');
+    ok(fin && fin[1].title === 'You’ve arrived' && fin[1].tripId === 31, 'the trip ending closes it with “You’ve arrived”');
+    ok(!kinds.some((k) => k.startsWith('LN.')), 'no Android notification card on an iPhone');
+    ok(!ios.errors.length, 'no script errors on the iPhone' + (ios.errors.length ? ': ' + ios.errors.join(' | ') : ''));
 
     // ---- a version that's too old
     const old = await open('1.1.0');

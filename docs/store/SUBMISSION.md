@@ -15,7 +15,7 @@ Both are Capacitor apps (`apps/rider`, `apps/driver`) that load the live web app
 - an "Update to continue" screen for versions that are too old
 
 The rider app also has:
-- the live trip on the Android lock screen (who's coming, plate, status)
+- the live trip on the lock screen: a quiet ongoing notification on Android, and a **Live Activity** on iPhone (lock screen and Dynamic Island, iOS 16.2+). It shows who's coming, the plate, minutes until pickup, and each step through to "You've arrived". The server keeps it current through Firebase even when the app is closed.
 - the store's own rating prompt after a second 5-star trip, at most every four months
 - long-press shortcuts on the icon: Book a boda, Send a parcel, Ride to the airport
 - the wallet lock with the phone's own Face ID, Touch ID or fingerprint
@@ -105,6 +105,12 @@ To build against a test server, prefix the command with its address: `FLYTTE_URL
 5. Test with TestFlight before you submit.
 
 The apps are iPhone-only and portrait.
+
+**Rider app: the Live Activity.** The project has a second target, **FlytteTripWidget**: the lock-screen and Dynamic Island view. Its source is in `apps/ios-live-activity/`, and it's added by `apps/scripts/add-live-activity.rb` (part of `npm run sync`; it needs `gem install xcodeproj`).
+- In **Signing & Capabilities**, set the same Team on the FlytteTripWidget target. Its bundle ID is `co.flytte.rider.FlytteTripWidget`.
+- No extra Firebase setup is needed. The APNs key you uploaded for push also carries Live Activity updates.
+- Updates while the app is closed need the rider's trip alerts to be on (that's how the server reaches the phone). With alerts off, the Live Activity still updates whenever the app is open.
+- To test: in TestFlight, book a trip with the review rider. Lock the phone as the demo driver accepts, and watch it update until "You've arrived". Riders can switch it off in Settings → Flytte → Live Activities.
 
 ## 5. Review access (paste into both consoles)
 
