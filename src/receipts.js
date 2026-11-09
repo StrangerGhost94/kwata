@@ -12,7 +12,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':
 // Links and the logo in emails point at the public site (never a *.railway.app address).
 const site = () => { const u = process.env.EMAIL_SITE_URL || process.env.PUBLIC_URL || ''; return /^https:\/\//.test(u) && !/railway\.app/.test(u) ? u.replace(/\/$/, '') : 'https://flytte.co'; };
 // The real Flytte wordmark (gold F + white "lytte"), for the dark email header.
-const logo = () => `<img src="${site()}/img/email-logo.png?v=2" width="96" height="40" alt="Flytte" style="display:block;border:0;height:40px;width:96px">`;
+const logo = () => `<img src="${site()}/img/email-logo.png?v=3" width="96" height="40" alt="Flytte" style="display:block;border:0;height:40px;width:96px">`;
 
 function build(t) {
   const no = `FLY-${String(t.id).padStart(6, '0')}`;

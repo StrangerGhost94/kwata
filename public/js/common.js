@@ -108,7 +108,7 @@
   // Two swept wings, a swift mid-flight F split by a single feather cut. Top wing Deep Teal, lower
   // wing Lagoon on light backgrounds; both wings Saffron Gold on dark ones (see .wm-k in app.css).
   K.BRAND = { teal: '#073B42', lagoon: '#0E6E73', gold: '#F2B544' };
-  K.F_PATHS = ['M76.82 0V21.29C76.82 27.37 73.58 32.99 68.31 36.03L26.95 59.91 18.92 64.55C15.85 66.32 13.96 68.09 11.01 70.61L8.15 73.69C6.67 74.78 5.46 76.19 4.59 77.81L0 86.42V57.23C0 49.27 4.25 41.9 11.15 37.92L26.95 28.8Z', 'M68.7 52.48V72.14C68.7 79.23 64.92 85.78 58.78 89.33L38.18 101.22C31.23 105.24 26.95 112.65 26.95 120.68V145.05H0V116.04C0 101.26 7.89 87.6 20.69 80.2L26.95 76.59Z'];
+  K.F_PATHS = ['M76.82 0V21.29C76.82 27.37 73.58 32.99 68.31 36.03L26.95 59.91C23.05 62.16 7.5 68.5 0 86.42V57.23C0 49.27 4.25 41.9 11.15 37.92L26.95 28.8Z', 'M68.7 52.48V72.14C68.7 79.23 64.92 85.78 58.78 89.33L38.18 101.22C31.23 105.24 26.95 112.65 26.95 120.68V145.05H0V116.04C0 101.26 7.89 87.6 20.69 80.2L26.95 76.59Z'];
   K.fMark = (c1, c2 = c1) => `<path fill="${c1}" d="${K.F_PATHS[0]}"/><path fill="${c2}" d="${K.F_PATHS[1]}"/>`;
   // Map pin with the F inside (pickup pin on the map).
   K.logo = (pin = K.BRAND.teal, k = K.BRAND.gold, size = 64) => `<svg class="pin" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
@@ -148,7 +148,7 @@
   // ---------- vehicle markers (top view) ----------
   const TOP = {
     car: '<svg viewBox="0 0 40 40"><rect x="12.5" y="4" width="15" height="32" rx="6" fill="#141414" stroke="#fff" stroke-width="1.6"/><path d="M14.5 12.5c2-2.2 9-2.2 11 0v4h-11z" fill="#8C96A0"/><path d="M14.5 29c2 1.6 9 1.6 11 0v-3.5h-11z" fill="#8C96A0"/><rect x="14.5" y="17" width="11" height="8" rx="1" fill="#222"/></svg>',
-    boda: '<svg viewBox="0 0 40 40"><rect x="17" y="3" width="6" height="34" rx="3" fill="#141414" stroke="#fff" stroke-width="1.4"/><rect x="10" y="9" width="20" height="3.2" rx="1.6" fill="#141414" stroke="#fff" stroke-width="1"/><circle cx="20" cy="21" r="5.5" fill="#FFC400" stroke="#141414" stroke-width="1.8"/></svg>',
+    boda: '<svg viewBox="0 0 40 40"><rect x="17" y="3" width="6" height="34" rx="3" fill="#141414" stroke="#fff" stroke-width="1.4"/><rect x="10" y="9" width="20" height="3.2" rx="1.6" fill="#141414" stroke="#fff" stroke-width="1"/><circle cx="20" cy="21" r="5.5" fill="#F2B544" stroke="#141414" stroke-width="1.8"/></svg>',
   };
   function bearing(a, b) {
     const toR = (d) => d * Math.PI / 180, toD = (r) => r * 180 / Math.PI;
@@ -922,7 +922,7 @@
       // The very first screen arrives from the launch photo, so it doesn't also slide in.
       const first = !!document.querySelector('#splash:not(.out)');
       root.innerHTML = `<div class="auth2 ${first ? '' : dir === 'back' ? 'nav-back' : 'nav-fwd'}">
-        <div class="auth-hero"><img src="/img/welcome.jpg" alt="" decoding="async"><div class="auth-shade"></div>
+        <div class="auth-hero"><img src="/img/welcome.jpg?v=2" alt="" decoding="async"><div class="auth-shade"></div>
           ${back ? `<button class="glass-back" data-back aria-label="Back">${K.ic('back')}</button>` : ''}
           <div class="auth-logo">${K.wordmark(role === 'driver')}</div></div>
         <div class="auth-card">${inner}</div></div>`;
