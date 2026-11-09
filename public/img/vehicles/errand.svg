@@ -16,5 +16,5 @@
   <path d="M76 58 L164 58 L178 66 L90 66 Z" fill="#FFE27A"/>
   <path d="M100 66 C100 48 112 46 113 66" stroke="#141414" stroke-width="4.5" fill="none" stroke-linecap="round"/>
   <path d="M130 66 C130 48 142 46 143 66" stroke="#141414" stroke-width="4.5" fill="none" stroke-linecap="round"/>
-  <g transform="translate(103 86) scale(.32)" fill="#141414"><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g>
+  <g transform="translate(123.1 88) scale(.193)" fill="#073B42"><path d="M76.82 0V21.29C76.82 27.37 73.58 32.99 68.31 36.03L26.95 59.91C23.05 62.16 7.5 68.5 0 86.42V57.23C0 49.27 4.25 41.9 11.15 37.92L26.95 28.8Z"/><path d="M68.7 52.48V72.14C68.7 79.23 64.92 85.78 58.78 89.33L38.18 101.22C31.23 105.24 26.95 112.65 26.95 120.68V145.05H0V116.04C0 101.26 7.89 87.6 20.69 80.2L26.95 76.59Z"/></g>
 </svg>

@@ -148,7 +148,7 @@
   // ---------- vehicle markers (top view) ----------
   const TOP = {
     car: '<svg viewBox="0 0 40 40"><rect x="12.5" y="4" width="15" height="32" rx="6" fill="#141414" stroke="#fff" stroke-width="1.6"/><path d="M14.5 12.5c2-2.2 9-2.2 11 0v4h-11z" fill="#8C96A0"/><path d="M14.5 29c2 1.6 9 1.6 11 0v-3.5h-11z" fill="#8C96A0"/><rect x="14.5" y="17" width="11" height="8" rx="1" fill="#222"/></svg>',
-    boda: '<svg viewBox="0 0 40 40"><rect x="17" y="3" width="6" height="34" rx="3" fill="#141414" stroke="#fff" stroke-width="1.4"/><rect x="10" y="9" width="20" height="3.2" rx="1.6" fill="#141414" stroke="#fff" stroke-width="1"/><circle cx="20" cy="21" r="5.5" fill="#FFC400" stroke="#141414" stroke-width="1.8"/></svg>',
+    boda: '<svg viewBox="0 0 40 40"><rect x="17" y="3" width="6" height="34" rx="3" fill="#141414" stroke="#fff" stroke-width="1.4"/><rect x="10" y="9" width="20" height="3.2" rx="1.6" fill="#141414" stroke="#fff" stroke-width="1"/><circle cx="20" cy="21" r="5.5" fill="#F2B544" stroke="#141414" stroke-width="1.8"/></svg>',
   };
   function bearing(a, b) {
     const toR = (d) => d * Math.PI / 180, toD = (r) => r * 180 / Math.PI;
@@ -922,7 +922,7 @@
       // The very first screen arrives from the launch photo, so it doesn't also slide in.
       const first = !!document.querySelector('#splash:not(.out)');
       root.innerHTML = `<div class="auth2 ${first ? '' : dir === 'back' ? 'nav-back' : 'nav-fwd'}">
-        <div class="auth-hero"><img src="/img/welcome.jpg" alt="" decoding="async"><div class="auth-shade"></div>
+        <div class="auth-hero"><img src="/img/welcome.jpg?v=2" alt="" decoding="async"><div class="auth-shade"></div>
           ${back ? `<button class="glass-back" data-back aria-label="Back">${K.ic('back')}</button>` : ''}
           <div class="auth-logo">${K.wordmark(role === 'driver')}</div></div>
         <div class="auth-card">${inner}</div></div>`;
