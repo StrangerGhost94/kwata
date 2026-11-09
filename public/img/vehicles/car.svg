@@ -12,7 +12,7 @@
   <path d="M122 58 V78 H168 L152 63 C149 60 145 58 140 58 Z" fill="url(#glass)"/>
   <path d="M80 63 L90 60 L76 76 H70 Z" fill="#fff" opacity=".18"/>
   <path d="M119 58 V100" stroke="#B3B8BF" stroke-width="1.2"/>
-  <path d="M34 108 H214" stroke="#F2B705" stroke-width="3" stroke-linecap="round"/>
+  <path d="M34 108 H214" stroke="#F2B544" stroke-width="3" stroke-linecap="round"/>
   <rect x="200" y="88" width="14" height="6" rx="3" fill="#FFF7DA" stroke="#C9CDD3"/>
   <rect x="30" y="88" width="8" height="7" rx="2" fill="#9E3B3B"/>
   <g><circle cx="70" cy="116" r="19" fill="#1D1E21"/><circle cx="70" cy="116" r="10.5" fill="url(#rim)"/><circle cx="70" cy="116" r="3" fill="#5D636B"/></g>

@@ -12,7 +12,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':
 // Links and the logo in emails point at the public site (never a *.railway.app address).
 const site = () => { const u = process.env.EMAIL_SITE_URL || process.env.PUBLIC_URL || ''; return /^https:\/\//.test(u) && !/railway\.app/.test(u) ? u.replace(/\/$/, '') : 'https://flytte.co'; };
 // The real Flytte wordmark (gold F + white "lytte"), for the dark email header.
-const logo = () => `<img src="${site()}/img/email-logo.png?v=1" width="112" height="36" alt="Flytte" style="display:block;border:0;height:36px;width:112px">`;
+const logo = () => `<img src="${site()}/img/email-logo.png?v=2" width="96" height="40" alt="Flytte" style="display:block;border:0;height:40px;width:96px">`;
 
 function build(t) {
   const no = `FLY-${String(t.id).padStart(6, '0')}`;
@@ -30,7 +30,7 @@ function build(t) {
   const html = `<!doctype html><html><body style="margin:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#141414">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:24px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;overflow:hidden">
-<tr><td style="background:#141414;padding:20px 24px">${logo()}</td></tr>
+<tr><td style="background:#073B42;padding:20px 24px">${logo()}</td></tr>
 <tr><td style="padding:26px 24px 8px">
 <p style="margin:0 0 4px;font-size:15px;color:#6b6b70">Thanks for riding, ${esc(first)}</p>
 <p style="margin:0;font-size:34px;font-weight:800;letter-spacing:-.03em">${ugx(total)}</p>

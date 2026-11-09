@@ -15,16 +15,17 @@ BG = {
   '#f2f2f7': '#000000', '#fdfcfb': '#1C1C1E', '#fafafa': '#1C1C1E', '#fbfbfd': '#1C1C1E',
   '#f7f7f9': '#2C2C2E', '#f5f5f7': '#2C2C2E', '#f2f2f5': '#2C2C2E', '#f4f4f6': '#2C2C2E', '#f6f6f8': '#2C2C2E',
   '#ececf0': '#3A3A3C', '#eaeaee': '#3A3A3C', '#ededf0': '#2C2C2E', '#e5e5ea': '#3A3A3C', '#efeff4': '#2C2C2E',
-  '#f8f5f0': '#1A1B1E', '#fff7db': '#3A3108', '#fdecec': '#3B1513', '#f7f7f7': '#2C2C2E', '#eee': '#2C2C2E', '#ddd': '#3A3A3C',
+  '#f8f5f0': '#1A1B1E', '#fff7db': '#3A2E12', '#e5f1f0': '#3A2E12', '#fdecec': '#3B1513', '#f7f7f7': '#2C2C2E', '#eee': '#2C2C2E', '#ddd': '#3A3A3C',
 }
 # Areas that are dark on purpose, or brand-coloured, keep their colours.
-SKIP = re.compile(r'splash|\.sp-|auth-hero|auth-shade|\.req\b|\.wm|btn-primary|btn-danger|badge|\.hero|onboard|trip-banner|sos|\.dark|glass-back|toast|plate-chip|\.veh\b|leaflet|maplibre|pin-|map-label|cam|::selection|set-swatch|sw-|ch-wa|ch-tg|admin|qr', re.I)
+SKIP = re.compile(r'splash|rewards|pass-tick|\.sp-|auth-hero|auth-shade|\.req\b|\.wm|btn-primary|btn-danger|badge|\.hero|onboard|trip-banner|sos|\.dark|glass-back|toast|plate-chip|\.veh\b|leaflet|maplibre|pin-|map-label|cam|::selection|set-swatch|sw-|ch-wa|ch-tg|admin|qr', re.I)
 # Text colours: only greys and the dark brand gold (made for white) are lifted; black text is left
 # alone because it often sits on brand yellow.
 FG = {
   '#6e6e73': '#AEAEB2', '#707076': '#AEAEB2', '#8e8e93': '#AEAEB2', '#86868b': '#AEAEB2', '#7a7a80': '#AEAEB2',
   '#636366': '#AEAEB2', '#555': '#AEAEB2', '#666': '#AEAEB2', '#999': '#8E8E93', '#c7c7cc': '#636366',
-  '#8a6400': '#FFD54A', '#a27c00': '#FFD54A', '#8a5200': '#FFB340', '#6b4f00': '#FFD54A',
+  '#8a6400': '#F2B544', '#a27c00': '#F2B544', '#8a5200': '#FFB340', '#6b4f00': '#F2B544',
+  '#0e6e73': '#F2B544', '#073b42': '#F5F5F7',  # Lagoon / Deep Teal text made for white
 }
 PROPS = ('color', 'fill', 'stroke', 'background', 'background-color', 'background-image', 'border', 'border-color', 'border-top', 'border-bottom', 'border-left', 'border-right', 'box-shadow', 'outline-color')
 

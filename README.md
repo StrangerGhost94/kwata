@@ -12,6 +12,18 @@ One Node.js app serves everything:
 | `/admin` | Operations console (approve drivers, live map, pricing, SOS, payouts) |
 | `/t/<code>` | Live trip link a rider shares with family |
 
+## Brand
+
+Logo concept 01: the **Flytte F**, two swept wings split by a single feather cut, next to the word **flytte** in Plus Jakarta Sans 700. Tagline: *Ride light. Arrive sure.*
+
+| Colour | Hex | Used for |
+|---|---|---|
+| Deep Teal | `#073B42` | buttons, selection, dark cards, the rider app icon |
+| Lagoon | `#0E6E73` | the F's lower wing on light backgrounds, links and tinted text |
+| Saffron Gold | `#F2B544` | the F on teal or photos, stars and highlights, the driver app icon; the accent in dark mode |
+
+The F lives in `public/js/common.js` (`K.markSvg`, `K.wordmark`). App icons, `public/icon.svg` and the email logo are drawn from it by `node tools/brand-icons.js` (needs Playwright's Chromium; set `CHROMIUM=/path/to/chrome` if it isn't found).
+
 ## What works today
 
 **Riders** – the familiar premium flow: *Where to?* → choose a ride (each option shows price, live ETA and arrival time, with the fastest flagged) → confirm pickup on a draggable pin → matching → live trip. Saved Home and Work, recent places, full-screen search, top-down car and boda markers that glide and turn on the map, in-app chat with quick replies, call driver, 4-digit PIN to start, share-trip link, safety centre with SOS and emergency contact, ratings, wallet with top-ups, Activity and Account tabs. Parcel bookings capture recipient name, phone and item.

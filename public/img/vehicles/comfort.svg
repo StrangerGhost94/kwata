@@ -16,7 +16,7 @@
   <path d="M24 104 H222" stroke="#D7DADF" stroke-width="1.2" opacity=".55"/>
   <rect x="208" y="90" width="16" height="5" rx="2.5" fill="#EAF1FF"/>
   <rect x="18" y="90" width="10" height="5" rx="2" fill="#B23A3A"/>
-  <path d="M128 100 h12" stroke="#F2B705" stroke-width="2" stroke-linecap="round"/>
+  <path d="M128 100 h12" stroke="#F2B544" stroke-width="2" stroke-linecap="round"/>
   <g><circle cx="64" cy="114" r="19" fill="#0E0F11"/><circle cx="64" cy="114" r="11.5" fill="url(#rim)"/><g stroke="#7B8189" stroke-width="1.6"><path d="M64 104 V124 M54 114 H74 M57 107 L71 121 M71 107 L57 121"/></g><circle cx="64" cy="114" r="3" fill="#3A3E45"/></g>
   <g><circle cx="186" cy="114" r="19" fill="#0E0F11"/><circle cx="186" cy="114" r="11.5" fill="url(#rim)"/><g stroke="#7B8189" stroke-width="1.6"><path d="M186 104 V124 M176 114 H196 M179 107 L193 121 M193 107 L179 121"/></g><circle cx="186" cy="114" r="3" fill="#3A3E45"/></g>
 </svg>

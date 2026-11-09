@@ -104,19 +104,21 @@
   Object.keys(VEH).forEach((k) => { const i = new Image(); i.src = `/img/vehicles/${k}.svg`; });
   K.artFor = (service, vehicleType) => K.ART[service] || (vehicleType === 'car' ? K.ART.car : K.ART.boda);
 
-  // ---------- brand: pin logo & night skyline ----------
-  K.logo = (pin = '#FFC400', k = '#141414', size = 64) => `<svg class="pin" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
+  // ---------- brand: the Flytte F (logo concept 01) ----------
+  // Two swept wings, a swift mid-flight F split by a single feather cut. Top wing Deep Teal, lower
+  // wing Lagoon on light backgrounds; both wings Saffron Gold on dark ones (see .wm-k in app.css).
+  K.BRAND = { teal: '#073B42', lagoon: '#0E6E73', gold: '#F2B544' };
+  K.F_PATHS = ['M76.82 0V21.29C76.82 27.37 73.58 32.99 68.31 36.03L26.95 59.91 18.92 64.55C15.85 66.32 13.96 68.09 11.01 70.61L8.15 73.69C6.67 74.78 5.46 76.19 4.59 77.81L0 86.42V57.23C0 49.27 4.25 41.9 11.15 37.92L26.95 28.8Z', 'M68.7 52.48V72.14C68.7 79.23 64.92 85.78 58.78 89.33L38.18 101.22C31.23 105.24 26.95 112.65 26.95 120.68V145.05H0V116.04C0 101.26 7.89 87.6 20.69 80.2L26.95 76.59Z'];
+  K.fMark = (c1, c2 = c1) => `<path fill="${c1}" d="${K.F_PATHS[0]}"/><path fill="${c2}" d="${K.F_PATHS[1]}"/>`;
+  // Map pin with the F inside (pickup pin on the map).
+  K.logo = (pin = K.BRAND.teal, k = K.BRAND.gold, size = 64) => `<svg class="pin" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
     <path d="M32 3C19.3 3 9 13.1 9 25.6 9 42 32 61 32 61s23-19 23-35.4C55 13.1 44.7 3 32 3z" fill="${pin}"/>
-    <g transform="translate(13.5 12.5) scale(.265)" fill="${k}"><path d="M14 18H46L43 28H11Z"/><path d="M6 38H42L39 48H3Z"/><path d="M14 58H38L35 68H11Z"/><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg>`;
-  // The speed-K: three speed lines and a forward-leaning K (as on the Flytte delivery box).
-  K.markSvg = (cls = '') => `<svg class="wm-k ${cls}" viewBox="0 0 140 100" aria-hidden="true">
-    <defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD84A"/><stop offset="1" stop-color="#FFB300"/></linearGradient></defs>
-    <g class="wm-lines" fill="url(#kg)"><path class="l1" d="M14 18H46L43 28H11Z"/><path class="l2" d="M6 38H42L39 48H3Z"/><path class="l3" d="M14 58H38L35 68H11Z"/></g>
-    <g class="wm-body" fill="url(#kg)"><path d="M52 6H78L60 94H34Z"/><path d="M74 6H138L133.5 28H69.5Z"/><path d="M66.6 42H120L115.9 62H62.5Z"/></g></svg>`;
+    <g transform="translate(24.8 11.4) scale(.188)">${K.fMark(k)}</g></svg>`;
+  K.markSvg = (cls = '') => `<svg class="wm-k ${cls}" viewBox="0 0 76.82 145.05" aria-hidden="true"><path class="f1" d="${K.F_PATHS[0]}"/><path class="f2" d="${K.F_PATHS[1]}"/></svg>`;
   K.wordmark = (driver) => `<div class="wm" aria-label="Flytte${driver ? ' Driver' : ''}">
-    <div class="wm-row">${K.markSvg()}<span class="wm-t">lytte</span></div>
+    <div class="wm-row">${K.markSvg()}<span class="wm-t">flytte</span></div>
     ${driver ? '<div class="wm-sub">DRIVER</div>' : ''}
-    <div class="wm-tag">${(driver ? ['EARN', 'DRIVE', 'GROW'] : ['FAST', 'SAFE', 'LOCAL']).join('<i>•</i>')}</div></div>`;
+    <div class="wm-tag">${(driver ? ['EARN', 'DRIVE', 'GROW'] : ['RIDE LIGHT', 'ARRIVE SURE']).join('<i>•</i>')}</div></div>`;
 
   K.skyline = function (seed = 7) {
     let x = seed; const rnd = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
@@ -127,17 +129,17 @@
       if (rnd() > .7) blds += `<rect x="${(px + w / 2 - 1).toFixed(1)}" y="${(y - 18).toFixed(1)}" width="2" height="18" fill="#17171A"/>`;
       for (let wy = y + 8; wy < 214; wy += 10) for (let wx = px + 4; wx < px + w - 5; wx += 7) {
         const r = rnd();
-        if (r > .62) wins += `<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="3" height="4" fill="${r > .9 ? '#FFFFFF' : '#FFC400'}" opacity="${(.25 + rnd() * .6).toFixed(2)}"/>`;
+        if (r > .62) wins += `<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="3" height="4" fill="${r > .9 ? '#FFFFFF' : '#F2B544'}" opacity="${(.25 + rnd() * .6).toFixed(2)}"/>`;
       }
       px += w + 2 + rnd() * 4;
     }
     return `<svg viewBox="0 0 390 300" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-      <defs><linearGradient id="sk${seed}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E0E10" stop-opacity="0"/><stop offset=".55" stop-color="#2A1F05" stop-opacity=".55"/><stop offset="1" stop-color="#0E0E10"/></linearGradient>
+      <defs><linearGradient id="sk${seed}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E0E10" stop-opacity="0"/><stop offset=".55" stop-color="#0E4E56" stop-opacity=".55"/><stop offset="1" stop-color="#0E0E10"/></linearGradient>
       <filter id="gl${seed}" x="-10%" y="-50%" width="120%" height="200%"><feGaussianBlur stdDeviation="3"/></filter></defs>
       <rect width="390" height="300" fill="url(#sk${seed})"/>
       ${blds}${wins}
       <rect y="218" width="390" height="82" fill="#0E0E10"/>
-      <path d="M-20 300 C 90 250, 200 236, 410 232" stroke="#FFC400" stroke-width="6" fill="none" filter="url(#gl${seed})" opacity=".85"/>
+      <path d="M-20 300 C 90 250, 200 236, 410 232" stroke="#F2B544" stroke-width="6" fill="none" filter="url(#gl${seed})" opacity=".85"/>
       <path d="M-20 300 C 90 250, 200 236, 410 232" stroke="#FFE38A" stroke-width="2" fill="none"/>
       <path d="M-20 286 C 110 254, 230 246, 410 244" stroke="#FF8A00" stroke-width="3" fill="none" filter="url(#gl${seed})" opacity=".6"/>
     </svg>`;
