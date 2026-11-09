@@ -1903,7 +1903,7 @@ html.theme-dark .unlock-ic { color: var(--brand); background: rgba(242,181,68,.1
 html.theme-dark .ic-lock { color: var(--brand); background: rgba(242,181,68,.14); }
 #lockRow { display: flex; align-items: center; gap: 12px; text-align: left; }
 
-/* Driver launch tile matches the driver app icon: Saffron Gold tile, Deep Teal F (the rider tile is teal with a gold F). */
+/* Rider launch tile matches the rider app icon: Saffron Gold tile, Deep Teal F (the driver tile is teal with a gold F). */
 .sp-icon.sp-gold { background: linear-gradient(160deg, #F6CB7A 0%, #F2B544 60%, #E3A12F 100%); box-shadow: 0 14px 34px rgba(242,181,68,.28), 0 2px 6px rgba(20,20,22,.12), inset 0 1px 0 rgba(255,255,255,.35); }
 
 html.theme-dark:not(.launch-dark) .sp-icon.sp-gold { background: linear-gradient(160deg, #F6CB7A 0%, #F2B544 60%, #E3A12F 100%); box-shadow: 0 14px 34px rgba(0,0,0,.5); }
@@ -2285,7 +2285,7 @@ html.theme-dark .fy-card.fy-errand { background: linear-gradient(140deg, #3A3110
 .fl-mark { flex: none; display: inline-block; vertical-align: middle; }
 html.theme-dark .fl-mark path { fill: #F2B544; }
 
-/* Launch tiles: rider = Deep Teal tile with a gold F, driver = gold tile with a teal F (as the app icons). */
+/* Launch tiles: rider = gold tile with a teal F (.sp-gold), driver = Deep Teal tile with a gold F (as the app icons). */
 .sp-icon, html.launch-dark .sp-icon, html.theme-dark:not(.launch-dark) .sp-icon {
   background: linear-gradient(160deg, #0E4E56 0%, #073B42 60%, #05323A 100%);
   box-shadow: 0 14px 34px rgba(7,59,66,.28), 0 2px 6px rgba(7,59,66,.16), inset 0 1px 0 rgba(255,255,255,.08); }

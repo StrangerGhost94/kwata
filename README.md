@@ -7,7 +7,7 @@ One Node.js app serves everything:
 | Address | What it is |
 |---|---|
 | `/` | The Flytte app itself: logo splash → phone sign in / sign up → services. Installable to the home screen (PWA). |
-| `/driver` | Flytte Driver app (installs separately, gold icon) |
+| `/driver` | Flytte Driver app (installs separately, teal icon) |
 | `/about` | Marketing page for sharing on social media |
 | `/admin` | Operations console (approve drivers, live map, pricing, SOS, payouts) |
 | `/t/<code>` | Live trip link a rider shares with family |
@@ -18,9 +18,9 @@ Logo concept 01: the **Flytte F**, two swept wings split by a single feather cut
 
 | Colour | Hex | Used for |
 |---|---|---|
-| Deep Teal | `#073B42` | buttons, selection, dark cards, the rider app icon |
+| Deep Teal | `#073B42` | buttons, selection, dark cards, the driver app icon |
 | Lagoon | `#0E6E73` | the F's lower wing on light backgrounds, links and tinted text |
-| Saffron Gold | `#F2B544` | the F on teal or photos, stars and highlights, the driver app icon; the accent in dark mode |
+| Saffron Gold | `#F2B544` | the F on teal or photos, stars and highlights, the rider app icon; the accent in dark mode |
 
 The F lives in `public/js/common.js` (`K.markSvg`, `K.wordmark`). App icons, `public/icon.svg` and the email logo are drawn from it by `node tools/brand-icons.js` (needs Playwright's Chromium; set `CHROMIUM=/path/to/chrome` if it isn't found).
 
@@ -42,7 +42,7 @@ The F lives in `public/js/common.js` (`K.markSvg`, `K.wordmark`). App icons, `pu
 
 ## Installing on a phone (PWA)
 
-Open the Railway link in Chrome on Android: Flytte shows an **Install** card on the home screen, or use the browser menu → *Install app*. On iPhone, open it in Safari → Share → *Add to Home Screen*. It then opens full-screen from its own icon, with its own launch screen, like any app from the store. Drivers install `/driver` the same way and get a separate gold icon.
+Open the Railway link in Chrome on Android: Flytte shows an **Install** card on the home screen, or use the browser menu → *Install app*. On iPhone, open it in Safari → Share → *Add to Home Screen*. It then opens full-screen from its own icon, with its own launch screen, like any app from the store. Drivers install `/driver` the same way and get a separate teal icon.
 
 When you release changes to the app, bump `VERSION` at the top of `public/sw.js` so phones pick up the new version right away.
 

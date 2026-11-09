@@ -23,16 +23,16 @@ function tile(size, bg, fg, scale, radius = 0) {
 }
 
 const ICONS = [
-  // rider: Deep Teal tile, gold F
-  ['public/icons/flytte-icon-192.png', tile(192, TEAL, GOLD, 0.6)],
-  ['public/icons/flytte-icon-512.png', tile(512, TEAL, GOLD, 0.6)],
-  ['public/icons/flytte-maskable-512.png', tile(512, TEAL, GOLD, 0.48)],
-  ['public/icons/flytte-apple-touch-icon.png', tile(180, TEAL, GOLD, 0.58)],
-  // driver: Saffron Gold tile, teal F
-  ['public/icons/flytte-driver-192.png', tile(192, GOLD, TEAL, 0.6)],
-  ['public/icons/flytte-driver-512.png', tile(512, GOLD, TEAL, 0.6)],
-  ['public/icons/flytte-driver-maskable-512.png', tile(512, GOLD, TEAL, 0.48)],
-  ['public/icons/flytte-driver-apple-touch-icon.png', tile(180, GOLD, TEAL, 0.58)],
+  // rider: Saffron Gold tile, teal F
+  ['public/icons/flytte-icon-192.png', tile(192, GOLD, TEAL, 0.6)],
+  ['public/icons/flytte-icon-512.png', tile(512, GOLD, TEAL, 0.6)],
+  ['public/icons/flytte-maskable-512.png', tile(512, GOLD, TEAL, 0.48)],
+  ['public/icons/flytte-apple-touch-icon.png', tile(180, GOLD, TEAL, 0.58)],
+  // driver: Deep Teal tile, gold F
+  ['public/icons/flytte-driver-192.png', tile(192, TEAL, GOLD, 0.6)],
+  ['public/icons/flytte-driver-512.png', tile(512, TEAL, GOLD, 0.6)],
+  ['public/icons/flytte-driver-maskable-512.png', tile(512, TEAL, GOLD, 0.48)],
+  ['public/icons/flytte-driver-apple-touch-icon.png', tile(180, TEAL, GOLD, 0.58)],
 ];
 
 // Email header logo (sits on Deep Teal): gold F + white "flytte", 3x for sharp mail clients.
@@ -56,7 +56,7 @@ svg { width: .746em; height: 1.41em; margin-right: .3em; transform: translateY(.
     await page.screenshot({ path: path.join(ROOT, file), clip: { x: 0, y: 0, width: size, height: size } });
     console.log('wrote', file);
   }
-  fs.writeFileSync(path.join(ROOT, 'public/icon.svg'), tile(100, TEAL, GOLD, 0.6).replace(/ width="100" height="100"/, '') + '\n');
+  fs.writeFileSync(path.join(ROOT, 'public/icon.svg'), tile(100, GOLD, TEAL, 0.6).replace(/ width="100" height="100"/, '') + '\n');
   console.log('wrote public/icon.svg');
   await page.setViewportSize({ width: 800, height: 300 });
   await page.setContent(emailLogo());
