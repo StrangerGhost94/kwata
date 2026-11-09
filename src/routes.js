@@ -17,6 +17,8 @@ const surge = require('./surge');
 const places = require('./places');
 const pass = require('./pass');
 const biz = require('./business');
+const review = require('./review');
+const fcm = require('./fcm');
 const { haversineKm: haversine } = require('./pricing');
 
 const r = express.Router();
@@ -95,6 +97,7 @@ r.get('/config', wrap(async (req, res) => {
     commissionPct: s.commissionPct,
     version: APP_VERSION,
     supportPhone: supportPhone(s),
+    apps: require('./apps').config(),          // store apps: oldest allowed version, store links, support email
     minWithdrawal: s.minWithdrawal,
     stopFee: s.stopFee || 0,
     errand: { shopFee: s.errand.shopFee, maxBudget: s.errand.maxBudget },
@@ -102,6 +105,14 @@ r.get('/config', wrap(async (req, res) => {
     growth: { firstRide: s.growth.firstRide, referral: s.growth.referral, rewards: s.growth.rewards },
     drivers: { freeWaitMin: s.drivers.freeWaitMin, noShowFee: s.drivers.noShowFee, cancelFee: s.drivers.cancelFee, cancelGraceMin: s.drivers.cancelGraceMin, cashDebtLimit: s.drivers.cashDebtLimit, headingHomePerDay: s.drivers.headingHomePerDay },
   });
+}));
+
+// Errors from the app on a phone (public/js/common.js), logged and sent to Sentry when it's set up.
+r.post('/client-error', limit(30, 10 * 60e3), wrap(async (req, res) => {
+  const h = req.headers.authorization || '';
+  const p = h.startsWith('Bearer ') ? auth.verify(h.slice(7)) : null;
+  require('./monitor').captureClient(req.body, p && !p.purpose ? { id: p.id } : null);
+  res.status(204).end();
 }));
 
 r.get('/track/:token', wrap(async (req, res) => {
@@ -398,6 +409,13 @@ const OTP_TTL = 5 * 60e3, OTP_RESEND = 30e3, OTP_PER_HOUR = 5, OTP_TRIES = 5;
 r.post('/auth/otp/send', limit(10, 10 * 60e3), wrap(async (req, res) => {
   const CH = { sms: [sms, 'SMS'], whatsapp: [wa, 'WhatsApp'], telegram: [tg, 'Telegram'] };
   const channel = CH[(req.body || {}).channel] ? req.body.channel : 'sms';
+  // App Store / Google Play review accounts sign in with a fixed code; no message is sent (src/review.js).
+  const rp = auth.normalizePhone((req.body || {}).phone);
+  if (review.isReviewPhone(rp)) {
+    await review.storeCode(rp);
+    const ru = await db.one('SELECT role FROM users WHERE phone = $1', [rp]);
+    return res.json({ ok: true, exists: !!ru, role: ru ? ru.role : null, channel, resendIn: OTP_RESEND / 1000 });
+  }
   if (!CH[channel][0].enabled()) return bad(res, `${CH[channel][1]} codes aren’t available yet. Choose another way.`, 503);
   const p = auth.normalizePhone((req.body || {}).phone);
   if (!p) return bad(res, 'Enter a valid mobile number, e.g. 0772 123456.');
@@ -517,6 +535,7 @@ r.post('/me/delete', auth.requireAuth('rider', 'driver'), limit(5, 10 * 60e3), w
       await t.query('DELETE FROM driver_changes WHERE driver_id = $1', [u.id]);
     }
     await t.query('DELETE FROM push_subscriptions WHERE user_id = $1', [u.id]);
+    await t.query('DELETE FROM native_push_tokens WHERE user_id = $1', [u.id]);
     await t.query('DELETE FROM otp_codes WHERE phone = $1', [oldPhone]);
   });
   if (u.role === 'driver') { try { rt.forceOffline(u.id); } catch {} }
@@ -1284,6 +1303,7 @@ r.post('/trips/:id/complete', auth.requireAuth('driver'), wrap(async (req, res) 
     if (fresh) { settled = await ledger.settleCompletedTrip(tx, fresh); bonuses = await dtools.payBonuses(tx, req.user.id); }
   });
   rt.setDriverFree(req.user.id, t.id);
+  review.afterTrip({ ...t, driver_id: req.user.id }).catch(() => {});
   if (t.plan_id) require('./school').afterCompleted({ ...t, driver_id: req.user.id }).catch(console.error);
   if (t.company_id && t.payment_method === 'business') biz.notifyLow({ id: t.company_id }).catch(() => {});
   await rt.broadcast(t.id);
@@ -1657,9 +1677,21 @@ r.post('/push/subscribe', auth.requireAuth(), wrap(async (req, res) => {
   rt.markPush(req.user.id, true);
   res.json({ ok: true });
 }));
+// The store apps register their Firebase token instead (src/fcm.js).
+r.post('/push/native', auth.requireAuth(), limit(30, 10 * 60e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
+  const { token, platform, app } = req.body || {};
+  if (!(await fcm.register(req.user.id, token, platform, app))) return bad(res, 'That device couldn’t be registered for alerts.');
+  rt.markPush(req.user.id, true);
+  res.json({ ok: true, sending: fcm.configured() });
+}));
+r.post('/push/native/remove', auth.requireAuth(), wrap(async (req, res) => {
+  await fcm.remove(req.user.id, (req.body || {}).token);
+  rt.markPush(req.user.id, await dtools.hasPush(req.user.id));
+  res.json({ ok: true });
+}));
 r.post('/push/unsubscribe', auth.requireAuth(), wrap(async (req, res) => {
-  // all: switch alerts off for this account everywhere (also clears links from old installs).
-  if ((req.body || {}).all) await db.query('DELETE FROM push_subscriptions WHERE user_id = $1', [req.user.id]);
+  // all: switch alerts off for this account everywhere (also clears links from old installs and store-app tokens).
+  if ((req.body || {}).all) { await db.query('DELETE FROM push_subscriptions WHERE user_id = $1', [req.user.id]); await fcm.remove(req.user.id); }
   else await dtools.unsubscribe(req.user.id, (req.body || {}).endpoint);
   rt.markPush(req.user.id, await dtools.hasPush(req.user.id));
   res.json({ ok: true });

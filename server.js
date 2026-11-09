@@ -1,4 +1,6 @@
 require('dotenv').config();
+const monitor = require('./src/monitor');
+monitor.init();   // crash reporting to Sentry when SENTRY_DSN is set
 const http = require('http');
 const path = require('path');
 const express = require('express');
@@ -21,7 +23,7 @@ if (CANONICAL) app.use((req, res, next) => {
   res.redirect(301, `https://${CANONICAL}${req.originalUrl}`);
 });
 // Safety net: a stray failed promise is logged instead of stopping the server (and every live trip).
-process.on('unhandledRejection', (e) => console.error('Unhandled promise rejection:', e));
+process.on('unhandledRejection', (e) => { console.error('Unhandled promise rejection:', e); monitor.captureServer(e instanceof Error ? e : new Error(String(e))); });
 app.disable('x-powered-by');
 // Gzip text responses (scripts, styles, pages, JSON): about a quarter of the bytes on a phone's
 // mobile data, so the launch screen settles much sooner. Images and fonts are already compressed.
@@ -37,6 +39,13 @@ app.use((req, res, next) => {
 });
 
 app.get('/health', (req, res) => res.json({ ok: true, db: db.kind }));
+// Links to flytte.co open the installed store app (src/apps.js). Served as JSON, never redirected.
+app.get('/.well-known/assetlinks.json', (req, res) => { res.set('Cache-Control', 'public, max-age=3600'); res.json(require('./src/apps').assetLinks()); });
+app.get(['/.well-known/apple-app-site-association', '/apple-app-site-association'], (req, res) => {
+  const f = require('./src/apps').appleAssociation();
+  if (!f) return res.status(404).json({ error: 'Set APPLE_TEAM_ID to turn on iPhone app links.' });
+  res.set('Cache-Control', 'public, max-age=3600'); res.type('application/json').send(JSON.stringify(f));
+});
 app.use('/api', require('./src/routes'));
 // The rider app *is* the home page, like a native app. Marketing page lives at /about.
 // Every deploy gets its own version stamp on our scripts and styles, so a phone can never
@@ -114,6 +123,7 @@ app.use((err, req, res, next) => {
   if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'That request could not be read.' });
   if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'That upload is too large.' });
   console.error(err);
+  monitor.captureServer(err, req);
   res.status(500).json({ error: 'Something went wrong. Please try again.' });
 });
 
@@ -205,5 +215,9 @@ async function activateScheduled() {
   setTimeout(() => require('./src/school').scheduleDue().catch(console.error), 6000);
   setTimeout(() => activateScheduled().catch(console.error), 5000);
   const port = process.env.PORT || 3000;
-  server.listen(port, () => console.log(`🚀 Flytte running on http://localhost:${port} (database: ${kind})`));
+  server.listen(port, () => {
+    console.log(`🚀 Flytte running on http://localhost:${port} (database: ${kind})`);
+    // App Store / Google Play review accounts and their demo trips (only when REVIEW_CODE is set).
+    require('./src/review').setup(rt, port).catch(console.error);
+  });
 })().catch((e) => { console.error(e); process.exit(1); });

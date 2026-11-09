@@ -1,0 +1,20 @@
+/* Small forms on the public pages (delete account, support), on top of legal.css */
+.fm { display: grid; gap: 12px; margin: 22px 0; padding: 18px; border: 1px solid var(--lg-line); border-radius: 16px; background: var(--lg-bg); }
+.fm-step { display: grid; gap: 10px; }
+.fm label { font-weight: 600; font-size: .95rem; }
+.fm input[type=tel], .fm input[inputmode=numeric] { font: inherit; font-size: 1.1rem; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--lg-line); background: var(--lg-soft); color: var(--lg-ink); width: 100%; box-sizing: border-box; }
+.fm input:focus { outline: none; border-color: #0E6E73; box-shadow: 0 0 0 3px rgba(14,110,115,.2); }
+.fm-btn { font: inherit; font-weight: 700; min-height: 50px; border: 0; border-radius: 12px; background: #073B42; color: #fff; cursor: pointer; padding: 0 18px; }
+html.theme-dark .fm-btn { background: #F2B544; color: #073B42; }
+.fm-btn[disabled] { opacity: .5; cursor: default; }
+.fm-btn:focus-visible { outline: 3px solid #0E6E73; outline-offset: 2px; }
+.fm-danger, html.theme-dark .fm-danger { background: #C8271F; color: #fff; }
+.fm-check { display: flex; gap: 10px; align-items: flex-start; font-weight: 500 !important; }
+.fm-check input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: #C8271F; }
+.fm-msg { margin: 0; min-height: 1.2em; color: #C8271F; font-weight: 600; font-size: .92rem; }
+html.theme-dark .fm-msg { color: #FF8A80; }
+.fm-msg.ok { color: #0C8040; }
+.fm-done { background: #E6F4EC; color: #14532D; border-radius: 12px; padding: 14px; }
+html.theme-dark .fm-done { background: #10301F; color: #7DDBA2; }
+.fm-help { color: var(--lg-ink2); font-size: .92rem; }
+.fm-help a { color: inherit; }

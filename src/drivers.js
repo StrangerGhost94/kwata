@@ -3,6 +3,7 @@
 const webpush = require('web-push');
 const db = require('./db');
 const { getSettings } = require('./pricing');
+const fcm = require('./fcm');
 
 // ---------- Web Push ----------
 // VAPID keys identify this server to the phone's push service. They come from
@@ -44,15 +45,17 @@ async function unsubscribe(userId, endpoint) {
   await db.query('DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2', [userId, String(endpoint || '')]);
 }
 async function hasPush(userId) {
-  return !!(await db.one('SELECT 1 AS x FROM push_subscriptions WHERE user_id = $1 LIMIT 1', [userId]));
+  return !!(await db.one('SELECT 1 AS x FROM push_subscriptions WHERE user_id = $1 LIMIT 1', [userId])) || (fcm.configured() && await fcm.has(userId));
 }
 
-// Sends to every phone the user subscribed. Dead subscriptions are removed.
+// Sends to every phone the user subscribed: Web Push for the web app, FCM for the store apps.
+// Dead subscriptions are removed.
 async function push(userId, payload, { ttl = 60, urgency = 'high' } = {}) {
+  const native = fcm.send(userId, payload, { ttl, urgency }).catch((e) => { console.error('fcm', e.message); return 0; });
   let rows;
   try { await vapidKeys(); rows = (await db.query('SELECT * FROM push_subscriptions WHERE user_id = $1', [userId])).rows; }
-  catch (e) { console.error('push setup', e.message); return 0; }
-  let sent = 0;
+  catch (e) { console.error('push setup', e.message); return native; }
+  let sent = await native;
   await Promise.all(rows.map(async (r) => {
     try {
       await webpush.sendNotification({ endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }, JSON.stringify(payload), { TTL: ttl, urgency });
