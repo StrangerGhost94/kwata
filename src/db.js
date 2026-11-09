@@ -233,6 +233,16 @@ async function migrate() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   CREATE INDEX IF NOT EXISTS push_user_idx ON push_subscriptions(user_id);
+  CREATE TABLE IF NOT EXISTS native_push_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT UNIQUE NOT NULL,
+    platform TEXT NOT NULL,
+    app TEXT NOT NULL DEFAULT 'rider',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS native_push_user_idx ON native_push_tokens(user_id);
   CREATE TABLE IF NOT EXISTS driver_events (
     id SERIAL PRIMARY KEY,
     driver_id INTEGER NOT NULL,

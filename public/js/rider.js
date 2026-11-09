@@ -1069,7 +1069,7 @@
   // Asked once, right after the first booking: the moment the value is obvious.
   function offerAlerts() {
     let asked = false; try { asked = localStorage.getItem('flytte_alerts_asked') === '1'; } catch {}
-    if (asked || !K.push.supported() || Notification.permission !== 'default') return;
+    if (asked || !K.push.supported() || K.push.permission() !== 'default') return;
     try { localStorage.setItem('flytte_alerts_asked', '1'); } catch {}
     setTimeout(() => {
       if (!S.trip || !['requested', 'accepted'].includes(S.trip.status)) return;

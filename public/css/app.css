@@ -2300,3 +2300,15 @@ html.launch-dark .sp-icon, html.theme-dark:not(.launch-dark) .sp-icon { box-shad
 html.theme-dark:not(.launch-dark) .splash .wm { --mark-1: #F2B544; --mark-2: #F2B544; }
 html.theme-dark:not(.launch-dark) .splash .wm-t { color: #fff; }
 html.launch-dark .sp-mark .wm { --mark-1: #F2B544; --mark-2: #F2B544; }
+
+/* Store apps: a version too old to work with the server (public/js/native.js) */
+.update-gate { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #0E4E56 0%, #073B42 60%, #04262B 100%); color: #fff; text-align: center; }
+.update-gate .ug-card { max-width: 360px; display: grid; gap: 14px; justify-items: center; }
+.update-gate .ug-ic { font-size: 56px; height: 1.6em; display: grid; place-items: center; }
+.update-gate .ug-ic .wm-k { transform: none; margin: 0; }
+.update-gate h2 { font-family: var(--wordmark); font-size: 1.6rem; color: #fff; margin: 4px 0 0; }
+.update-gate p { color: #CFE3E3; margin: 0; }
+.update-gate .btn { width: 100%; margin-top: 8px; background: var(--gold); color: var(--gold-ink); }
+.update-gate .ug-how { color: #fff; font-weight: 600; }
+

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Delete your account · Flytte</title>
+<meta name="description" content="Delete your Flytte or Flytte Driver account and personal data, with or without the app.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<script>try{var t=localStorage.getItem('flytte_theme');if(t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('theme-dark')}catch(e){}</script>
+<link rel="stylesheet" href="/css/legal.css">
+<link rel="stylesheet" href="/css/forms.css">
+</head>
+<body>
+<header class="lg-top"><a href="/"><svg class="fl-mark" width="11.7" height="22" viewBox="0 0 76.82 145.05" aria-hidden="true"><path class="f1" fill="#073B42" d="M76.82 0V21.29C76.82 27.37 73.58 32.99 68.31 36.03L26.95 59.91C23.05 62.16 7.5 68.5 0 86.42V57.23C0 49.27 4.25 41.9 11.15 37.92L26.95 28.8Z"/><path class="f2" fill="#0E6E73" d="M68.7 52.48V72.14C68.7 79.23 64.92 85.78 58.78 89.33L38.18 101.22C31.23 105.24 26.95 112.65 26.95 120.68V145.05H0V116.04C0 101.26 7.89 87.6 20.69 80.2L26.95 76.59Z"/></svg><span class="fl-word">flytte</span></a></header>
+<main>
+<h1>Delete your account</h1>
+<p class="lg-date">For riders and drivers, with or without the app</p>
+
+<div class="lg-sum"><b>What happens</b>
+<ul>
+  <li>Your name, phone number, email, saved places, emergency contact, photos and driver documents are erased straight away.</li>
+  <li>Trips and payments stay only as anonymous records for as long as Ugandan tax and accounting law requires.</li>
+  <li>Money in your Flytte Wallet is lost, so spend it first. Drivers must cash out or settle their balance first.</li>
+  <li>You can’t undo this. To ride or drive again, create a new account.</li>
+</ul></div>
+
+<p>In the app: <b>Account → Settings → Delete my account</b>. No app? Confirm your number below.</p>
+
+<form id="del" class="fm" novalidate>
+  <div class="fm-step" id="s-phone">
+    <label for="phone">Phone number on the account</label>
+    <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="0772 123 456" required>
+    <button class="fm-btn" id="send" type="submit">Send a code</button>
+  </div>
+  <div class="fm-step" id="s-code" hidden>
+    <label for="code">6-digit code sent to <span id="to"></span></label>
+    <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="123456">
+    <button class="fm-btn" id="check" type="button">Continue</button>
+  </div>
+  <div class="fm-step" id="s-confirm" hidden>
+    <p id="who"></p>
+    <label class="fm-check" id="walletRow" hidden><input type="checkbox" id="forfeit"> <span id="walletText"></span></label>
+    <button class="fm-btn fm-danger" id="go" type="button">Delete my account</button>
+  </div>
+  <div class="fm-done" id="s-done" hidden role="status"><b>Your account is deleted.</b> We’ve erased your personal data. Thank you for riding with Flytte.</div>
+  <p class="fm-msg" id="msg" role="alert"></p>
+</form>
+
+<p class="fm-help">Can’t receive codes on that number any more? Email <a href="mailto:support@flytte.co">support@flytte.co</a> from the email on your account, or see <a href="/support">help and support</a>. We reply within 30 days. More in our <a href="/privacy#rights">privacy policy</a>.</p>
+</main>
+<script src="/js/delete-account.js"></script>
+</body>
+</html>

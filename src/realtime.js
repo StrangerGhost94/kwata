@@ -8,6 +8,7 @@ const auth = require('./auth');
 const { getSettings, haversineKm } = require('./pricing');
 const dtools = require('./drivers');
 const night = require('./nightshare');
+const review = require('./review');
 const AWAY_MS = 15 * 60e3; // a locked phone with ride alerts stays online this long
 
 let io;
@@ -218,10 +219,13 @@ async function candidates(trip, tried) {
   const list = [];
   for (const [id, d] of drivers) {
     if (!d.online || !d.lat || tried.has(id) || id === trip.rider_id) continue;
+    // App review: demo trips only ever go between the review and demo accounts, never to or from real people.
+    if (review.isDemo(id) !== review.isDemo(trip.rider_id)) continue;
+    if (d.bot) review.placeBot(d, pickup);
     if (!d.services.includes(trip.service)) continue;
     if (trip.woman_driver && !d.woman) continue;   // the rider asked for a woman driver
     if (trip.plan_id && !d.school) continue;       // school runs: only drivers the team has vetted for children
-    const connected = !!io.sockets.adapter.rooms.get(`user:${id}`);
+    const connected = d.bot || !!io.sockets.adapter.rooms.get(`user:${id}`);
     // Phone locked or app in the background: still reachable through a ride alert, for a while.
     const reachable = connected || (d.away && d.push && d.updatedAt && Date.now() - d.updatedAt < AWAY_MS);
     if (!reachable) continue;
@@ -299,6 +303,7 @@ async function dispatch(tripId, excludeDriverId) {
   state.offer = offer; state.expiresAt = Date.now() + secs * 1000;
   notify(next.id, 'trip:offer', offer);
   const d = drivers.get(next.id);
+  if (d && d.bot) review.botOffer(tripId);
   if (d && d.push && next.away) {
     const what = full.service === 'parcel' ? 'delivery' : full.service === 'errand' ? 'errand' : 'ride';
     dtools.push(next.id, {
@@ -460,6 +465,7 @@ function init(server) {
         d.online = !!on;
         if (!d.online) d.home = null;
         cb && cb({ ok: true, online: d.online });
+        review.driverOnline(u.id, d.online);
         // pick up any riders already waiting nearby
         if (d.online) {
           const waiting = await db.query("SELECT id FROM trips WHERE status = 'requested'");
@@ -470,16 +476,7 @@ function init(server) {
         }
       });
 
-      handle('driver:location', (loc = {}) => {
-        const lat = Number(loc.lat), lng = Number(loc.lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return;
-        d.lat = lat; d.lng = lng; d.heading = Number(loc.heading) || null; d.updatedAt = Date.now();
-        if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
-        // About a minute away from the pickup: tell the rider to head out.
-        if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId && haversineKm(d, d.pickup) < 0.35) riderAlert(d.trip, 'near');
-        if (d.queuedTripId) io.to(`trip:${d.queuedTripId}`).emit('driver:location', { tripId: d.queuedTripId, lat, lng, heading: d.heading });
-        if (d.home && haversineKm(d, d.home) < 0.8) { d.home = null; notify(u.id, 'driver:home', { on: false, arrived: true }); }
-      });
+      handle('driver:location', (loc = {}) => { driverLocation(u.id, loc); });
 
       handle('trip:respond', async ({ tripId, accept } = {}, cb) => {
         try {
@@ -510,6 +507,44 @@ function init(server) {
 }
 
 function messages(tripId) { return chats.get(tripId) || []; }
+
+// A driver's position, from the socket or (store app with the screen off) from POST /api/driver/location.
+function driverLocation(userId, loc = {}) {
+  const d = drivers.get(userId);
+  if (!d) return false;
+  let lat = Number(loc.lat), lng = Number(loc.lng);
+  const demoSpot = Number.isFinite(lat) && Number.isFinite(lng) && review.mapLocation(userId, lat, lng);
+  if (demoSpot) ({ lat, lng } = demoSpot);   // an app reviewer abroad drives in central Kampala
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 6 || lng < 28 || lng > 42) return false;
+  d.lat = lat; d.lng = lng; d.heading = Number(loc.heading) || null; d.updatedAt = Date.now();
+  if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
+  // About a minute away from the pickup: tell the rider to head out.
+  if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId && haversineKm(d, d.pickup) < 0.35) riderAlert(d.trip, 'near');
+  if (d.queuedTripId) io.to(`trip:${d.queuedTripId}`).emit('driver:location', { tripId: d.queuedTripId, lat, lng, heading: d.heading });
+  if (d.home && haversineKm(d, d.home) < 0.8) { d.home = null; notify(userId, 'driver:home', { on: false, arrived: true }); }
+  return true;
+}
+
+// ---------- App review demo driver (src/review.js) ----------
+// Always online, reachable without a phone, and moved by the server instead of by GPS.
+async function botDriver(id, info = {}) {
+  const s = await getSettings();
+  const services = Object.keys(s.services).filter((k) => k !== 'errand');   // errands need a receipt photo from a real person
+  drivers.set(id, { online: true, bot: true, busy: false, lat: review.ANCHOR.lat, lng: review.ANCHOR.lng, heading: null,
+    services, tripId: null, name: info.name, plate: info.plate, woman: true, school: false, push: false, visible: true, updatedAt: Date.now() });
+}
+function moveDriver(id, lat, lng) {
+  const d = drivers.get(id);
+  if (!d) return;
+  if (d.lat != null && (d.lat !== lat || d.lng !== lng)) {
+    const y = Math.sin((lng - d.lng) * Math.PI / 180) * Math.cos(lat * Math.PI / 180);
+    const x = Math.cos(d.lat * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - Math.sin(d.lat * Math.PI / 180) * Math.cos(lat * Math.PI / 180) * Math.cos((lng - d.lng) * Math.PI / 180);
+    d.heading = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+  d.lat = lat; d.lng = lng; d.updatedAt = Date.now();
+  if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
+  if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId && haversineKm(d, d.pickup) < 0.35) riderAlert(d.trip, 'near');
+}
 
 function joinTripRoom(userId, tripId) {
   io.in(`user:${userId}`).socketsJoin(`trip:${tripId}`);
@@ -558,7 +593,7 @@ function forceOffline(driverId) {
 }
 
 module.exports = { setWoman, setSchool, nightShareAlert,
-  init, broadcast, messages, dispatch, clearOffer, setDriverFree, loadTrip, view, notify, joinTripRoom,
+  init, broadcast, messages, dispatch, clearOffer, setDriverFree, respond, botDriver, moveDriver, driverLocation, loadTrip, view, notify, joinTripRoom,
   liveDrivers, nearbyDrivers, updateDriverServices, forceOffline, setHome, driverState, markPush, updateDriverVehicle, ACTIVE,
   driversSnapshot: () => [...drivers.values()],
   get io() { return io; },

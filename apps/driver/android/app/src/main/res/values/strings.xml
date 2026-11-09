@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Flytte Driver</string>
+    <string name="title_activity_main">Flytte Driver</string>
+    <string name="package_name">co.flytte.driver</string>
+    <string name="custom_url_scheme">co.flytte.driver</string>
+    <string name="capacitor_background_geolocation_notification_channel_name">Online status</string>
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_stat_flytte</string>
+</resources>

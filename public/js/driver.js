@@ -32,7 +32,7 @@
     if (pushBusy) return false;
     pushBusy = true;
     try {
-      if (silent && (!pushSupported() || Notification.permission !== 'granted')) return false;
+      if (silent && (!pushSupported() || K.push.permission() !== 'granted')) return false;
       await K.push.enable();
       setAlertPref('on');
       S.alertsHere = true;
@@ -65,8 +65,8 @@
     const here = await alertsOnHere();
     if (alertPref() === 'off') { if (S.ov.push) { S.ov.push = false; K.api('/push/unsubscribe', { all: true }).catch(() => {}); } return; }
     if (here && !S.ov.push) { enablePush(true); return; }                 // phone linked, server forgot: re-send
-    if (!here && alertPref() === 'on' && pushSupported() && Notification.permission === 'granted') enablePush(true);
-    if (!here && S.ov.push && Notification.permission !== 'granted') S.ov.push = false;   // blocked in phone settings
+    if (!here && alertPref() === 'on' && pushSupported() && K.push.permission() === 'granted') enablePush(true);
+    if (!here && S.ov.push && K.push.permission() !== 'granted') S.ov.push = false;   // blocked in phone settings
   }
 
   // ---------- overview: alerts, money owed, documents, heading home, bonuses ----------
@@ -275,7 +275,7 @@
   function startGps() {
     if (!navigator.geolocation) return gpsFailed('unsupported');
     S.gpsState = S.loc ? S.gpsState : 'finding';
-    watchId = navigator.geolocation.watchPosition(
+    watchId = K.geo.watch(
       (p) => { const had = !!S.loc && !S.manual; S.manual = false; S.gpsState = 'ok'; setLoc(p.coords.latitude, p.coords.longitude, p.coords.heading); if (!had && S.tab === 'home' && !S.trip && !S.offer) render(); },
       (err) => gpsFailed(err && err.code === 1 ? 'denied' : 'unavailable'),
       { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
@@ -339,6 +339,7 @@
   }
 
   function render() {
+    K.geo.background(!!S.online);   // store app: keep sending location with the screen off while online
     const inTrip = !!S.trip;
     K.$('#tabs').classList.toggle('hidden', inTrip);
     K.underTabs(sheet, !inTrip);
@@ -387,7 +388,7 @@
         ? `<button class="btn btn-go btn-block btn-lg" id="off">${K.ic('power')} Go Offline</button>`
         : `<button class="btn btn-primary btn-block btn-lg" id="on" ${S.loc ? '' : 'aria-disabled="true"'}>${K.ic('power')} Go Online</button>
            <p class="tiny muted" style="text-align:center;margin:6px 0 0">You keep ${100 - S.config.commissionPct}% of every fare.</p>`}</div>`;
-    const rg = K.$('#retryGps'); if (rg) rg.onclick = () => { navigator.geolocation && navigator.geolocation.clearWatch(watchId); S.manual = false; S.gpsState = 'finding'; render(); startGps(); };
+    const rg = K.$('#retryGps'); if (rg) rg.onclick = () => { K.geo.clear(watchId); S.manual = false; S.gpsState = 'finding'; render(); startGps(); };
     K.$('#earn').onclick = () => openTab('earnings');
     const on = K.$('#on'); if (on) on.onclick = () => setOnline(true);
     const off = K.$('#off'); if (off) off.onclick = () => setOnline(false);
@@ -1018,7 +1019,7 @@
         await loadOverview(); drawProfile(el);
       },
       autonav: () => { try { localStorage.setItem('flytte_auto_nav', autoNav() ? 'off' : 'on'); } catch {} K.haptic && K.haptic(); drawProfile(el); },
-      manual: () => { if (S.manual) { S.manual = false; startGps(); } else { S.manual = true; navigator.geolocation && navigator.geolocation.clearWatch(watchId); K.toast('Tap the map to move your position.'); } openTab('home'); },
+      manual: () => { if (S.manual) { S.manual = false; startGps(); } else { S.manual = true; K.geo.clear(watchId); K.toast('Tap the map to move your position.'); } openTab('home'); },
       settings: () => K.openSettings({ role: 'driver', onBack: () => drawProfile(el) }),
       out: () => { if (S.online) setOnline(false); K.logout(); },
     })[b.dataset.a]());

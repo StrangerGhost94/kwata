@@ -17,6 +17,27 @@
   } catch {}
   K.KAMPALA = { lat: 0.3136, lng: 32.5811 };
 
+  // ---------- error reporting ----------
+  // Script errors on the phone go to the server log, and to Sentry when it's set up (src/monitor.js).
+  // A few per page load at most, each message once.
+  K.native = false; K.platform = 'web';   // the store apps set these in native.js
+  (function () {
+    const sent = new Set();
+    function report(e) {
+      try {
+        const msg = String(e.message || e).slice(0, 300);
+        if (!msg || sent.has(msg) || sent.size >= 5 || /^Script error\.?$|^ResizeObserver loop/.test(msg)) return;   // browser noise, not our bugs
+        sent.add(msg);
+        const s = JSON.parse(localStorage.getItem(KEY) || 'null');
+        fetch('/api/client-error', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', ...(s && s.token ? { Authorization: 'Bearer ' + s.token } : {}) },
+          body: JSON.stringify({ message: msg, name: e.name, stack: e.stack, source: e.source, line: e.line, app: APP, platform: K.platform, version: K.appVersion || '', page: location.pathname }) }).catch(() => {});
+      } catch {}
+    }
+    window.addEventListener('error', (ev) => { if (ev.error || ev.message) report({ message: ev.message, name: ev.error && ev.error.name, stack: ev.error && ev.error.stack, source: ev.filename, line: ev.lineno }); });
+    window.addEventListener('unhandledrejection', (ev) => { const r = ev.reason || {}; report({ message: r.message || String(r), name: r.name, stack: r.stack }); });
+    K.reportError = report;
+  })();
+
   // ---------- Android ----------
   // Android phones get: the hardware/gesture Back closing what's on top (not leaving the app), firmer
   // haptics, and on lighter phones solid surfaces instead of live blur.
@@ -786,7 +807,7 @@
   }
   let installEvt = null;
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; document.dispatchEvent(new Event('flytte:installable')); });
-  K.standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  K.standalone = () => K.native || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   K.installCard = function (host, appName = 'Flytte', icon = '/icons/flytte-icon-192.png') {
     const key = 'flytte_install_dismissed_' + APP;
     const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -1314,8 +1335,17 @@
       const sub = await current();
       if (sub) { await K.api('/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
     }
-    return { supported, enable, disable, current, iosBrowser };
+    const permission = () => ('Notification' in window ? Notification.permission : 'default');
+    return { supported, enable, disable, current, iosBrowser, permission };
   })();
+
+  // ---------- location ----------
+  // The driver app's store version replaces these (native.js) to keep sending location with the screen off.
+  K.geo = {
+    watch: (ok, err, opts) => navigator.geolocation.watchPosition(ok, err, opts),
+    clear: (id) => { if (navigator.geolocation && id != null) navigator.geolocation.clearWatch(id); },
+    background: () => {},
+  };
 
   // ---------- Email for receipts ----------
   // Two steps rendered into any host element: the address, then the 6-digit code from the email.

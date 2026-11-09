@@ -1,0 +1,15 @@
+{
+  "name": "flytte-rider-app",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Flytte (riders) for Google Play and the App Store",
+  "dependencies": {
+    "@capacitor-firebase/messaging": "^8.6.0",
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.6.0",
+    "firebase": "^12.19.0"
+  }
+}

@@ -40,6 +40,10 @@ The F lives in `public/js/common.js` (`K.markSvg`, `K.wordmark`). App icons, `pu
 
 **Anti-fraud** – the server recalculates every fare itself and rejects fake short distances; PINs are never sent to drivers; phone numbers are only visible during a live trip.
 
+## Store apps (Google Play and the App Store)
+
+`apps/rider` (Flytte, `co.flytte.rider`) and `apps/driver` (Flytte Driver, `co.flytte.driver`) are Capacitor apps that load flytte.co and add native push, background location for online drivers, haptics and app links (`public/js/native.js`). Store graphics are in `store/`. Everything needed to publish them, including the Railway variables, reviewer sign-in, privacy answers and listing copy, is in **[docs/store/SUBMISSION.md](docs/store/SUBMISSION.md)**.
+
 ## Installing on a phone (PWA)
 
 Open the Railway link in Chrome on Android: Flytte shows an **Install** card on the home screen, or use the browser menu → *Install app*. On iPhone, open it in Safari → Share → *Add to Home Screen*. It then opens full-screen from its own icon, with its own launch screen, like any app from the store. Drivers install `/driver` the same way and get a separate teal icon.
