@@ -108,7 +108,7 @@
   // Two swept wings, a swift mid-flight F split by a single feather cut. Top wing Deep Teal, lower
   // wing Lagoon on light backgrounds; both wings Saffron Gold on dark ones (see .wm-k in app.css).
   K.BRAND = { teal: '#073B42', lagoon: '#0E6E73', gold: '#F2B544' };
-  K.F_PATHS = ['M76.82 0V21.29C76.82 27.37 73.58 32.99 68.31 36.03L26.95 59.91 18.92 64.55C15.85 66.32 13.96 68.09 11.01 70.61L8.15 73.69C6.67 74.78 5.46 76.19 4.59 77.81L0 86.42V57.23C0 49.27 4.25 41.9 11.15 37.92L26.95 28.8Z', 'M68.7 52.48V72.14C68.7 79.23 64.92 85.78 58.78 89.33L38.18 101.22C31.23 105.24 26.95 112.65 26.95 120.68V145.05H0V116.04C0 101.26 7.89 87.6 20.69 80.2L26.95 76.59Z'];
+  K.F_PATHS = ['M76.82 0V21.29C76.82 27.37 73.58 32.99 68.31 36.03L26.95 59.91C23.05 62.16 7.5 68.5 0 86.42V57.23C0 49.27 4.25 41.9 11.15 37.92L26.95 28.8Z', 'M68.7 52.48V72.14C68.7 79.23 64.92 85.78 58.78 89.33L38.18 101.22C31.23 105.24 26.95 112.65 26.95 120.68V145.05H0V116.04C0 101.26 7.89 87.6 20.69 80.2L26.95 76.59Z'];
   K.fMark = (c1, c2 = c1) => `<path fill="${c1}" d="${K.F_PATHS[0]}"/><path fill="${c2}" d="${K.F_PATHS[1]}"/>`;
   // Map pin with the F inside (pickup pin on the map).
   K.logo = (pin = K.BRAND.teal, k = K.BRAND.gold, size = 64) => `<svg class="pin" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
