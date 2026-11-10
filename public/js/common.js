@@ -698,7 +698,7 @@
   // When iOS cuts the installed app short, the band under it takes the page's
   // background colour. Keep that colour matched to whatever is at the bottom of
   // the screen, so the band blends in: dark screens, the map, or the white sheet.
-  const STRIP_LIGHT = { dark: '#0E0E10', map: '#F3F5F4', sheet: '#FDFCFB', page: '#FFFFFF', grouped: '#F2F2F7' };
+  const STRIP_LIGHT = { dark: '#0E0E10', map: '#EDF0EF', sheet: '#FDFCFB', page: '#FFFFFF', grouped: '#F2F2F7' };
   const STRIP_DARK = { dark: '#0E0E10', map: '#0A1416', sheet: '#1C1C1E', page: '#000000', grouped: '#000000' };
   let STRIP = STRIP_LIGHT;
   let stripRaf;
@@ -1607,7 +1607,7 @@
   K.themePref = () => { try { return localStorage.getItem('flytte_theme') || 'light'; } catch { return 'light'; } };
   K.dark = () => document.documentElement.classList.contains('theme-dark');
   // Flytte's own map look (tools/map-style.js): calm greys, soft teal water and parks; map data from OpenFreeMap.
-  K.mapStyle = (dark) => `/map/flytte-${dark ? 'dark' : 'light'}.json?v=1`;
+  K.mapStyle = (dark) => `/map/flytte-${dark ? 'dark' : 'light'}.json?v=2`;
   const mqDark = matchMedia('(prefers-color-scheme: dark)');
   K.applyTheme = function () {
     const p = K.themePref(), dark = p === 'dark' || (p === 'auto' && mqDark.matches), was = K.dark();

@@ -1010,7 +1010,7 @@ input, select, textarea { font-size: max(16px, 1em); }
    The pill itself stays clear of the Home Indicator. */
 .dock-edge { position: absolute; left: 0; right: 0; bottom: 0; z-index: 849; pointer-events: none;
   height: calc(max(8px, var(--sab) - 4px) + 36px);
-  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--edge, #F3F5F4) 70%, transparent) 45%, var(--edge, #F3F5F4) 100%); }
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--edge, #EDF0EF) 70%, transparent) 45%, var(--edge, #EDF0EF) 100%); }
 .tabbar.hidden + .dock-edge { display: none; }
 @media (min-width: 760px) { .dock-edge { display: none; } }
 
