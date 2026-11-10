@@ -1335,7 +1335,7 @@
           <div class="stop"><span class="s-ic"><span class="dot-drop"></span></span><span><small>${t.service === 'errand' ? 'Deliver to' : 'Drop-off'}</small><b class="ellipsis">${K.esc(t.drop.address)}</b></span></div>
         </div>
         <div class="fare-row"><span class="row" style="gap:8px">${PAY[payOfTrip(t)].logo}<span class="muted">${PAY[payOfTrip(t)].name}</span></span><b>${fareHtml(t)}</b></div>
-        ${t.service === 'errand' && t.errand && t.errand.goodsTotal != null ? '' : `<div class="sheet-foot"><button class="btn btn-danger btn-block btn-lg" id="cancel">${t.service === 'errand' ? 'Cancel errand' : 'Cancel ride'}</button></div>`}`;
+        ${t.service === 'errand' && t.errand && t.errand.goodsTotal != null ? '' : `<button class="link-cancel" id="cancel">${t.service === 'errand' ? 'Cancel errand' : 'Cancel ride'}</button>`}`;
       const cx = K.$('#cancel'); if (cx) cx.onclick = cancelTrip;
     }
     K.$('#chatBtn').onclick = openChat;
