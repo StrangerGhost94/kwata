@@ -171,8 +171,8 @@
 
   // ---------- vehicle markers (top view) ----------
   const TOP = {
-    car: '<svg viewBox="0 0 40 40"><rect x="12.5" y="4" width="15" height="32" rx="6" fill="#141414" stroke="#fff" stroke-width="1.6"/><path d="M14.5 12.5c2-2.2 9-2.2 11 0v4h-11z" fill="#8C96A0"/><path d="M14.5 29c2 1.6 9 1.6 11 0v-3.5h-11z" fill="#8C96A0"/><rect x="14.5" y="17" width="11" height="8" rx="1" fill="#222"/></svg>',
-    boda: '<svg viewBox="0 0 40 40"><rect x="17" y="3" width="6" height="34" rx="3" fill="#141414" stroke="#fff" stroke-width="1.4"/><rect x="10" y="9" width="20" height="3.2" rx="1.6" fill="#141414" stroke="#fff" stroke-width="1"/><circle cx="20" cy="21" r="5.5" fill="#F2B544" stroke="#141414" stroke-width="1.8"/></svg>',
+    car: '<svg viewBox="0 0 40 40"><rect x="12.5" y="4" width="15" height="32" rx="6" fill="#073B42" stroke="#fff" stroke-width="1.6"/><path d="M14.5 12.5c2-2.2 9-2.2 11 0v4h-11z" fill="#8C96A0"/><path d="M14.5 29c2 1.6 9 1.6 11 0v-3.5h-11z" fill="#8C96A0"/><rect x="14.5" y="17" width="11" height="8" rx="1" fill="#222"/></svg>',
+    boda: '<svg viewBox="0 0 40 40"><rect x="17" y="3" width="6" height="34" rx="3" fill="#073B42" stroke="#fff" stroke-width="1.4"/><rect x="10" y="9" width="20" height="3.2" rx="1.6" fill="#141414" stroke="#fff" stroke-width="1"/><circle cx="20" cy="21" r="5.5" fill="#F2B544" stroke="#141414" stroke-width="1.8"/></svg>',
   };
   function bearing(a, b) {
     const toR = (d) => d * Math.PI / 180, toD = (r) => r * 180 / Math.PI;
@@ -698,8 +698,8 @@
   // When iOS cuts the installed app short, the band under it takes the page's
   // background colour. Keep that colour matched to whatever is at the bottom of
   // the screen, so the band blends in: dark screens, the map, or the white sheet.
-  const STRIP_LIGHT = { dark: '#0E0E10', map: '#F8F5F0', sheet: '#FDFCFB', page: '#FFFFFF', grouped: '#F2F2F7' };
-  const STRIP_DARK = { dark: '#0E0E10', map: '#1A1B1E', sheet: '#1C1C1E', page: '#000000', grouped: '#000000' };
+  const STRIP_LIGHT = { dark: '#0E0E10', map: '#F3F5F4', sheet: '#FDFCFB', page: '#FFFFFF', grouped: '#F2F2F7' };
+  const STRIP_DARK = { dark: '#0E0E10', map: '#0A1416', sheet: '#1C1C1E', page: '#000000', grouped: '#000000' };
   let STRIP = STRIP_LIGHT;
   let stripRaf;
   function syncStrip() {
@@ -1075,8 +1075,14 @@
         <button class="btn btn-primary btn-block btn-lg" type="submit" data-label="Continue">Continue</button>
         <p class="fine" data-fine>We’ll send a one-time code to verify your number.${driver ? ' New drivers are reviewed before their first trip.' : ''}</p>
         <p class="fine legal">By continuing, you agree to Flytte’s <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+        <ul class="auth-why" aria-label="${driver ? 'Why drive with Flytte' : 'Why ride with Flytte'}">
+          ${(driver ? [['cash', 'Keep <span data-keep>most</span> of every fare', 'Cash out to Mobile Money whenever you like'], ['power', 'Drive when you want', 'Go online and offline with one tap'], ['shield', 'Know before you accept', 'See the pickup, the trip and what you’ll earn']]
+            : [['receipt', 'The price before you book', 'And that’s the price you pay'], ['lock', 'A PIN starts every trip', 'Share your live trip, SOS if you need it'], ['wallet', 'Pay your way', 'Cash, Mobile Money, card or Flytte Wallet']])
+            .map(([ic, t, sub]) => `<li><span class="aw-ic" aria-hidden="true">${K.ic(ic)}</span><span><b>${t}</b><small>${sub}</small></span></li>`).join('')}
+        </ul>
       </form>`, null);
       const f = root.querySelector('#f');
+      if (driver) K.cfg().then((c) => { const k = root.querySelector('[data-keep]'); if (k && typeof c.commissionPct === 'number') k.textContent = `${100 - c.commissionPct}%`; }).catch(() => {});
       K.cfg().then((c) => { const t = root.querySelector('[data-fine]'); if (t && !c.smsLogin) t.textContent = `Existing accounts sign in with a password; new accounts are set up in a few steps.${driver ? ' New drivers are reviewed before their first trip.' : ''}`; }).catch(() => {});
       f.onsubmit = async (e) => {
         e.preventDefault();
@@ -1600,12 +1606,14 @@
   // The choice is applied by a tiny script in each page's <head>, before the first frame.
   K.themePref = () => { try { return localStorage.getItem('flytte_theme') || 'light'; } catch { return 'light'; } };
   K.dark = () => document.documentElement.classList.contains('theme-dark');
+  // Flytte's own map look (tools/map-style.js): calm greys, soft teal water and parks; map data from OpenFreeMap.
+  K.mapStyle = (dark) => `/map/flytte-${dark ? 'dark' : 'light'}.json?v=1`;
   const mqDark = matchMedia('(prefers-color-scheme: dark)');
   K.applyTheme = function () {
     const p = K.themePref(), dark = p === 'dark' || (p === 'auto' && mqDark.matches), was = K.dark();
     document.documentElement.classList.toggle('theme-dark', dark);
     const meta = document.querySelector('meta[name=theme-color]'); if (meta && APP !== 'admin') meta.content = dark ? '#000000' : '#FFFFFF';
-    if (was !== dark) (K._maps || []).forEach((g) => { try { g.setStyle(`https://tiles.openfreemap.org/styles/${dark ? 'dark' : 'liberty'}`); } catch {} });
+    if (was !== dark) (K._maps || []).forEach((g) => { try { g.setStyle(K.mapStyle(dark)); } catch {} });
     if (typeof syncStrip === 'function') syncStrip();
   };
   K.setTheme = (p) => { try { localStorage.setItem('flytte_theme', p); } catch {} K.applyTheme(); };
@@ -1621,7 +1629,7 @@
     if (webgl && L.maplibreGL) {
       try {
         const gl = L.maplibreGL({
-          style: `https://tiles.openfreemap.org/styles/${K.dark() ? 'dark' : 'liberty'}`,
+          style: K.mapStyle(K.dark()),
           attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © OpenStreetMap',
         }).addTo(m);
         const glMap = gl.getMaplibreMap && gl.getMaplibreMap();
@@ -1660,7 +1668,7 @@
 
   // Draws a route the premium way: a thick line that "draws itself" from start to end.
   K.drawRoute = function (map, coords, { animate = true, color } = {}) {
-    const c = color || (K.dark() ? '#FFFFFF' : '#000000');
+    const c = color || (K.dark() ? '#F2B544' : '#073B42');   // Deep Teal by day, Saffron Gold on the dark map
     const casing = L.polyline(coords, { color: K.dark() ? '#000' : '#FFF', weight: 9, opacity: .9 }).addTo(map);
     const line = L.polyline(animate ? [coords[0]] : coords, { color: c, weight: 5 }).addTo(map);
     if (animate && coords.length > 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {

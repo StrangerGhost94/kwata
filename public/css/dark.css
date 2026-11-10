@@ -18,7 +18,7 @@ html.theme-dark .sched-card .ic { background: rgba(28,28,30,.12); }
 html.theme-dark .sheet { background: #1C1C1E; box-shadow: 0 -8px 30px rgba(0,0,0,.09), 0 120px 0 0 #1C1C1E; }
 html.theme-dark .when-pill { background: #1C1C1E; }
 html.theme-dark .q-chip { background: #1C1C1E; }
-html.theme-dark .dock-edge { background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--edge, #1A1B1E) 70%, transparent) 45%, var(--edge, #1A1B1E) 100%); }
+html.theme-dark .dock-edge { background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--edge, #0A1416) 70%, transparent) 45%, var(--edge, #0A1416) 100%); }
 html.theme-dark .tabbar button { color: #AEAEB2; }
 html.theme-dark .loc-card .ic { background: #1C1C1E; color: #FFB340; }
 html.theme-dark .pick-set { background: #1C1C1E; }

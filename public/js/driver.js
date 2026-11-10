@@ -440,10 +440,10 @@
     const you = S.loc ? P(S.loc) : null;
     return `<svg class="route-sketch" viewBox="0 0 ${W} ${H}" aria-hidden="true">
       ${you ? `<line x1="${you[0]}" y1="${you[1]}" x2="${px}" y2="${py}" stroke="#8E8E93" stroke-width="2.5" stroke-dasharray="4 5" stroke-linecap="round"/>` : ''}
-      ${o.drop && o.drop.hidden ? '' : `<line x1="${px}" y1="${py}" x2="${dx}" y2="${dy}" stroke="#F2B705" stroke-width="4" stroke-linecap="round"/>`}
+      ${o.drop && o.drop.hidden ? '' : `<line x1="${px}" y1="${py}" x2="${dx}" y2="${dy}" stroke="#F2B544" stroke-width="4" stroke-linecap="round"/>`}
       ${you ? `<circle cx="${you[0]}" cy="${you[1]}" r="6" fill="#0A84FF" stroke="#fff" stroke-width="2.5"/>` : ''}
-      <circle cx="${px}" cy="${py}" r="6.5" fill="#fff" stroke="#141414" stroke-width="3"/>
-      ${o.drop && o.drop.hidden ? '' : `<rect x="${(dx - 6).toFixed(1)}" y="${(dy - 6).toFixed(1)}" width="12" height="12" rx="2" fill="#141414"/>`}</svg>`;
+      <circle cx="${px}" cy="${py}" r="6.5" fill="#fff" stroke="#073B42" stroke-width="3"/>
+      ${o.drop && o.drop.hidden ? '' : `<rect x="${(dx - 6).toFixed(1)}" y="${(dy - 6).toFixed(1)}" width="12" height="12" rx="2" fill="#073B42"/>`}</svg>`;
   }
 
   function vOffer() {
@@ -881,16 +881,29 @@
     const max = Math.max(1, ...e.days.map((d) => d.net));
     const today = e.days[e.days.length - 1].day;
     const dayName = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-UG', { weekday: 'short' }).slice(0, 3);
+    // Weekly goal (the driver's own, kept on this phone): a ring that fills as the week's earnings come in.
+    const goal = earnGoal(e), pct = Math.min(1, e.week.net / goal), R = 34, C = 2 * Math.PI * R;
+    const left = goal - e.week.net;
+    const best = e.days.reduce((b, d) => (d.net > (b ? b.net : 0) ? d : b), null);
+    const canCash = e.balance >= S.config.minWithdrawal;
     el.innerHTML = `
       <div class="page-title">Earnings</div>
       <div class="seg-tabs"><button aria-pressed="false" data-r="today">Today</button><button aria-pressed="true" data-r="week">This week</button></div>
-      <div id="range"></div>
-      <div class="chart" aria-label="Earnings for the last 7 days">${e.days.map((d) => `<div class="b ${d.net ? '' : 'zero'} ${d.day === today ? 'today' : ''}" title="${dayName(d.day)}: ${K.ugx(d.net)}"><i style="height:${Math.max(2, (d.net / max) * 100)}%"></i><span>${dayName(d.day)}</span></div>`).join('')}</div>
+      <div class="earn-hero">
+        <div class="eh-ring" role="img" aria-label="${Math.round(pct * 100)}% of your weekly goal">
+          <svg viewBox="0 0 80 80"><circle class="bg" cx="40" cy="40" r="${R}"/><circle class="fg" cx="40" cy="40" r="${R}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - pct)).toFixed(1)}"/></svg>
+          <b>${Math.round(pct * 100)}%</b></div>
+        <div class="eh-main"><div id="range"></div>
+          <p class="eh-goal">${left > 0 ? `<b>${K.ugx(left)}</b> to go to your ${K.ugx(goal)} weekly goal` : `Weekly goal of ${K.ugx(goal)} reached${left < 0 ? `, <b>${K.ugx(-left)}</b> over` : ''}`}
+            <button id="goalBtn">Change goal</button></p></div>
+      </div>
+      <div class="chart" aria-label="Earnings for the last 7 days">${e.days.map((d) => `<div class="b ${d.net ? '' : 'zero'} ${d.day === today ? 'today' : ''} ${best && d.day === best.day ? 'best' : ''}" title="${dayName(d.day)}: ${K.ugx(d.net)}"><i style="height:${Math.max(2, (d.net / max) * 100)}%"></i><span>${dayName(d.day)}</span></div>`).join('')}</div>
+      ${best ? `<p class="best-day">${K.ic('chart', 'sm')}<span>Best day: <b>${new Date(best.day + 'T12:00:00Z').toLocaleDateString('en-UG', { weekday: 'long' })}</b> · ${K.ugx(best.net)} from ${best.trips} trip${best.trips === 1 ? '' : 's'}</span></p>` : ''}
       ${weekSummary(e)}
       <div class="kv"><span>Completed trips</span><b>${e.week.trips}</b></div>
       <div class="kv"><span>Cash collected</span><b>${K.ugx(e.cashWeek)}</b></div>
       <div class="kv"><span>Flytte commission</span><b>−${K.ugx(e.commissionWeek)}</b></div>
-      <div class="card" style="margin-top:16px"><span class="small muted">Balance you can cash out</span><div class="money">${K.ugx(e.balance)}</div>
+      <div class="card cashout ${canCash ? 'ready' : ''}" style="margin-top:16px"><span class="small muted">${canCash ? 'Ready to cash out' : 'Balance you can cash out'}</span><div class="money">${K.ugx(e.balance)}</div>
         ${e.balance < 0 ? `<p class="small" style="margin:6px 0 0">Negative because commission on cash trips is taken here. It clears from your next Mobile Money or wallet trips${S.config.paymentsAvailable ? ', or pay it now' : ''}.</p>${S.config.paymentsAvailable ? '<button class="btn btn-dark btn-sm" id="payd" style="margin-top:8px">Pay commission by Mobile Money</button>' : ''}` : ''}
         <label for="wamt">Cash out to ${K.esc(prettyPhone(e.momoNumber))}</label>
         <div class="row"><input id="wamt" class="fill" type="number" inputmode="numeric" min="${S.config.minWithdrawal}" value="${Math.max(0, e.balance)}"><button class="btn btn-primary" id="wd">Cash out</button></div>
@@ -904,17 +917,48 @@
     const range = (r) => {
       el.querySelectorAll('[data-r]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.r === r));
       const v = r === 'today' ? e.today : e.week;
-      K.$('#range', el).innerHTML = `<span class="small muted">${r === 'today' ? 'Today' : 'Last 7 days'}</span><div class="money">${K.ugx(v.net)}</div><span class="small muted">${v.trips} trip${v.trips === 1 ? '' : 's'}</span>`;
+      K.$('#range', el).innerHTML = `<span class="eh-label">${r === 'today' ? 'Today' : 'Last 7 days'}</span><div class="money">${K.ugx(v.net)}</div><span class="eh-label">${v.trips} trip${v.trips === 1 ? '' : 's'}</span>`;
     };
     el.querySelectorAll('[data-r]').forEach((b) => b.onclick = () => range(b.dataset.r));
     range('week');
     K.$('#wd', el).onclick = async () => {
-      try { await K.api('/driver/withdraw', { amount: +K.$('#wamt', el).value }); K.toast('Cash out requested'); drawEarnings(el); }
+      const amount = +K.$('#wamt', el).value;
+      try {
+        await K.api('/driver/withdraw', { amount });
+        K.hapticNotify('SUCCESS');
+        K.modal(`<div class="cash-done"><div class="cd-ic">${K.ic('check')}</div><h2>${K.ugx(amount)} is on its way</h2>
+          <p class="muted">We’re sending it to ${K.esc(prettyPhone(e.momoNumber))}. Follow it under <b>Cash outs</b> on this page.</p>
+          <button class="btn btn-primary btn-block btn-lg" data-close>Done</button></div>`);
+        drawEarnings(el, true);
+      }
       catch (err) { K.$('#err', el).textContent = err.message; }
     };
     const pd = K.$('#payd', el); if (pd) pd.onclick = async () => { if (!S.ov) await loadOverview(); if (S.ov) payDebt(); };
+    K.$('#goalBtn', el).onclick = () => {
+      const m = K.modal(`<h2>Your weekly goal</h2><p class="small muted">What you’d like to earn in 7 days. It’s yours alone: Flytte doesn’t see it.</p>
+        <div class="chip-row" style="flex-wrap:wrap;margin:10px 0">${[100000, 200000, 300000, 500000].map((g) => `<button class="pill-opt ${g === goal ? 'on' : ''}" data-g="${g}">${K.ugx(g)}</button>`).join('')}</div>
+        <label for="gamt">Or type an amount (UGX)</label><input id="gamt" type="number" inputmode="numeric" min="10000" step="10000" value="${goal}">
+        <p class="error" role="alert"></p><button class="btn btn-primary btn-block btn-lg" id="gsave" style="margin-top:12px">Save goal</button>`);
+      const inp = K.$('#gamt', m.el);
+      m.el.querySelectorAll('[data-g]').forEach((b) => b.onclick = () => { inp.value = b.dataset.g; m.el.querySelectorAll('[data-g]').forEach((x) => x.classList.toggle('on', x === b)); });
+      K.$('#gsave', m.el).onclick = () => {
+        const g = Math.round(+inp.value);
+        if (!(g >= 10000 && g <= 50000000)) { K.$('.error', m.el).textContent = 'Enter a goal of UGX 10,000 or more.'; return; }
+        try { localStorage.setItem('flytte_driver_goal', String(g)); } catch {}
+        m.close(); drawEarnings(el);
+      };
+    };
     el.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { el.querySelectorAll('[data-d]').forEach((x) => x.setAttribute('aria-pressed', x === b)); drawTrips(K.$('#tlist', el), +b.dataset.d); });
     drawTrips(K.$('#tlist', el), 1);
+  }
+
+  // The weekly goal: the driver's own choice; until they set one, last week's earnings rounded up
+  // to the next UGX 50,000 (so it's within reach), or UGX 200,000 for a first week.
+  function earnGoal(e) {
+    let g = 0; try { g = Number(localStorage.getItem('flytte_driver_goal')) || 0; } catch {}
+    if (g >= 10000) return g;
+    const prev = e.summary && e.summary.prevWeek ? e.summary.prevWeek.net : 0;
+    return prev > 0 ? Math.ceil((prev + 1) / 50000) * 50000 : 200000;
   }
 
   // This week against last week, average per trip, and when riders book most.
