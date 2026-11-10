@@ -9,6 +9,7 @@ const { getSettings, haversineKm } = require('./pricing');
 const dtools = require('./drivers');
 const night = require('./nightshare');
 const review = require('./review');
+const liveActivity = require('./liveactivity');
 const AWAY_MS = 15 * 60e3; // a locked phone with ride alerts stays online this long
 
 let io;
@@ -200,6 +201,7 @@ async function broadcast(tripId) {
   if (['completed', 'cancelled', 'no_drivers'].includes(t.status)) setTimeout(() => chats.delete(t.id), 10 * 60e3);
   const ld = t.driver_id && drivers.get(t.driver_id);
   if (ld && ld.tripId === t.id) { ld.tripStatus = t.status; ld.drop = { lat: t.drop_lat, lng: t.drop_lng }; ld.pickup = { lat: t.pickup_lat, lng: t.pickup_lng }; ld.trip = t; }
+  if (!t.merchant) liveActivity.onTrip(t, ld);   // the trip on the rider's iPhone lock screen
   if (!t.merchant) io.to(`user:${t.rider_id}`).emit('trip:update', view(t, 'rider'));
   if (t.driver_id) io.to(`user:${t.driver_id}`).emit('trip:update', view(t, 'driver'));
   io.to(`share:${t.id}`).emit('trip:update', view(t, 'public'));
@@ -519,7 +521,11 @@ function driverLocation(userId, loc = {}) {
   d.lat = lat; d.lng = lng; d.heading = Number(loc.heading) || null; d.updatedAt = Date.now();
   if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
   // About a minute away from the pickup: tell the rider to head out.
-  if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId && haversineKm(d, d.pickup) < 0.35) riderAlert(d.trip, 'near');
+  if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId) {
+    const km = haversineKm(d, d.pickup);
+    if (km < 0.35) riderAlert(d.trip, 'near');
+    liveActivity.onDriverMoved(d.trip, km);
+  }
   if (d.queuedTripId) io.to(`trip:${d.queuedTripId}`).emit('driver:location', { tripId: d.queuedTripId, lat, lng, heading: d.heading });
   if (d.home && haversineKm(d, d.home) < 0.8) { d.home = null; notify(userId, 'driver:home', { on: false, arrived: true }); }
   return true;
@@ -543,7 +549,11 @@ function moveDriver(id, lat, lng) {
   }
   d.lat = lat; d.lng = lng; d.updatedAt = Date.now();
   if (d.tripId) io.to(`trip:${d.tripId}`).emit('driver:location', { tripId: d.tripId, lat, lng, heading: d.heading });
-  if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId && haversineKm(d, d.pickup) < 0.35) riderAlert(d.trip, 'near');
+  if (d.tripId && d.tripStatus === 'accepted' && d.pickup && d.trip && d.trip.id === d.tripId) {
+    const km = haversineKm(d, d.pickup);
+    if (km < 0.35) riderAlert(d.trip, 'near');
+    liveActivity.onDriverMoved(d.trip, km);
+  }
 }
 
 function joinTripRoom(userId, tripId) {

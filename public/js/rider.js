@@ -1651,6 +1651,7 @@
     if (S.trip && t.id < S.trip.id) return;
     const prev = S.trip && S.trip.status;
     S.trip = t;
+    K.onTrip(t);   // store apps: the trip on the lock screen (and gone when it ends or is cancelled)
     if (t.status === 'scheduled') {
       K.toast(`${svcName(t.service)} scheduled for ${whenLabel(t.scheduledFor)}`, 4500);
       S.trip = null; reset(); loadUpcoming(); return;
@@ -1666,7 +1667,6 @@
       if (t.status === 'arrived') { K.hapticNotify('WARNING', [120, 80, 120]); chime(); }
       if (t.status === 'completed') { S.note = ''; K.hapticNotify('SUCCESS'); }
     }
-    K.onTrip(t);
     S.pickup = t.pickup; S.drop = t.drop;
     document.querySelectorAll('.page[data-tabpage]').forEach((p) => p.remove());
     root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === 'home' ? 'page' : 'false'));

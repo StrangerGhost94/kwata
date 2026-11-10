@@ -1692,6 +1692,13 @@ r.post('/push/native', auth.requireAuth(), limit(30, 10 * 60e3, (req) => 'user:'
   rt.markPush(req.user.id, true);
   res.json({ ok: true, sending: fcm.configured() });
 }));
+// The rider's iPhone Live Activity for a trip (src/liveactivity.js): its push token, so the server
+// can keep the lock screen current while the app is closed.
+r.post('/push/live-activity', auth.requireAuth('rider'), limit(30, 10 * 60e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
+  const { tripId, token } = req.body || {};
+  if (!(await require('./liveactivity').register(req.user.id, tripId, token))) return bad(res, 'That trip or token isn’t valid.');
+  res.json({ ok: true });
+}));
 r.post('/push/native/remove', auth.requireAuth(), wrap(async (req, res) => {
   await fcm.remove(req.user.id, (req.body || {}).token);
   rt.markPush(req.user.id, await dtools.hasPush(req.user.id));
