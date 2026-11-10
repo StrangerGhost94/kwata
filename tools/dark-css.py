@@ -15,7 +15,7 @@ BG = {
   '#f2f2f7': '#000000', '#fdfcfb': '#1C1C1E', '#fafafa': '#1C1C1E', '#fbfbfd': '#1C1C1E',
   '#f7f7f9': '#2C2C2E', '#f5f5f7': '#2C2C2E', '#f2f2f5': '#2C2C2E', '#f4f4f6': '#2C2C2E', '#f6f6f8': '#2C2C2E',
   '#ececf0': '#3A3A3C', '#eaeaee': '#3A3A3C', '#ededf0': '#2C2C2E', '#e5e5ea': '#3A3A3C', '#efeff4': '#2C2C2E',
-  '#f8f5f0': '#0A1416', '#f3f5f4': '#0A1416', '#fff7db': '#3A2E12', '#e5f1f0': '#3A2E12', '#fdecec': '#3B1513', '#f7f7f7': '#2C2C2E', '#eee': '#2C2C2E', '#ddd': '#3A3A3C',
+  '#f8f5f0': '#0A1416', '#f3f5f4': '#0A1416', '#edf0ef': '#0A1416', '#fff7db': '#3A2E12', '#e5f1f0': '#3A2E12', '#fdecec': '#3B1513', '#f7f7f7': '#2C2C2E', '#eee': '#2C2C2E', '#ddd': '#3A3A3C',
 }
 # Areas that are dark on purpose, or brand-coloured, keep their colours.
 SKIP = re.compile(r'splash|rewards|pass-tick|\.sp-|auth-hero|auth-shade|\.req\b|\.wm|btn-primary|btn-danger|badge|\.hero|onboard|trip-banner|sos|\.dark|glass-back|toast|plate-chip|\.veh\b|leaflet|maplibre|pin-|map-label|cam|::selection|set-swatch|sw-|ch-wa|ch-tg|admin|qr', re.I)
