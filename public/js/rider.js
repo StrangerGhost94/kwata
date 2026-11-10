@@ -1983,12 +1983,12 @@
     const card = (t, i) => {
       const d = t.driver || {}, s = st(t);
       return `<button class="tc" data-t="${i}" style="--i:${Math.min(i, 8)}">
-        <span class="tc-map">${K.routeThumb([t.pickup, ...(t.stops || []), t.drop])}</span>
+        <span class="tc-map" data-snap="${i}">${K.routeThumb([t.pickup, ...(t.stops || []), t.drop])}${d.name ? `<span class="tc-face">${d.photo ? `<img src="${K.esc(d.photo)}" alt="" loading="lazy">` : K.initials(d.name)}</span>` : ''}</span>
         <span class="grow"><b class="ellipsis">${K.esc(shorten(t.drop.address, 34))}</b>
           <small class="ellipsis">From ${K.esc(shorten(t.pickup.address, 28))}</small>
           <small class="ellipsis">${K.when(t.completedAt || t.createdAt)} · ${K.esc(svcName(t.service))}${d.name ? ` · ${K.esc(K.first(d.name))}` : ''}</small>
           ${s ? `<span class="badge ${s[1]}">${s[0]}</span>` : ''}</span>
-        <span class="tc-p">${t.status === 'completed' ? K.ugx((t.payable ?? t.fare) + (t.tip || 0)) : t.cancelFee || t.noShowFee ? K.ugx(t.cancelFee || t.noShowFee) : ''}${t.myStars ? `<span class="tc-stars" aria-label="You gave ${t.myStars} stars">★ ${t.myStars}</span>` : ''}${d.photo ? `<img class="tc-face" src="${K.esc(d.photo)}" alt="">` : ''}</span></button>`;
+        <span class="tc-p">${t.status === 'completed' ? K.ugx((t.payable ?? t.fare) + (t.tip || 0)) : t.cancelFee || t.noShowFee ? K.ugx(t.cancelFee || t.noShowFee) : ''}${t.myStars ? `<span class="tc-stars" aria-label="You gave ${t.myStars} stars">★ ${t.myStars}</span>` : ''}</span></button>`;
     };
     let idx = 0; const flat = [];
     el.innerHTML = `<div class="page-title">Activity</div>
@@ -2001,6 +2001,16 @@
       : `<div class="empty"><div class="illu">${K.ART[filter === 'parcel' ? 'parcel' : 'boda']}</div><h3>${filter === 'cancelled' ? 'No cancelled trips' : `No ${filter === 'parcel' ? 'deliveries' : 'trips'} yet`}</h3><p class="small">${filter === 'cancelled' ? 'Trips you or a driver cancel show here.' : `Your ${filter === 'parcel' ? 'deliveries' : 'rides and deliveries'} will show here.`}</p>${filter === 'cancelled' ? '' : `<button class="btn btn-primary" id="first">${filter === 'parcel' ? 'Send a parcel' : 'Book a ride'}</button>`}</div>`}`;
     el.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => paintActivity(el, b.dataset.f, S.history || []));
     el.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => tripDetails(flat[+b.dataset.t]));
+    // Each card's sketch becomes a real map picture of the trip as it scrolls into view.
+    const showSnap = (box) => {
+      const t = flat[+box.dataset.snap]; if (!t || box.dataset.done) return; box.dataset.done = '1';
+      K.tripSnap(t).then((url) => { if (!box.isConnected) return; const sk = box.querySelector('.rthumb'); const img = new Image(); img.className = 'tc-snap'; img.alt = ''; img.src = url; if (sk) sk.replaceWith(img); else box.prepend(img); }).catch(() => {});
+    };
+    const boxes = el.querySelectorAll('[data-snap]');
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { io.unobserve(e.target); showSnap(e.target); } }), { rootMargin: '200px' });
+      boxes.forEach((b) => io.observe(b));
+    } else boxes.forEach(showSnap);
     el.querySelectorAll('[data-month]').forEach((b) => b.onclick = () => openSummary(null, b.dataset.month || undefined));
     const f = K.$('#first', el); if (f) f.onclick = () => { openTab('home'); if (filter === 'parcel') setService('parcel'); openSearch(); };
   }

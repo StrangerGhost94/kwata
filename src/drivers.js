@@ -50,7 +50,8 @@ async function hasPush(userId) {
 
 // Sends to every phone the user subscribed: Web Push for the web app, FCM for the store apps.
 // Dead subscriptions are removed.
-async function push(userId, payload, { ttl = 60, urgency = 'high' } = {}) {
+// `report` (an array) collects what each phone's push service answered, for "Send a test alert".
+async function push(userId, payload, { ttl = 60, urgency = 'high', report = null } = {}) {
   const native = fcm.send(userId, payload, { ttl, urgency }).catch((e) => { console.error('fcm', e.message); return 0; });
   let rows;
   try { await vapidKeys(); rows = (await db.query('SELECT * FROM push_subscriptions WHERE user_id = $1', [userId])).rows; }
@@ -60,9 +61,14 @@ async function push(userId, payload, { ttl = 60, urgency = 'high' } = {}) {
     try {
       await webpush.sendNotification({ endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }, JSON.stringify(payload), { TTL: ttl, urgency });
       sent++;
+      if (report) report.push({ ok: true });
     } catch (e) {
-      if (e.statusCode === 404 || e.statusCode === 410) await db.query('DELETE FROM push_subscriptions WHERE id = $1', [r.id]).catch(() => {});
-      else console.error('push failed', e.statusCode || '', e.message);
+      // Gone (404/410), or made with keys this server no longer has (401/403, e.g. after the keys
+      // changed): the link is dead either way. Remove it so the app sets up a fresh one.
+      const dead = [401, 403, 404, 410].includes(e.statusCode);
+      if (dead) await db.query('DELETE FROM push_subscriptions WHERE id = $1', [r.id]).catch(() => {});
+      if (!dead || e.statusCode === 401 || e.statusCode === 403) console.error('push failed', e.statusCode || '', e.message);
+      if (report) report.push({ ok: false, status: e.statusCode || 0, dead });
     }
   }));
   return sent;

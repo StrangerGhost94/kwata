@@ -1345,19 +1345,46 @@
       if (!supported()) throw new Error(iosBrowser() ? 'Add Flytte to your Home Screen first (Share → Add to Home Screen), then turn on alerts.' : 'This browser can’t show alerts.');
       const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
       if (perm !== 'granted') throw new Error('Alerts are blocked. Allow notifications for Flytte in your phone settings.');
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_, rej) => setTimeout(() => rej(new Error('Flytte is still setting up on this phone. Close the app, open it again and try once more.')), 8000))]);
+      const { key } = await K.api('/push/key');
       let sub = await reg.pushManager.getSubscription();
-      if (!sub) { const { key } = await K.api('/push/key'); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(key) }); }
+      // A link made with keys the server no longer has can never deliver: replace it.
+      if (sub && !sameKey(sub, key)) { try { await sub.unsubscribe(); } catch {} sub = null; }
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(key) });
       await K.api('/push/subscribe', { subscription: sub.toJSON() });
       return true;
+    }
+    const sameKey = (sub, key) => {
+      try {
+        const k = sub.options && sub.options.applicationServerKey;
+        if (!k) return true;   // the browser doesn't say: assume it's fine
+        const a = new Uint8Array(k), b = u8(key);
+        return a.length === b.length && a.every((x, i) => x === b[i]);
+      } catch { return true; }
+    };
+    // Quietly keeps this phone's link good when alerts are on: re-made if the server's keys changed,
+    // re-sent if the server lost it. Never asks for permission.
+    async function repair() {
+      try { if (!supported() || Notification.permission !== 'granted' || !(await current())) return false; await enable(); return true; } catch { return false; }
     }
     async function disable() {
       const sub = await current();
       if (sub) { await K.api('/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
     }
     const permission = () => ('Notification' in window ? Notification.permission : 'default');
-    return { supported, enable, disable, current, iosBrowser, permission };
+    return { supported, enable, disable, current, iosBrowser, permission, repair };
   })();
+  // Sends a test alert to this account's phones and explains the result in plain words.
+  // Works for the web app and the store apps (whatever K.push is).
+  K.pushTest = async function () {
+    if (!(await K.push.current())) await K.push.enable();
+    let r = await K.api('/push/test', {});
+    if (!r.sent && r.dead) { await K.push.enable(); r = await K.api('/push/test', {}); }   // the old link was dead: a fresh one, then again
+    if (r.sent) return 'Sent. It should appear in a few seconds. If it doesn’t, allow notifications for Flytte in your phone’s Settings → Apps, and turn off battery saver for it.';
+    throw new Error(r.phones ? 'Your phone’s notification service didn’t accept the alert. Turn alerts off and on again, then try once more.' : 'This phone isn’t linked for alerts yet. Turn alerts off and on again.');
+  };
+  // Signed in with alerts on: keep this phone's link good in the background.
+  if (APP === 'rider' || APP === 'driver') window.addEventListener('load', () => setTimeout(() => { if (K.token() && K.push.repair) K.push.repair(); }, 6000));
 
   // ---------- location ----------
   // The driver app's store version replaces these (native.js) to keep sending location with the screen off.
@@ -1537,8 +1564,9 @@
       const t = K.themePref(), l = K.lang();
       const alertNote = alertsOn ? 'On · we’ll tell you when your driver is close, has arrived, and when your trip ends.' : K.push.supported() ? 'Get a notification when your driver is close or has arrived, even with your phone locked.' : K.push.iosBrowser() ? 'Add Flytte to your Home Screen (Share → Add to Home Screen) to use trip alerts.' : 'Not available in this browser.';
       body.innerHTML = `
-        ${role === 'rider' ? `<h3 class="set-h">Notifications</h3>
-        <div class="set-card list"><button class="set-row" data-alerts role="switch" aria-checked="${alertsOn}" ${K.push.supported() ? '' : 'disabled'}><span class="grow"><b>Trip alerts</b><small>${alertNote}</small></span><span class="set-switch${alertsOn ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>` : ''}
+        <h3 class="set-h">Notifications</h3>
+        <div class="set-card list">${role !== 'rider' ? '' : `<button class="set-row" data-alerts role="switch" aria-checked="${alertsOn}" ${K.push.supported() ? '' : 'disabled'}><span class="grow"><b>Trip alerts</b><small>${alertNote}</small></span><span class="set-switch${alertsOn ? ' on' : ''}" aria-hidden="true"><i></i></span></button>`}
+          <button class="set-row" data-test ${K.push.supported() ? '' : 'disabled'}><span class="grow"><b>Send a test alert</b><small data-test-note>${K.push.supported() ? `Check that ${role === 'driver' ? 'ride requests' : 'trip alerts'} reach this phone.` : 'This browser can’t show alerts.'}</small></span>${K.ic('chev', 'sm')}</button></div>
         <h3 class="set-h">Appearance</h3>
         <div class="set-card"><div class="set-seg" role="radiogroup" aria-label="Appearance">
           ${[['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([k, n]) => `<button role="radio" aria-checked="${t === k}" data-theme="${k}">
@@ -1558,6 +1586,14 @@
       body.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { K.haptic(); K.setTheme(b.dataset.theme); draw(); });
       body.querySelectorAll('[data-lang]').forEach((b) => b.onclick = () => { if (b.dataset.lang === K.lang()) return; K.haptic(); K.setLang(b.dataset.lang); });
       K.$('[data-del]', body).onclick = () => deleteAccount(role);
+      const tb = K.$('[data-test]', body);
+      if (tb) tb.onclick = async () => {
+        const note = K.$('[data-test-note]', body);
+        K.haptic(); tb.disabled = true; note.textContent = 'Sending…';
+        let msg; try { msg = await K.pushTest(); alertsOn = true; } catch (e) { msg = e.message; }
+        draw();
+        const n2 = K.$('[data-test-note]', body); if (n2) n2.textContent = msg;
+      };
       const al = K.$('[data-alerts]', body);
       if (al) al.onclick = async () => {
         K.haptic(); al.disabled = true;
@@ -1918,6 +1954,88 @@
 
   // A small drawing of a trip's route (pickup → stops → destination) for lists, without loading a map.
   // Points are fitted into the box; each leg bends a little so it reads as a road, not a ruler line.
+  // ---------- trip map snapshots (Activity) ----------
+  // A real picture of each past trip: the Flytte map with the route drawn on it. One hidden map
+  // draws them one after another; each picture is kept on the phone, so a trip is only drawn once.
+  // Phones without WebGL (or if anything fails) keep the simple line sketch from K.routeThumb.
+  K.tripSnap = (() => {
+    const SIZE = 168, STORE = 'flytte_trip_snaps', KEEP = 24;
+    const mem = new Map(), waiting = new Map(), queue = [];
+    let map = null, host = null, working = false, idleTimer = null, broken = false;
+    const keyOf = (t) => `${t.id}:${K.dark() ? 'd' : 'l'}:2`;
+    const saved = () => { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch { return {}; } };
+    function save(k, url) {
+      try {
+        const all = saved(); all[k] = url;
+        const keys = Object.keys(all); while (keys.length > KEEP) delete all[keys.shift()];
+        localStorage.setItem(STORE, JSON.stringify(all));
+      } catch { try { localStorage.removeItem(STORE); } catch {} }
+    }
+    function ensureMap() {
+      if (map) return map;
+      host = document.createElement('div');
+      host.setAttribute('aria-hidden', 'true');
+      host.style.cssText = `position:fixed;left:-9999px;top:0;width:${SIZE}px;height:${SIZE}px;pointer-events:none;visibility:hidden`;
+      document.body.appendChild(host);
+      map = new window.maplibregl.Map({ container: host, style: K.mapStyle(K.dark()), center: [K.KAMPALA.lng, K.KAMPALA.lat], zoom: 13, interactive: false, attributionControl: false,
+        fadeDuration: 0, pixelRatio: Math.min(2, window.devicePixelRatio || 1), preserveDrawingBuffer: true, canvasContextAttributes: { preserveDrawingBuffer: true } });
+      map._dark = K.dark();
+      return map;
+    }
+    function closeMap() { try { map && map.remove(); } catch {} try { host && host.remove(); } catch {} map = host = null; }
+    const idle = (m, ms) => new Promise((res) => { let done = false; const fin = () => { if (!done) { done = true; res(); } }; m.once('idle', fin); setTimeout(fin, ms); });
+    async function draw(t) {
+      const m = ensureMap();
+      if (m._dark !== K.dark()) { m.setStyle(K.mapStyle(K.dark())); m._dark = K.dark(); }
+      if (!m.isStyleLoaded()) await idle(m, 8000);
+      const pts = [t.pickup, ...(t.stops || []), t.drop];
+      let coords = pts.map((p) => [p.lat, p.lng]);
+      try { const r = await K.route(t.pickup, t.drop, t.stops || []); if (r && r.coords && r.coords.length > 1) coords = r.coords; } catch {}
+      const lats = coords.map((c) => c[0]), lngs = coords.map((c) => c[1]);
+      m.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 30, animate: false, maxZoom: 15.5 });
+      await idle(m, 7000);
+      const src = m.getCanvas(), k = src.width / SIZE;
+      const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+      const g = c.getContext('2d');
+      g.drawImage(src, 0, 0);
+      const xy = coords.map(([la, ln]) => { const p = m.project([ln, la]); return [p.x * k, p.y * k]; });
+      const path = () => { g.beginPath(); xy.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); };
+      const dark = K.dark();
+      g.lineJoin = g.lineCap = 'round';
+      path(); g.strokeStyle = dark ? '#0A1416' : '#FFFFFF'; g.lineWidth = 7 * k; g.stroke();
+      path(); g.strokeStyle = dark ? '#F2B544' : '#073B42'; g.lineWidth = 3.6 * k; g.stroke();
+      const dot = ([x, y], fill, ring) => { g.beginPath(); g.arc(x, y, 5.2 * k, 0, 6.3); g.fillStyle = ring; g.fill(); g.beginPath(); g.arc(x, y, 3.2 * k, 0, 6.3); g.fillStyle = fill; g.fill(); };
+      dot(xy[0], '#F2B544', '#073B42');
+      dot(xy[xy.length - 1], '#FFFFFF', '#0A7539');
+      const url = c.toDataURL('image/jpeg', 0.72);
+      if (url.length < 2000) throw new Error('blank');   // nothing was drawn (lost context)
+      return url;
+    }
+    async function work() {
+      if (working) return; working = true; clearTimeout(idleTimer);
+      while (queue.length && !broken) {
+        const t = queue.shift(), k = keyOf(t);
+        try { const url = await draw(t); mem.set(k, url); save(k, url); (waiting.get(k) || []).forEach((w) => w.res(url)); }
+        catch (e) { broken = true; (waiting.get(k) || []).forEach((w) => w.rej(e)); }
+        waiting.delete(k);
+      }
+      if (broken) { queue.splice(0).forEach((t) => { const k = keyOf(t); (waiting.get(k) || []).forEach((w) => w.rej(new Error('no map'))); waiting.delete(k); }); }
+      working = false;
+      idleTimer = setTimeout(() => { if (!working) closeMap(); }, 4000);   // free the map's memory when done
+    }
+    // Resolves to a picture (data URL) of this trip's route on the map.
+    return function (t) {
+      const k = keyOf(t);
+      if (mem.has(k)) return Promise.resolve(mem.get(k));
+      const s = saved()[k]; if (s) { mem.set(k, s); return Promise.resolve(s); }
+      if (broken || !webgl || !window.maplibregl || !t.pickup || !t.drop) return Promise.reject(new Error('no map'));
+      return new Promise((res, rej) => {
+        if (waiting.has(k)) waiting.get(k).push({ res, rej });
+        else { waiting.set(k, [{ res, rej }]); queue.push(t); work(); }
+      });
+    };
+  })();
+
   K.routeThumb = function (pts, { w = 64, h = 64, pad = 12 } = {}) {
     const P = pts.filter((p) => p && Number.isFinite(+p.lat) && Number.isFinite(+p.lng));
     if (P.length < 2) return `<svg class="rthumb" viewBox="0 0 ${w} ${h}" aria-hidden="true"></svg>`;
