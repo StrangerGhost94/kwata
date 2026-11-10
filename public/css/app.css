@@ -2053,16 +2053,20 @@ html.theme-dark:not(.launch-dark) .sp-icon.sp-gold { background: linear-gradient
 .tc b { font-size: .98rem; font-weight: 700; }
 .tc small { font-size: .78rem; color: var(--ink-2); }
 .tc .badge { justify-self: start; margin-top: 3px; }
-.tc-map { width: 64px; height: 64px; border-radius: 14px; overflow: hidden; flex: none; background: var(--surface); }
+.tc-map { position: relative; width: 84px; height: 84px; border-radius: 16px; flex: none; background: var(--surface); }
+.tc-map .rthumb, .tc-snap { width: 100%; height: 100%; display: block; border-radius: 16px; object-fit: cover; }
+.tc-snap { animation: fadeIn .3s ease both; }
 .tc-p { display: grid; justify-items: end; gap: 6px; font-weight: 800; font-size: .92rem; white-space: nowrap; }
-.tc-face { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
+/* The driver, on the corner of the trip's map: their photo, or their initials. */
+.tc-face { position: absolute; right: -6px; bottom: -6px; width: 34px; height: 34px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: var(--brand-soft); color: var(--accent-ink); font-size: .72rem; font-weight: 800; box-shadow: 0 0 0 2.5px var(--card); }
+.tc-face img { width: 100%; height: 100%; object-fit: cover; }
 .tc-stars { color: #B8860B; font-weight: 700; }
 .sk-tc { cursor: default; animation: none; }
 .rthumb { width: 100%; height: 100%; display: block; }
 .rt-grid { stroke: var(--line); stroke-width: 3; fill: none; opacity: .7; }
 .rt-line-bg { stroke: var(--card); stroke-width: 5; fill: none; stroke-linecap: round; }
-.rt-line { stroke: var(--ink); stroke-width: 2.4; fill: none; stroke-linecap: round; }
-.rt-a { fill: var(--brand); stroke: var(--ink); stroke-width: 1.4; }
+.rt-line { stroke: var(--brand); stroke-width: 2.4; fill: none; stroke-linecap: round; }
+.rt-a { fill: var(--gold); stroke: #073B42; stroke-width: 1.4; }
 .rt-b { fill: var(--ink); }
 .rt-stop { fill: var(--card); stroke: var(--ink); stroke-width: 1.4; }
 .td-map { height: 180px; margin: -6px -6px 14px; border-radius: 16px; overflow: hidden; background: var(--surface); }

@@ -38,6 +38,8 @@ const day = (n) => new Date(Date.now() + 3 * 3600e3 + n * 86400e3).toISOString()
   await api('/push/subscribe', { subscription: sub }, driver.token);
   ov = await api('/driver/overview', null, driver.token);
   assert(ov.push === true, 'a phone can subscribe to ride alerts');
+  const tp = await api('/push/test', {}, driver.token);
+  assert(tp.phones === 1 && tp.sent === 0 && tp.failed === 1 && tp.dead === 0, 'a test alert reports what happened on each phone (here: one phone, not reachable)');
   await api('/push/unsubscribe', { endpoint: sub.endpoint }, driver.token);
   assert((await api('/driver/overview', null, driver.token)).push === false, 'and unsubscribe');
 

@@ -1685,6 +1685,16 @@ r.post('/push/subscribe', auth.requireAuth(), wrap(async (req, res) => {
   rt.markPush(req.user.id, true);
   res.json({ ok: true });
 }));
+// "Send a test alert" in Settings: sends one to this account's phones and says what happened,
+// so "alerts don't work" becomes a clear answer (and a dead link is found and cleared).
+r.post('/push/test', auth.requireAuth('rider', 'driver'), limit(6, 10 * 60e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
+  const report = [];
+  const sent = await dtools.push(req.user.id, { app: req.user.role === 'driver' ? 'driver' : 'rider', type: 'test', tag: 'flytte-test',
+    title: 'Flytte alerts are working', body: req.user.role === 'driver' ? 'Ride requests will ring like this when your screen is off.' : 'We’ll tell you when your driver is close and when they’ve arrived.' },
+  { ttl: 120, urgency: 'high', report });
+  rt.markPush(req.user.id, await dtools.hasPush(req.user.id));
+  res.json({ sent, phones: report.length, dead: report.filter((x) => x.dead).length, failed: report.filter((x) => !x.ok && !x.dead).length });
+}));
 // The store apps register their Firebase token instead (src/fcm.js).
 r.post('/push/native', auth.requireAuth(), limit(30, 10 * 60e3, (req) => 'user:' + req.user.id), wrap(async (req, res) => {
   const { token, platform, app } = req.body || {};
