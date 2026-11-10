@@ -3,6 +3,7 @@
 // Run against a server started with SCHEDULE_LEAD_MIN=30 to test scheduled activation.
 const { io } = require('socket.io-client');
 const BASE = process.env.BASE || 'http://localhost:3000';
+const wp = (token) => require('./_wallet')(BASE, token);   // a wallet pass (the rider's Wallet PIN)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = () => String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 async function call(path, body, token, method) {
@@ -82,7 +83,7 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   await api('/wallet/topup', { amount: 5000, method: 'momo' }, bob.token);
   const wbBefore = (await api('/wallet', null, bob.token)).balance;
   const b2 = await bal();
-  const r2 = await ride(bob, { quoteId: est3.quoteId, promoCode: code, paymentMethod: 'wallet' });
+  const r2 = await ride(bob, { quoteId: est3.quoteId, promoCode: code, paymentMethod: 'wallet', walletPass: await wp(bob.token) });
   const wbAfter = (await api('/wallet', null, bob.token)).balance;
   assert(wbBefore - wbAfter === r2.t.fare - r2.t.discount, `wallet trip: Bob paid ${r2.t.fare - r2.t.discount} (fare ${r2.t.fare} less ${r2.t.discount})`);
   assert((await bal()) - b2 === r2.t.fare - Math.round(r2.t.fare * 0.12), 'wallet trip with promo: driver still earns on the full fare');
@@ -99,7 +100,7 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   const b3 = await bal();
   const wbt = (await api('/wallet', null, bob.token)).balance;
   const tipToast = new Promise((r) => ds.once('toast', r));
-  await api(`/trips/${r2.t.id}/tip`, { amount: 1000, method: 'wallet' }, bob.token);
+  await api(`/trips/${r2.t.id}/tip`, { amount: 1000, method: 'wallet', walletPass: await wp(bob.token) }, bob.token);
   assert((await bal()) - b3 === 1000 && wbt - (await api('/wallet', null, bob.token)).balance === 1000, 'wallet tip: UGX 1,000 moves from rider to driver, no commission');
   assert(/tipped you UGX 1,000/.test((await tipToast).text), 'driver is told about the tip');
   const tip2 = await call(`/trips/${r2.t.id}/tip`, { amount: 500, method: 'cash' }, bob.token);

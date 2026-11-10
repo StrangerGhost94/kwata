@@ -123,7 +123,8 @@ function publicUser(u) {
     emergencyContact: u.emergency_contact,
     savedPlaces: (() => { try { return JSON.parse(u.saved_places || '{}'); } catch { return {}; } })(),
     payPref: u.pay_pref || 'cash', payPhone: u.pay_phone || u.phone,
-    walletLock: !!u.wallet_lock,
+    walletLock: !!u.wallet_lock,      // fingerprint / Face ID is set up on at least one phone
+    walletPin: !!u.wallet_pin_hash,   // the Wallet PIN exists (needed to pay from the wallet)
     emailVerified: !!u.email_verified, emailReceipts: u.email_receipts !== false,
     photo: u.photo || null,
     ridePrefs: (() => { try { return JSON.parse(u.ride_prefs || '{}'); } catch { return {}; } })(),

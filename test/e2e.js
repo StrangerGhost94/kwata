@@ -1,6 +1,7 @@
 // End-to-end ride simulation: rider books, driver accepts, PIN start, complete, pay, rate.
 const { io } = require('socket.io-client');
 const BASE = process.env.BASE || 'http://localhost:3000';
+const wp = (token) => require('./_wallet')(BASE, token);   // a wallet pass (the rider's Wallet PIN)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = () => String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 async function api(path, body, token, method) {
@@ -102,7 +103,7 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('â
   const top = await api('/wallet/topup', { amount: 20000, method: 'momo' }, rider.token);
   assert(top.balance === 20000, 'wallet top-up (demo) credited');
   const off2 = new Promise((r) => ds.once('trip:offer', r));
-  const t2 = await api('/trips', { service: 'boda', paymentMethod: 'wallet', pickup, drop, distanceKm: 3.2, durationMin: 12 }, rider.token);
+  const t2 = await api('/trips', { service: 'boda', paymentMethod: 'wallet', walletPass: await wp(rider.token), pickup, drop, distanceKm: 3.2, durationMin: 12 }, rider.token);
   await off2; await ds.emitWithAck('trip:respond', { tripId: t2.id, accept: true });
   await api(`/trips/${t2.id}/start`, { pin: t2.pin }, driver.token);
   await api(`/trips/${t2.id}/complete`, {}, driver.token);

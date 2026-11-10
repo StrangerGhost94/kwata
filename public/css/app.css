@@ -2366,3 +2366,8 @@ h1, h2, .page-title { letter-spacing: -.02em; }
 
 /* On the teal request screen the Accept button is gold, so it can't be missed. */
 .req .btns .btn-primary { background: var(--gold); color: var(--gold-ink); box-shadow: none; }
+
+/* Wallet PIN entry: four big, hidden digits. */
+.wallet-pin { display: block; width: 100%; max-width: 240px; margin: 4px auto 10px; height: 64px; border-radius: 16px; font-size: 2rem; letter-spacing: .6em; padding-left: calc(14px + .6em); text-align: center; -webkit-text-security: disc; }
+.unlock [data-step] .btn + .btn { margin-top: 8px; }
+

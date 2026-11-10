@@ -46,7 +46,7 @@ const day = (n) => new Date(Date.now() + 3 * 3600e3 + n * 86400e3).toISOString()
   const rider = await api('/auth/register', { name: 'Tools Rider', phone: '077' + rnd().slice(1), password: 'secret1' });
   await api('/wallet/topup', { amount: 5000, method: 'momo' }, rider.token);
   const pickup = { lat: 0.3136, lng: 32.5811, address: 'Kampala Road' }, drop = { lat: 0.3326, lng: 32.5686, address: 'Wandegeya' };
-  const book = async (who, method, p = pickup, d = drop) => { const t = await api('/trips', { service: 'boda', paymentMethod: method, pickup: p, drop: d, distanceKm: 3.2, durationMin: 12 }, who.token); want = t.id; return t; };
+  const book = async (who, method, p = pickup, d = drop) => { const t = await api('/trips', { service: 'boda', paymentMethod: method, walletPass: method === 'wallet' ? await require('./_wallet')(BASE, who.token) : undefined, pickup: p, drop: d, distanceKm: 3.2, durationMin: 12 }, who.token); want = t.id; return t; };
   // Waits for an offer for the trip booked next. Requests left over from other test runs are declined.
   let want = null;
   const offerFor = (ms = 4000) => new Promise((r) => {

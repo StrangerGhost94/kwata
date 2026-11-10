@@ -1035,7 +1035,7 @@
       body.tripReason = S.tripReason;
     }
     // A locked wallet needs the rider's fingerprint, face or a code before paying from it.
-    if (body.paymentMethod === 'wallet' && S.user.walletLock) {
+    if (body.paymentMethod === 'wallet') {   // the Wallet PIN (or fingerprint) every time, like mobile money
       body.walletPass = await K.walletLock.unlock({ amount: opt ? payOf(opt) : undefined });
       if (!body.walletPass) { btn.disabled = false; btn.textContent = `Request ${svcName(S.service)}`; return; }
     }
@@ -1046,7 +1046,7 @@
         if (a && ['requested', 'accepted', 'arrived', 'in_progress'].includes(a.status)) { onTrip(a); return; }
       }
       btn.disabled = false; btn.textContent = `Request ${svcName(S.service)}`;
-      if (e.code === 'WALLET_LOCK') { S.user.walletLock = true; book(); return; }   // locked on another phone meanwhile
+      if (e.code === 'WALLET_LOCK' || e.code === 'WALLET_SETUP') { book(); return; }   // the pass ran out: ask again
       if (e.code === 'NEED_REASON') { S.tripReason = null; const c2 = bizCompanies('business')[0]; if (c2) c2.requireReason = true; book(); return; }
       if (/Prices have just changed/.test(e.message)) { K.toast(e.message, 5000); refreshQuote(); return; }
       err.textContent = e.message;
@@ -1242,7 +1242,7 @@
       m.el.querySelectorAll('[data-m]').forEach((x) => x.onclick = async () => {
         try {
           let walletPass;
-          if (x.dataset.m === 'wallet' && S.user.walletLock) { m.close(); walletPass = await K.walletLock.unlock({ amount }); if (!walletPass) return; }
+          if (x.dataset.m === 'wallet') { m.close(); walletPass = await K.walletLock.unlock({ amount }); if (!walletPass) return; }
           await K.api(`/trips/${t.id}/tip`, { amount, method: x.dataset.m, walletPass });
           if (x.dataset.m === 'wallet') S.user.walletBalance -= amount;
           S.trip.tip = amount; S.trip.tipMethod = x.dataset.m; m.close(); K.toast('Tip sent. Thank you.'); render();
@@ -1456,7 +1456,7 @@
       pw.disabled = true;
       try {
         let walletPass;
-        if (S.user.walletLock) { walletPass = await K.walletLock.unlock({ amount: t.payable }); if (!walletPass) { pw.disabled = false; return; } }
+        walletPass = await K.walletLock.unlock({ amount: t.payable }); if (!walletPass) { pw.disabled = false; return; }
         await K.api(`/trips/${t.id}/pay-wallet`, { walletPass });
         S.trip.paymentStatus = 'paid'; S.trip.paymentMethod = 'wallet'; S.user.walletBalance -= t.payable; K.toast('Paid from your Flytte Wallet'); render();
       } catch (e) { K.$('#err').textContent = e.message; pw.disabled = false; }
@@ -2459,7 +2459,7 @@
       b.disabled = true;
       try {
         let walletPass;
-        if (method === 'wallet' && S.user.walletLock) { walletPass = await K.walletLock.unlock({ amount: pc.price }); if (!walletPass) { b.disabled = false; return; } }
+        if (method === 'wallet') { walletPass = await K.walletLock.unlock({ amount: pc.price }); if (!walletPass) { b.disabled = false; return; } }
         if (method === 'momo') {
           m.close();
           const r = await K.payMomo({ amount: pc.price, title: 'Pay for Flytte Pass', saved: S.user.payPhone, send: (x) => K.api('/me/pass/buy', { method: 'momo', ...x }) });
@@ -2898,29 +2898,29 @@
     draw();
   }
 
-  // Wallet lock switch. Turning it on registers this phone's fingerprint/face; turning it off needs proof.
+  // Wallet security rows: create or change the PIN; fingerprint / face on or off (both need the PIN).
   async function bindWalletLock(m, after) {
-    const row = K.$('#lockRow', m.el), sub = K.$('#lockSub', m.el), err = K.$('#err', m.el);
+    const row = K.$('#lockRow', m.el), sub = K.$('#lockSub', m.el), err = K.$('#err', m.el), pin = K.$('#pinRow', m.el);
+    const again = () => { m.close(); setTimeout(() => openWallet(after), 280); };
+    pin.onclick = async () => {
+      const had = S.user.walletPin;
+      const pass = await (had ? K.walletLock.changePin() : K.walletLock.unlock({}));
+      if (pass) { S.user.walletPin = true; try { const me = await K.api('/me'); S.user.walletLock = !!me.user.walletLock; } catch {} again(); }
+    };
     const can = await K.walletLock.supported();
+    const bn = K.$('#bioName', m.el); if (bn) bn.textContent = K.walletLock.bioName().replace(/^./, (c) => c.toUpperCase());
     if (!S.user.walletLock && !can) { row.disabled = true; sub.textContent = 'This phone has no fingerprint or face unlock set up, or this browser can’t use it.'; return; }
-    if (!S.user.walletLock) K.walletLock.prepare().catch(() => {});   // ready before the tap (iPhone needs the tap to start Face ID)
     row.onclick = async () => {
       err.textContent = ''; row.disabled = true;
       try {
-        if (!S.user.walletLock) {
-          await K.walletLock.create();
-          S.user.walletLock = true; K.toast('Wallet lock is on');
-        } else {
-          const pass = await K.walletLock.unlock({ title: 'Turn off wallet lock?' });
-          if (!pass) { row.disabled = false; return; }
-          await K.api('/wallet/lock/off', { pass });
-          S.user.walletLock = false; K.toast('Wallet lock is off');
-        }
-        m.close(); setTimeout(() => openWallet(after), 280);
+        const on = await K.walletLock.setBiometric(!S.user.walletLock);
+        if (on == null) { row.disabled = false; return; }
+        S.user.walletLock = on; S.user.walletPin = true;
+        K.toast(on ? `${K.walletLock.bioName().replace(/^./, (c) => c.toUpperCase())} is on for your wallet` : 'Turned off. Your PIN still protects your wallet.');
+        again();
       } catch (e) {
         row.disabled = false;
         err.textContent = e.name === 'NotAllowedError' ? 'Not set up. Try again when you’re ready.' : e.name === 'InvalidStateError' ? 'This phone is already set up.' : e.message;
-        if (!S.user.walletLock) K.walletLock.prepare().catch(() => {});
       }
     };
   }
@@ -2934,6 +2934,8 @@
       return;
     }
     if (!m.el.isConnected) return;
+    try { const st = await K.api('/wallet/lock'); S.user.walletPin = !!st.pinSet; S.user.walletLock = !!st.enabled; } catch {}
+    if (!m.el.isConnected) return;
     const live = S.config.paymentsAvailable;
     m.el.innerHTML = `
       <h2>Flytte Wallet</h2>
@@ -2946,9 +2948,14 @@
       ${S.config.cardPayments === false ? '' : `<button class="btn btn-block" data-m="card" style="margin-top:8px">${K.ic('card', 'sm')} Top up with a card</button>`}
       ${S.config.paymentsDemo ? '<p class="tiny faint" style="margin-top:8px">Test mode: top-ups are added instantly without charging you.</p>' : ''}` : '<p class="small muted">Wallet top-ups by Mobile Money and card are coming soon. Credit from Flytte Rewards and invites lands here, and you can use it to pay for trips.</p>'}
       <p class="error" id="err" role="alert"></p>
-      <div class="set-card list" style="margin:14px 0 4px"><button class="set-row" id="lockRow" role="switch" aria-checked="${!!S.user.walletLock}"><span class="ic-lock">${K.ic('lock')}</span>
-        <span class="grow"><b>Wallet lock</b><small id="lockSub">${S.user.walletLock ? `On · ${K.esc(K.walletLock.bioName())} or a code to pay from your wallet` : `Ask for ${K.esc(K.walletLock.bioName())} before paying from your wallet`}</small></span>
-        <span class="set-switch${S.user.walletLock ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
+      <h3 class="set-h" style="margin-top:18px">Security</h3>
+      <div class="set-card list" style="margin:0 0 4px">
+        <button class="set-row" id="pinRow"><span class="ic-lock">${K.ic('lock')}</span>
+          <span class="grow"><b>Wallet PIN</b><small>${S.user.walletPin ? 'On · asked every time you pay from your wallet' : 'Create the PIN that protects your wallet'}</small></span>
+          <span class="small muted">${S.user.walletPin ? 'Change' : 'Create'}</span></button>
+        <button class="set-row" id="lockRow" role="switch" aria-checked="${!!S.user.walletLock}"><span class="ic-lock">${K.ic('shield')}</span>
+          <span class="grow"><b id="bioName">${K.esc(K.walletLock.bioName())}</b><small id="lockSub">${S.user.walletLock ? 'On · pay without typing your PIN on this phone' : 'Pay faster on this phone. Your PIN always works too.'}</small></span>
+          <span class="set-switch${S.user.walletLock ? ' on' : ''}" aria-hidden="true"><i></i></span></button></div>
       ${w.transactions.length ? `<h3>History</h3>${w.transactions.map((x) => `<div class="tx"><span>${K.esc(x.note || x.type)}<br><span class="tiny faint">${K.when(x.created_at)}</span></span><span class="${x.amount > 0 ? 'pos' : 'neg'}">${x.amount > 0 ? '+' : ''}${K.ugx(x.amount)}</span></div>`).join('')}` : ''}`;
     m.el.querySelectorAll('[data-amt]').forEach((b) => b.onclick = () => { K.$('#amt', m.el).value = b.dataset.amt; });
     bindWalletLock(m, after);
