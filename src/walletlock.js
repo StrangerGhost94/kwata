@@ -1,7 +1,11 @@
-// Wallet lock: riders can require their fingerprint or face (the phone's own screen lock, via
-// passkeys / WebAuthn) before money leaves their Flytte Wallet. The server checks the signature,
-// so the lock can't be skipped by changing the app. A code sent to the phone is the fallback
-// (new phone, or the fingerprint sensor isn't available).
+// Wallet security. Money only leaves a rider's Flytte Wallet after they prove it's them, every
+// time, like mobile money:
+//   - a 4-digit Wallet PIN (everyone; it can't be switched off), or
+//   - their fingerprint / face on a phone they've set up (passkeys on the web, the phone's secure
+//     storage in the store apps). Setting that up needs the PIN first.
+// The server checks the proof and hands back a short-lived "wallet pass" that the paying request
+// must carry, so the lock can't be skipped by changing the app. Five wrong PINs lock the wallet
+// for 15 minutes. A forgotten PIN is reset with a code sent to the phone; a code alone never pays.
 const { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } = require('@simplewebauthn/server');
 const db = require('./db');
 const auth = require('./auth');
@@ -107,19 +111,71 @@ async function unlockDevice(req) {
 }
 
 async function status(userId) {
-  const u = await db.one('SELECT wallet_lock FROM users WHERE id = $1', [userId]);
+  const u = await db.one('SELECT wallet_lock, wallet_pin_hash, wallet_pin_locked_until, wallet_pin_set_at FROM users WHERE id = $1', [userId]);
   const { rows } = await db.query('SELECT id, device, created_at, last_used_at FROM passkeys WHERE user_id = $1 ORDER BY id', [userId]);
   const { rows: apps } = await db.query('SELECT id, device, created_at, last_used_at FROM wallet_devices WHERE user_id = $1 ORDER BY id', [userId]);
-  return { enabled: !!(u && u.wallet_lock), devices: [...rows, ...apps].map((r) => ({ id: r.id, device: r.device, addedAt: r.created_at, lastUsedAt: r.last_used_at })) };
+  return { pinSet: !!(u && u.wallet_pin_hash), pinSetAt: u && u.wallet_pin_set_at, lockedMinutes: u ? lockedFor(u) : 0,
+    enabled: !!(u && u.wallet_lock), devices: [...rows, ...apps].map((r) => ({ id: r.id, device: r.device, addedAt: r.created_at, lastUsedAt: r.last_used_at })) };
 }
 
-async function turnOff(userId) {
+// Turns fingerprint / face off on every phone. The PIN stays: it can't be switched off.
+const turnOff = clearBiometrics;
+
+// ---------- Wallet PIN ----------
+const bcrypt = require('bcryptjs');
+const PIN_TRIES = 5, PIN_LOCK_MS = 15 * 60e3, NEW_ACCOUNT_MS = 30 * 60e3;
+const err = (message, status = 400, code) => Object.assign(new Error(message), { status, code });
+// PINs anyone would try first: all the same digit, straight runs, and the usual suspects.
+function weakPin(pin) {
+  if (/^(\d)\1{3}$/.test(pin)) return true;
+  if ('0123456789012'.includes(pin) || '9876543210987'.includes(pin)) return true;
+  if (/^(19[4-9]\d|20[0-2]\d)$/.test(pin)) return true;   // a year, most often a birth year
+  return ['1212', '2580', '1004', '2000', '1122', '6969', '1313', '2001', '2020', '2024', '2025', '2026'].includes(pin);
+}
+const lockedFor = (u) => (u.wallet_pin_locked_until && new Date(u.wallet_pin_locked_until).getTime() > Date.now()
+  ? Math.ceil((new Date(u.wallet_pin_locked_until).getTime() - Date.now()) / 60000) : 0);
+
+// Create, change or reset the PIN. { pin, pass?, codeOk? }:
+//  - no PIN yet: allowed for a brand-new account, otherwise needs the code sent to the phone
+//  - changing: needs a wallet pass (the current PIN or fingerprint), or the code (forgotten PIN)
+// `codeOk` is true when the route has already checked a one-time code for this phone.
+async function setPin(user, { pin, pass, codeOk }) {
+  pin = String(pin || '');
+  if (!/^\d{4}$/.test(pin)) throw err('Choose a 4-digit PIN.');
+  if (weakPin(pin)) throw err('That PIN is too easy to guess. Choose another.');
+  const had = !!user.wallet_pin_hash;
+  const fresh = !had && Date.now() - new Date(user.created_at).getTime() < NEW_ACCOUNT_MS;
+  if (!codeOk && !fresh && !(had && auth.verifyWalletPass(pass, user.id))) throw err('Confirm it’s you with the code we send to your phone.', 403, 'NEED_CODE');
+  if (had && await bcrypt.compare(pin, user.wallet_pin_hash)) throw err('That’s your current PIN. Choose a different one.');
+  await db.query('UPDATE users SET wallet_pin_hash = $1, wallet_pin_fails = 0, wallet_pin_locked_until = NULL, wallet_pin_set_at = NOW() WHERE id = $2', [await bcrypt.hash(pin, 10), user.id]);
+  // A reset by code also clears fingerprint set-ups: whoever reset it starts clean on this phone.
+  if (had && codeOk) await clearBiometrics(user.id);
+  return { ok: true, pass: auth.signWalletPass(user.id), changed: had };
+}
+
+// Checks the PIN and gives a wallet pass. Wrong PINs count; five lock the wallet for 15 minutes.
+async function unlockPin(user, pin) {
+  if (!user.wallet_pin_hash) throw err('Create your Wallet PIN first.', 403, 'WALLET_SETUP');
+  const mins = lockedFor(user);
+  if (mins) throw err(`Too many wrong PINs. Your wallet is locked for ${mins} more minute${mins === 1 ? '' : 's'}.`, 429, 'PIN_LOCKED');
+  if (!/^\d{4}$/.test(String(pin || '')) || !(await bcrypt.compare(String(pin), user.wallet_pin_hash))) {
+    const fails = (user.wallet_pin_fails || 0) + 1, lock = fails >= PIN_TRIES;
+    await db.query('UPDATE users SET wallet_pin_fails = $1, wallet_pin_locked_until = $2 WHERE id = $3', [lock ? 0 : fails, lock ? new Date(Date.now() + PIN_LOCK_MS) : null, user.id]);
+    if (lock) throw err('Too many wrong PINs. Your wallet is locked for 15 minutes.', 429, 'PIN_LOCKED');
+    const left = PIN_TRIES - fails;
+    throw err(`Wrong PIN. ${left} ${left === 1 ? 'try' : 'tries'} left.`, 400, 'PIN_WRONG');
+  }
+  if (user.wallet_pin_fails) await db.query('UPDATE users SET wallet_pin_fails = 0, wallet_pin_locked_until = NULL WHERE id = $1', [user.id]);
+  return { ok: true, pass: auth.signWalletPass(user.id) };
+}
+
+async function clearBiometrics(userId) {
   await db.query('DELETE FROM passkeys WHERE user_id = $1', [userId]);
   await db.query('DELETE FROM wallet_devices WHERE user_id = $1', [userId]);
   await db.query('UPDATE users SET wallet_lock = FALSE WHERE id = $1', [userId]);
 }
 
-// Rider actions that spend wallet money call this. Locked wallets need a fresh pass.
-function needsPass(user, pass) { return !!user.wallet_lock && !auth.verifyWalletPass(pass, user.id); }
+// Everything that spends wallet money calls this: a fresh wallet pass is always needed.
+function needsPass(user, pass) { return !auth.verifyWalletPass(pass, user.id); }
 
-module.exports = { registrationOptions, register, authOptions, authenticate, registerDevice, unlockDevice, status, turnOff, needsPass, _challenges: challenges };
+module.exports = { registrationOptions, register, authOptions, authenticate, registerDevice, unlockDevice, status, turnOff, needsPass, setPin, unlockPin, weakPin, _challenges: challenges };

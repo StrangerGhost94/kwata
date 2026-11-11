@@ -2,6 +2,7 @@
 // at busy times, free late cancellations (Flytte still pays the driver), auto-renew from the wallet.
 const { io } = require('socket.io-client');
 const BASE = process.env.BASE || 'http://localhost:3000';
+const wp = (token) => require('./_wallet')(BASE, token);   // a wallet pass (the rider's Wallet PIN)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = () => String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 async function call(path, body, token, method) {
@@ -26,7 +27,7 @@ const trip = { pickup, drop, distanceKm: 3.2, durationMin: 12 };
     // Use up the first-ride offer so it doesn't hide the pass discount.
     let p = await api('/me/pass', null, rider.token);
     ok(p.active === false && p.offer.price === 15000, 'a new rider has no pass yet');
-    ok((await call('/me/pass/buy', { method: 'wallet' }, rider.token)).status === 400, 'buying from an empty wallet is refused');
+    ok((await call('/me/pass/buy', { method: 'wallet', walletPass: await wp(rider.token) }, rider.token)).status === 400, 'buying from an empty wallet is refused');
 
     await api('/wallet/topup', { amount: 40000, method: 'momo' }, rider.token);
     await api('/admin/settings', { services: { boda: { surge: 1.5 } } }, admin.token, 'PUT');
@@ -34,7 +35,7 @@ const trip = { pickup, drop, distanceKm: 3.2, durationMin: 12 };
     const bodaBefore = before.options.find((o) => o.id === 'boda');
     ok(bodaBefore.surge > 1 && bodaBefore.fare > bodaBefore.regularFare, 'without a pass, a busy time costs more');
 
-    const bought = await api('/me/pass/buy', { method: 'wallet' }, rider.token);
+    const bought = await api('/me/pass/buy', { method: 'wallet', walletPass: await wp(rider.token) }, rider.token);
     ok(bought.pass && bought.pass.active, 'buying from the wallet starts the pass');
     ok((await api('/wallet', null, rider.token)).balance === 25000, 'UGX 15,000 comes out of the wallet');
 
@@ -75,7 +76,7 @@ const trip = { pickup, drop, distanceKm: 3.2, durationMin: 12 };
     p = await api('/me/pass/renew', { on: false }, rider.token);
     ok(p.autoRenew === false, 'auto-renew can be switched off');
     const end1 = new Date(p.endsAt).getTime();
-    await api('/me/pass/buy', { method: 'wallet' }, rider.token);
+    await api('/me/pass/buy', { method: 'wallet', walletPass: await wp(rider.token) }, rider.token);
     p = await api('/me/pass', null, rider.token);
     ok(Math.round((new Date(p.endsAt).getTime() - end1) / 864e5) === 30, 'buying again adds 30 days to the running pass');
     ds.close();

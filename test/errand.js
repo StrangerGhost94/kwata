@@ -3,6 +3,7 @@
 // the goods go back to the courier in full, commission only on the fare; nobody can cancel once bought.
 const { io } = require('socket.io-client');
 const BASE = process.env.BASE || 'http://localhost:3000';
+const wp = (token) => require('./_wallet')(BASE, token);   // a wallet pass (the rider's Wallet PIN)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = () => String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 async function call(path, body, token) {
@@ -35,7 +36,7 @@ const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQg
   const base = { service: 'errand', paymentMethod: 'cash', pickup: shop, drop: home, distanceKm: 6, durationMin: 15 };
   ok((await call('/trips', { ...base, errand: { items: [], budget: 20000 } }, rider.token)).status === 400, 'an errand needs at least one item');
   ok((await call('/trips', { ...base, errand: { items: ['Sugar'], budget: 500000 } }, rider.token)).status === 400, 'the budget can’t go over the maximum');
-  ok((await call('/trips', { ...base, paymentMethod: 'wallet', errand: { items: ['Sugar'], budget: 50000 } }, rider.token)).status === 400, 'a wallet errand needs the wallet to cover the budget too');
+  ok((await call('/trips', { ...base, paymentMethod: 'wallet', walletPass: await wp(rider.token), errand: { items: ['Sugar'], budget: 50000 } }, rider.token)).status === 400, 'a wallet errand needs the wallet to cover the budget too');
 
   // 1. Cash errand from booking to delivery.
   const t = await api('/trips', { ...base, errand: { items: ['2 kg sugar', 'Panadol, 1 packet', 'Airtime card 10,000'], budget: 20000, substitutes: true } }, rider.token);
@@ -66,7 +67,7 @@ const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQg
   // 2. Wallet errand: items go back to the courier in full.
   await api('/wallet/topup', { amount: 60000, method: 'momo' }, rider.token);
   offer = null;
-  const t2 = await api('/trips', { ...base, paymentMethod: 'wallet', errand: { items: ['Bread'], budget: 15000 } }, rider.token);
+  const t2 = await api('/trips', { ...base, paymentMethod: 'wallet', walletPass: await wp(rider.token), errand: { items: ['Bread'], budget: 15000 } }, rider.token);
   want = t2.id; for (let i = 0; i < 40 && !offer; i++) await sleep(100); await sleep(300);
   await api(`/trips/${t2.id}/arrived`, {}, driver.token);
   await api(`/trips/${t2.id}/goods`, { total: 12000 }, driver.token);

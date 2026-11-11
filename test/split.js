@@ -2,6 +2,7 @@
 // the rider's wallet, and the rider can pay the Mobile Money trip from the wallet at the end.
 const { io } = require('socket.io-client');
 const BASE = process.env.BASE || 'http://localhost:3000';
+const wp = (token) => require('./_wallet')(BASE, token);   // a wallet pass (the rider's Wallet PIN)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = () => String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 async function call(path, body, token) {
@@ -50,19 +51,19 @@ const ok = (c, m) => { console.log(c ? '✓' : '✗', m); if (!c) failed++; };
   await api(`/trips/${t.id}/start`, { pin: t.pin }, driver.token);
   await api(`/trips/${t.id}/complete`, {}, driver.token);
   const bal0 = (await api('/driver/overview', null, driver.token)).balance;
-  const short = await call(`/trips/${t.id}/pay-wallet`, {}, rider.token);
+  const short = await call(`/trips/${t.id}/pay-wallet`, { walletPass: await wp(rider.token) }, rider.token);
   const need = payable - (await api('/wallet', null, rider.token)).balance;
   if (need > 0) {
     ok(short.status === 400, 'paying from a wallet that doesn’t cover the fare is refused');
     await api('/wallet/topup', { amount: need, method: 'momo' }, rider.token);
   }
-  await api(`/trips/${t.id}/pay-wallet`, {}, rider.token);
+  await api(`/trips/${t.id}/pay-wallet`, { walletPass: await wp(rider.token) }, rider.token);
   const a = await api('/trips/active', null, rider.token);
   ok(a.paymentStatus === 'paid' && a.paymentMethod === 'wallet', 'the trip is paid from the wallet');
   const ov = await api('/driver/overview', null, driver.token);
   const row = (await api('/driver/trips?days=1', null, driver.token)).trips.find((x) => x.id === t.id);
   ok(row && ov.balance === bal0 + row.earning && row.earning === t.fare - row.commission, 'the driver is credited the fare less commission');
-  ok((await call(`/trips/${t.id}/pay-wallet`, {}, rider.token)).status === 400, 'it can’t be paid twice');
+  ok((await call(`/trips/${t.id}/pay-wallet`, { walletPass: await wp(rider.token) }, rider.token)).status === 400, 'it can’t be paid twice');
   ds.close();
   console.log(failed ? `${failed} FAILED` : 'all split checks passed');
   process.exit(failed ? 1 : 0);

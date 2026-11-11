@@ -380,7 +380,7 @@ r.post('/me/email/settings', auth.requireAuth('rider'), wrap(async (req, res) =>
 
 // ---------- Wallet lock (fingerprint / face) ----------
 const walletlock = require('./walletlock');
-const wl = (fn) => wrap(async (req, res) => { try { res.json(await fn(req, res)); } catch (e) { if (e.status) return bad(res, e.message, e.status); throw e; } });
+const wl = (fn) => wrap(async (req, res) => { try { res.json(await fn(req, res)); } catch (e) { if (e.status) return res.status(e.status).json({ error: e.message, ...(e.code ? { code: e.code } : {}) }); throw e; } });
 r.get('/wallet/lock', auth.requireAuth('rider'), wl((req) => walletlock.status(req.user.id)));
 r.post('/wallet/lock/options', auth.requireAuth('rider'), limit(20, 10 * 60e3), wl(async (req) => {
   // Adding a phone to a lock that's already on needs proof first (fingerprint on another phone, or a code).
@@ -396,19 +396,32 @@ r.post('/wallet/lock/device', auth.requireAuth('rider'), limit(20, 10 * 60e3), w
   return walletlock.registerDevice(req);
 }));
 r.post('/wallet/unlock/device', auth.requireAuth('rider'), limit(30, 10 * 60e3), wl((req) => walletlock.unlockDevice(req)));
-r.post('/wallet/unlock/code', auth.requireAuth('rider'), limit(10, 10 * 60e3), wl(async (req) => {
-  const code = String((req.body || {}).code || '').replace(/\D/g, '');
-  if (code.length !== 6) throw Object.assign(new Error('Enter the 6-digit code.'), { status: 400 });
-  const wrong = await checkCode(req.user.phone, code);
-  if (wrong) throw Object.assign(new Error(wrong), { status: 400 });
-  return { ok: true, pass: auth.signWalletPass(req.user.id) };
+// Wallet PIN: pay with it, create it, change it, reset it (src/walletlock.js).
+r.post('/wallet/unlock/pin', auth.requireAuth('rider'), limit(30, 10 * 60e3, (req) => 'user:' + req.user.id), wl((req) => walletlock.unlockPin(req.user, (req.body || {}).pin)));
+r.post('/wallet/pin', auth.requireAuth('rider'), limit(15, 10 * 60e3, (req) => 'user:' + req.user.id), wl(async (req) => {
+  const b = req.body || {};
+  let codeOk = false;
+  if (b.code != null && b.code !== '') {
+    const code = String(b.code).replace(/\D/g, '');
+    if (code.length !== 6) throw Object.assign(new Error('Enter the 6-digit code.'), { status: 400 });
+    const wrong = await checkCode(req.user.phone, code);
+    if (wrong) throw Object.assign(new Error(wrong), { status: 400 });
+    codeOk = true;
+  }
+  const out = await walletlock.setPin(req.user, { pin: b.pin, pass: b.pass, codeOk });
+  if (out.changed) dtools.push(req.user.id, { app: 'rider', type: 'security', tag: 'wallet-pin', title: 'Your Wallet PIN was changed', body: 'If this wasn’t you, contact Flytte support straight away.' }, { ttl: 86400, urgency: 'high' }).catch(() => {});
+  return { ok: true, pass: out.pass };
 }));
 r.post('/wallet/lock/off', auth.requireAuth('rider'), wl(async (req) => {
   if (walletlock.needsPass(req.user, (req.body || {}).pass)) throw Object.assign(new Error('Confirm it’s you first.'), { status: 403 });
   await walletlock.turnOff(req.user.id);
   return { ok: true };
 }));
-const walletLocked = (res) => res.status(403).json({ error: 'Confirm it’s you to pay from your wallet.', code: 'WALLET_LOCK' });
+// The paying request had no valid wallet pass: the app asks for the PIN or fingerprint (or, when
+// there's no PIN yet, to create one) and sends the request again.
+const walletLocked = (res, user) => res.status(403).json(user && !user.wallet_pin_hash
+  ? { error: 'Create your Wallet PIN to pay from your wallet.', code: 'WALLET_SETUP' }
+  : { error: 'Confirm it’s you to pay from your wallet.', code: 'WALLET_LOCK' });
 
 // ---------- Sign in with an SMS code ----------
 const OTP_TTL = 5 * 60e3, OTP_RESEND = 30e3, OTP_PER_HOUR = 5, OTP_TRIES = 5;
@@ -841,7 +854,7 @@ r.post('/trips', auth.requireAuth('rider'), wrap(async (req, res) => {
   if (company && company.require_reason && !merchant && !tripReason) return res.status(400).json({ error: `${company.name} asks for a reason for work trips, e.g. “Client meeting”.`, code: 'NEED_REASON' });
   const discount = promo.discount || 0;
   const passSaving = myPass ? surgeSaved + (promo.pass ? discount : 0) : 0;
-  if (paymentMethod === 'wallet' && walletlock.needsPass(req.user, req.body.walletPass)) return walletLocked(res);
+  if (paymentMethod === 'wallet' && walletlock.needsPass(req.user, req.body.walletPass)) return walletLocked(res, req.user);
   // "Buy it for me": what to buy, a budget for the goods, and whether substitutes are fine.
   let errandJson = null, budget = 0;
   if (service === 'errand') {
@@ -1092,7 +1105,7 @@ r.post('/trips/:id/pay', auth.requireAuth('rider'), wrap(async (req, res) => {
 r.post('/trips/:id/pay-wallet', auth.requireAuth('rider'), wrap(async (req, res) => {
   const t = await ownTrip(req, res, 'rider');
   if (!t) return;
-  if (walletlock.needsPass(req.user, (req.body || {}).walletPass)) return walletLocked(res);
+  if (walletlock.needsPass(req.user, (req.body || {}).walletPass)) return walletLocked(res, req.user);
   let out;
   await db.tx(async (tx) => { out = await ledger.payFromWallet(tx, t.id); });
   if (out.error) return bad(res, out.error);
@@ -1339,7 +1352,7 @@ r.post('/trips/:id/tip', auth.requireAuth('rider'), wrap(async (req, res) => {
   const amount = Math.round(Number(req.body.amount));
   const method = req.body.method === 'wallet' ? 'wallet' : 'cash';
   if (!(amount >= 500 && amount <= 50000)) return bad(res, 'Tips are between UGX 500 and 50,000.');
-  if (method === 'wallet' && walletlock.needsPass(req.user, req.body.walletPass)) return walletLocked(res);
+  if (method === 'wallet' && walletlock.needsPass(req.user, req.body.walletPass)) return walletLocked(res, req.user);
   let out;
   await db.tx(async (tx) => { out = await ledger.tipDriver(tx, t, amount, method); });
   if (out.error) return bad(res, out.error);
@@ -1410,7 +1423,7 @@ r.post('/me/pass/buy', auth.requireAuth('rider'), limit(10, 3600e3, (req) => 'us
     catch (e) { if (e instanceof payments.PaymentsUnavailable) return bad(res, e.message, 503); throw e; }
     return res.json({ ...out, pass: out.demo ? await pass.summary(req.user.id) : undefined });
   }
-  if (walletlock.needsPass(req.user, (req.body || {}).walletPass)) return walletLocked(res);
+  if (walletlock.needsPass(req.user, (req.body || {}).walletPass)) return walletLocked(res, req.user);
   const out = await pass.buyWithWallet(req.user.id);
   if (out.error) return bad(res, out.error);
   res.json({ ok: true, pass: await pass.summary(req.user.id) });
@@ -1451,6 +1464,7 @@ async function paymentSettled(p) {
   rt.notify(p.user_id, 'payment:update', { txRef: p.tx_ref, status: 'successful', purpose: p.purpose });
 }
 r.paymentSettled = paymentSettled;
+r.supportPhoneNow = async () => supportPhone(await getSettings()) || '';   // for the company page
 
 // The app (or the split page) waits on this after a Mobile Money prompt is sent. The reference is the
 // secret: it's long and random, and only says how that one payment went. Relworx is asked at most every

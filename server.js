@@ -101,6 +101,15 @@ app.get('/business', (req, res) => res.redirect('/?open=business' + (req.query.p
 app.get('/shops', (req, res) => res.redirect('/?open=shop'));
 app.get(['/admin', '/admin.html'], page('admin.html'));
 app.get(['/about', '/about.html'], page('about.html'));
+// Company information (legal name, registration, address, contacts) for business checks: src/company.js.
+app.get(['/company', '/about-us', '/legal'], async (req, res, next) => {
+  try {
+    const phone = require('./src/routes').supportPhoneNow ? await require('./src/routes').supportPhoneNow() : '';
+    const site = (process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.type('html').send(require('./src/company').html(phone, site));
+  } catch (e) { next(e); }
+});
 // The service worker must never be cached by the browser, or updates get stuck.
 app.get('/sw.js', (req, res) => { res.setHeader('Cache-Control', 'no-cache'); res.sendFile(path.join(__dirname, 'public', 'sw.js')); });
 // Inter, served from here (not Google): the same font on Android as the app's design, at once and offline.

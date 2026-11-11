@@ -222,12 +222,12 @@
     eng.supported = async () => { try { const r = await Bio.isAvailable({ useFallback: false }); kind = r.biometryType || 0; return !!r.isAvailable; } catch { return false; } };
     eng.bioName = () => (kind === 2 ? 'Face ID' : kind === 1 ? 'Touch ID' : PLATFORM === 'ios' ? 'Face ID or Touch ID' : 'fingerprint or face unlock');
     eng.prepare = async () => null;
-    eng.create = async () => {
+    eng.create = async (_opts, pass) => {
       const deviceId = hex(24), secret = hex(32);
       try {
         await Bio.setCredentials({ server: SERVER, username: deviceId, password: secret, accessControl: 2 });   // BIOMETRY_ANY
       } catch (e) { throw new Error(cancelled(e) ? 'Not set up. Try again when you’re ready.' : 'This phone couldn’t save your wallet lock. Check that fingerprint or face unlock is set up.'); }
-      const out = await K.api('/wallet/lock/device', { deviceId, secret, device: PLATFORM === 'ios' ? 'iPhone (Flytte app)' : 'Android phone (Flytte app)' });
+      const out = await K.api('/wallet/lock/device', { deviceId, secret, pass, device: PLATFORM === 'ios' ? 'iPhone (Flytte app)' : 'Android phone (Flytte app)' });
       store.set(DEV, deviceId);
       return out;
     };

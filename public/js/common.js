@@ -1455,9 +1455,10 @@
     step1();
   };
 
-  // ---------- Wallet lock: fingerprint / face (passkeys) ----------
-  // Money leaves a locked wallet only after the phone's own fingerprint or face unlock (checked by
-  // the server), or a one-time code as the fallback. Returns a short-lived "pass" for the request.
+  // ---------- Wallet security: PIN, plus fingerprint / face ----------
+  // Money leaves the wallet only after the Wallet PIN, or the phone's own fingerprint or face unlock
+  // on a phone that's been set up (both checked by the server). Returns a short-lived "pass" that
+  // the paying request carries. Everyone has it: there is no off switch (src/walletlock.js).
   K.walletLock = (() => {
     const toBuf = (s) => { const t = String(s).replace(/-/g, '+').replace(/_/g, '/'); const raw = atob(t + '='.repeat((4 - (t.length % 4)) % 4)); return Uint8Array.from(raw, (c) => c.charCodeAt(0)).buffer; };
     const b64u = (b) => { let x = ''; new Uint8Array(b).forEach((c) => { x += String.fromCharCode(c); }); return btoa(x).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
@@ -1494,61 +1495,133 @@
     // How the fingerprint / face step works: passkeys on the web. The store apps swap in the phone's
     // own biometric secure storage (native.js), because passkeys don't work in every app web view.
     const engine = { supported, prepare, create, bioName, options: () => K.api('/wallet/unlock/options', {}), assert };
-    // The confirm sheet: fingerprint/face first, a one-time code as the fallback. Resolves to a pass or null.
-    function unlock({ amount, title } = {}) {
+    // ---- the wallet sheet ----
+    // One sheet for every wallet moment. Resolves to a wallet pass (to send with the payment) or null.
+    //   mode 'pay'    : enter the PIN (or fingerprint); creates the PIN first if there isn't one
+    //   mode 'change' : confirm it's you, then choose a new PIN
+    function unlock({ amount, title, mode = 'pay' } = {}) {
       return new Promise((resolve) => {
-        let done = false, opts = null;
+        let done = false;
         const finish = (v) => { if (done) return; done = true; m.close(); resolve(v); };
         const m = K.modal(`<div class="unlock">
           <div class="unlock-ic">${K.ic('lock')}</div>
-          <h2>${K.esc(title || 'Confirm it’s you')}</h2>
-          <p class="muted">${amount ? `Pay <b>${K.ugx(amount)}</b> from your Flytte Wallet.` : 'Your Flytte Wallet is locked.'}</p>
+          <h2 data-title></h2>
+          <p class="muted" data-sub></p>
           <p class="error" role="alert"></p>
-          <div data-step>
-            <button class="btn btn-primary btn-block btn-lg" data-bio disabled>Use ${engine.bioName()}</button>
-            <button class="btn btn-ghost btn-block" data-code>Use a code instead</button>
-          </div></div>`, { onClose: () => { if (!done) { done = true; resolve(null); } } });
-        const err = K.$('.error', m.el), bio = K.$('[data-bio]', m.el);
-        engine.supported().then((ok) => ok ? engine.options() : null).then((o) => {
-          if (o && !o.none) { opts = o; bio.disabled = false; } else { bio.hidden = true; }
-        }).catch(() => { bio.hidden = true; });
-        bio.onclick = async () => {
-          if (!opts) return;
-          err.textContent = ''; bio.disabled = true;
-          const o = opts; opts = null;
-          try { finish(await engine.assert(o)); }
-          catch (e) {
-            err.textContent = e.name === 'NotAllowedError' ? 'Not confirmed. Try again, or use a code.' : e.message;
+          <div data-step><p class="small muted" style="text-align:center">${K.ic ? '' : ''}One moment…</p></div></div>`, { onClose: () => { if (!done) { done = true; resolve(null); } } });
+        const $ = (q) => K.$(q, m.el), err = $('.error'), step = $('[data-step]');
+        const head = (t, sub) => { $('[data-title]').textContent = t; $('[data-sub]').innerHTML = sub || ''; err.textContent = ''; };
+        const pinField = (id, label) => `<label for="${id}" class="sr-only">${label}</label>
+          <input id="${id}" class="pin-input wallet-pin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" placeholder="••••" aria-label="${label}">`;
+        const focus = (el) => setTimeout(() => { try { el.focus({ preventScroll: true }); } catch {} }, 320);
+        const digits = (inp, n, go) => { inp.oninput = () => { inp.value = inp.value.replace(/\D/g, '').slice(0, n); if (inp.value.length === n) go(inp.value); }; };
+        const payLine = amount ? `Pay <b>${K.ugx(amount)}</b> from your Flytte Wallet.` : '';
+
+        // ---- enter the PIN (with fingerprint / face when this phone has it set up)
+        async function enter(reason) {
+          head(title || (mode === 'change' ? 'Confirm it’s you' : 'Enter your Wallet PIN'), reason || payLine || 'Your Flytte Wallet is protected.');
+          step.innerHTML = `${pinField('wp', 'Wallet PIN')}
+            <button class="btn btn-block btn-lg hidden" data-bio>Use ${engine.bioName()}</button>
+            <button class="btn btn-ghost btn-block" data-forgot>Forgot your PIN?</button>`;
+          const inp = $('#wp'), bio = $('[data-bio]');
+          let opts = null, busy = false;
+          digits(inp, 4, async (pin) => {
+            if (busy) return; busy = true; err.textContent = '';
+            try { const r = await K.api('/wallet/unlock/pin', { pin }); K.hapticNotify('SUCCESS'); mode === 'change' ? create({ pass: r.pass }) : finish(r.pass); }
+            catch (e) { K.hapticNotify('ERROR', [60, 60, 60]); inp.value = ''; err.textContent = e.message; if (e.code === 'PIN_LOCKED') { inp.disabled = true; } else focus(inp); }
+            busy = false;
+          });
+          $('[data-forgot]').onclick = () => code('Reset your Wallet PIN', (c) => create({ code: c, reset: true }));
+          const useBio = async () => {
+            if (!opts) return;
+            err.textContent = ''; bio.disabled = true;
+            const o = opts; opts = null;
+            try { const pass = await engine.assert(o); K.hapticNotify('SUCCESS'); mode === 'change' ? create({ pass }) : finish(pass); }
+            catch (e) { err.textContent = e.name === 'NotAllowedError' ? 'Not confirmed. Enter your PIN instead.' : e.message; focus(inp); }
             try { opts = await engine.options(); bio.disabled = !opts || !!opts.none; } catch {}
-          }
-        };
-        K.$('[data-code]', m.el).onclick = async () => {
-          const step = K.$('[data-step]', m.el);
-          const u = K.session.get && K.session.get();
-          const phone = u && u.user && u.user.phone;
-          err.textContent = '';
-          step.innerHTML = '<p class="small muted" style="margin:0 0 10px">Sending a code to your phone…</p>';
+          };
+          bio.onclick = useBio;
+          focus(inp);
+          try {
+            if (await engine.supported()) { const o = await engine.options(); if (o && !o.none) { opts = o; bio.classList.remove('hidden'); } }
+          } catch {}
+        }
+
+        // ---- choose a PIN (first time, change, or reset with a code)
+        function create({ pass, code: otp, reset } = {}) {
+          head(reset ? 'Choose a new Wallet PIN' : pass ? 'Choose a new Wallet PIN' : 'Create your Wallet PIN',
+            pass || reset ? '4 digits you’ll remember, that others can’t guess.' : `${payLine ? payLine + ' ' : ''}You’ll enter this PIN each time you pay from your wallet, like mobile money.`);
+          step.innerHTML = `${pinField('np', 'New Wallet PIN')}<p class="small muted" data-hint style="text-align:center;margin:8px 0 0">4 digits. Not 1234, your birth year or a repeated digit.</p>`;
+          const inp = $('#np'), hint = $('[data-hint]');
+          let first = null, busy = false;
+          digits(inp, 4, async (pin) => {
+            if (busy) return;
+            if (first == null) { first = pin; inp.value = ''; hint.textContent = 'Enter it again to confirm.'; err.textContent = ''; return; }
+            if (pin !== first) { first = null; inp.value = ''; hint.textContent = '4 digits. Not 1234, your birth year or a repeated digit.'; err.textContent = 'Those didn’t match. Start again.'; return; }
+            busy = true; err.textContent = '';
+            try {
+              const r = await K.api('/wallet/pin', { pin, pass, code: otp });
+              K.hapticNotify('SUCCESS');
+              try { const sx = K.session.get(); if (sx && sx.user) { sx.user.walletPin = true; K.session.set(sx); } } catch {}
+              document.dispatchEvent(new CustomEvent('flytte:wallet-pin'));
+              offerBio(r.pass, pass || reset ? 'Your Wallet PIN is changed' : 'Your wallet is protected');
+            } catch (e) {
+              busy = false;
+              if (e.code === 'NEED_CODE') return code('Confirm it’s you', (c) => create({ code: c }));
+              first = null; inp.value = ''; hint.textContent = '4 digits. Not 1234, your birth year or a repeated digit.'; err.textContent = e.message; focus(inp);
+            }
+          });
+          focus(inp);
+        }
+
+        // ---- a one-time code to this phone (forgotten PIN, or a first PIN on an older account)
+        async function code(titleText, next) {
+          const u = (K.session.get() || {}).user || {};
+          head(titleText, 'Sending a code to your phone…');
+          step.innerHTML = '';
           let channel = 'sms';
           try { const c = await K.cfg(); if (c.codeChannels && c.codeChannels.length) channel = c.codeChannels.includes('sms') ? 'sms' : c.codeChannels[0]; } catch {}
-          try {
-            const out = await K.api('/auth/otp/send', { phone, channel });
-            if (out.demoCode) K.toast(`Test mode: your code is ${out.demoCode}`, 8000);
-          } catch (e) { step.innerHTML = ''; err.textContent = e.message; return; }
-          step.innerHTML = `<label for="wc">Enter the 6-digit code we sent to ${K.esc(K.prettyPhone ? K.prettyPhone(phone) : phone)}</label>
-            <input id="wc" class="pin-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">
-            <button class="btn btn-primary btn-block btn-lg" data-ok style="margin-top:12px">Confirm</button>`;
-          const inp = K.$('#wc', m.el); setTimeout(() => inp.focus({ preventScroll: true }), 300);
-          const go = async () => {
-            err.textContent = '';
-            try { finish((await K.api('/wallet/unlock/code', { code: inp.value })).pass); }
-            catch (e) { err.textContent = e.message; }
+          try { const out = await K.api('/auth/otp/send', { phone: u.phone, channel }); if (out.demoCode) K.toast(`Test mode: your code is ${out.demoCode}`, 8000); }
+          catch (e) { err.textContent = e.message; step.innerHTML = '<button class="btn btn-block" data-again>Try again</button>'; $('[data-again]').onclick = () => code(titleText, next); return; }
+          head(titleText, `Enter the 6-digit code we sent to ${K.esc(K.prettyPhone ? K.prettyPhone(u.phone) : u.phone)}.`);
+          step.innerHTML = `<label for="wc" class="sr-only">6-digit code</label><input id="wc" class="pin-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">`;
+          const inp = $('#wc');
+          digits(inp, 6, (c) => next(c));
+          focus(inp);
+        }
+
+        // ---- after a PIN is set: offer the quick way (fingerprint / face), once
+        async function offerBio(pass, doneTitle) {
+          let can = false, has = false;
+          try { can = await engine.supported(); if (can) { const o = await engine.options(); has = !!(o && !o.none); } } catch {}
+          if (!can || has) { K.toast(doneTitle); return finish(pass); }
+          head(doneTitle, `Pay faster next time with ${engine.bioName()}? Your PIN always works too.`);
+          step.innerHTML = `<button class="btn btn-primary btn-block btn-lg" data-yes disabled>Use ${engine.bioName()}</button><button class="btn btn-ghost btn-block" data-no>Not now</button>`;
+          const yes = $('[data-yes]');
+          $('[data-no]').onclick = () => finish(pass);
+          engine.prepare(pass).then(() => { yes.disabled = false; }).catch(() => finish(pass));   // ready before the tap (iPhone needs the tap to start Face ID)
+          yes.onclick = async () => {
+            yes.disabled = true; err.textContent = '';
+            try { await engine.create(null, pass); K.toast(`${engine.bioName()} is on for your wallet`); } catch (e) { if (e.name !== 'NotAllowedError') K.toast(e.message || 'That didn’t work. You can turn it on later in your wallet.', 5000); }
+            finish(pass);
           };
-          K.$('[data-ok]', m.el).onclick = go;
-          inp.oninput = () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 6); if (inp.value.length === 6) go(); };
-        };
+        }
+
+        K.api('/wallet/lock').then((st) => {
+          if (!st.pinSet) return create({});
+          enter(st.lockedMinutes ? `Too many wrong PINs. Try again in ${st.lockedMinutes} minute${st.lockedMinutes === 1 ? '' : 's'}, or reset your PIN.` : '');
+          if (st.lockedMinutes) { const i = $('#wp'); if (i) i.disabled = true; }
+        }).catch((e) => { err.textContent = e.message; step.innerHTML = '<button class="btn btn-block" data-close>Close</button>'; });
       });
     }
-    return { supported: () => engine.supported(), prepare: (p) => engine.prepare(p), create: (o) => engine.create(o), unlock, bioName: () => engine.bioName(), engine };
+    // Turn fingerprint / face on (needs the PIN first) or off, from the wallet screen.
+    async function setBiometric(on) {
+      const pass = await unlock({ title: on ? `Turn on ${engine.bioName()}` : `Turn off ${engine.bioName()}?` });
+      if (!pass) return null;
+      if (on) { await engine.prepare(pass); await engine.create(null, pass); return true; }
+      await K.api('/wallet/lock/off', { pass }); return false;
+    }
+    return { supported: () => engine.supported(), unlock, changePin: () => unlock({ mode: 'change' }), setBiometric, bioName: () => engine.bioName(), engine };
   })();
 
   K.openSettings = function ({ role = APP, onBack } = {}) {

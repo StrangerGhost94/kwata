@@ -155,8 +155,8 @@ function fakeCapacitor([version, platform]) {
     ok((await r.p.evaluate(() => __cap.calls.filter(([n]) => n === 'Review.requestReview').length)) === 1, 'the second does, once (then not again for months)');
 
     ok(await r.p.evaluate(async () => (await K.walletLock.supported()) && K.walletLock.bioName() === 'fingerprint or face unlock'), 'wallet lock: the phone’s own fingerprint unlock is offered');
-    const created = await r.p.evaluate(async () => { const o = await K.walletLock.create(); return { o, set: __cap.calls.find(([n]) => n === 'Bio.setCredentials')[1] }; });
-    ok(created.o.ok && created.o.pass && created.set.accessControl === 2, 'turning it on keeps a secret behind the phone’s biometrics and registers this phone');
+    const created = await r.p.evaluate(async () => { const pin = await K.api('/wallet/pin', { pin: '4827' }); const o = await K.walletLock.engine.create(null, pin.pass); return { o, set: __cap.calls.find(([n]) => n === 'Bio.setCredentials')[1] }; });
+    ok(created.o.ok && created.o.pass && created.set.accessControl === 2, 'turning it on (after the Wallet PIN) keeps a secret behind the phone’s biometrics and registers this phone');
     ok((await call('/wallet/lock', null, rid.token)).body.enabled === true, 'the server has the wallet lock on');
     const pass = await r.p.evaluate(async () => { const o = await K.walletLock.engine.options(); return o.native ? K.walletLock.engine.assert(o) : null; });
     ok(typeof pass === 'string' && pass.length > 20, 'paying from the wallet: fingerprint → the server gives a wallet pass');
