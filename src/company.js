@@ -59,7 +59,7 @@ function html(supportPhone, site) {
 <p class="lg-date">${esc(name)}${c.name ? ', trading as Flytte' : ''}</p>
 
 <div class="lg-sum"><b>What we do</b>
-<p style="margin:0">${esc(name)} runs <b>Flytte</b>, a ride-hailing and delivery service in Kampala, Uganda. Riders book boda boda and car rides, parcel deliveries, errands and airport transfers in the Flytte app, and pay with cash, MTN or Airtel Mobile Money, card or an in-app wallet. Independent drivers take trips through the Flytte Driver app.</p></div>
+<p style="margin:0">${esc(name)} runs <strong>Flytte</strong>, a ride-hailing and delivery service in Kampala, Uganda. Riders book boda boda and car rides, parcel deliveries, errands and airport transfers in the Flytte app, and pay with cash, MTN or Airtel Mobile Money, card or an in-app wallet. Independent drivers take trips through the Flytte Driver app.</p></div>
 
 <h2>Company details</h2>
 <table class="co-table">
