@@ -1464,6 +1464,7 @@ async function paymentSettled(p) {
   rt.notify(p.user_id, 'payment:update', { txRef: p.tx_ref, status: 'successful', purpose: p.purpose });
 }
 r.paymentSettled = paymentSettled;
+r.supportPhoneNow = async () => supportPhone(await getSettings()) || '';   // for the company page
 
 // The app (or the split page) waits on this after a Mobile Money prompt is sent. The reference is the
 // secret: it's long and random, and only says how that one payment went. Relworx is asked at most every

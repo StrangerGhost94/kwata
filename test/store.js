@@ -24,7 +24,8 @@ const EXE = process.env.CHROME || ['/opt/google/chrome/chrome', '/opt/pw-browser
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flytte-store-'));
   const app = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
     cwd: dir, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PORT: String(PORT), DATABASE_URL: '', APPLE_TEAM_ID: 'ABCDE12345', ANDROID_CERT_SHA256: CERT, MIN_APP_VERSION_DRIVER: '1.2.0', APPSTORE_ID_RIDER: '6400000001', SUPPORT_EMAIL: 'help@flytte.co' },
+    env: { ...process.env, PORT: String(PORT), DATABASE_URL: '', APPLE_TEAM_ID: 'ABCDE12345', ANDROID_CERT_SHA256: CERT, MIN_APP_VERSION_DRIVER: '1.2.0', APPSTORE_ID_RIDER: '6400000001', SUPPORT_EMAIL: 'help@flytte.co',
+      COMPANY_NAME: 'Flytte Technologies Ltd', COMPANY_REG_NO: '80020001234567', COMPANY_ADDRESS: 'Plot 12 Kampala Road | Kampala', COMPANY_TIN: '' },
   });
   let log = ''; app.stdout.on('data', (d) => { log += d; }); app.stderr.on('data', (d) => { log += d; });
   try {
@@ -54,6 +55,9 @@ const EXE = process.env.CHROME || ['/opt/google/chrome/chrome', '/opt/pw-browser
     ok(/client error .*"platform":"ios".*TypeError: x is undefined/.test(log), 'and written to the server log with the app and platform');
 
     // ---- public pages
+    const co = await call('/company');
+    ok(co.status === 200 && /Flytte Technologies Ltd, trading as Flytte/.test(co.text) && /80020001234567/.test(co.text) && /Plot 12 Kampala Road<br>Kampala/.test(co.text), '/company shows the legal name, registration number and address that are set');
+    ok(!/<script src=/.test(co.text) && /"legalName":"Flytte Technologies Ltd"/.test(co.text) && !/Tax identification/.test(co.text), 'as plain HTML with structured data, leaving out what isn’t set');
     for (const p of ['/support', '/delete-account']) { const r = await call(p); ok(r.status === 200 && /<h1>/.test(r.text), `${p} is public`); }
     ok(/flytte\.co\/delete-account/.test((await call('/privacy')).text), 'the privacy policy links to the deletion page');
 

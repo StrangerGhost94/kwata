@@ -38,7 +38,7 @@ const call = async (p, b) => (await fetch(BASE + '/api' + p, { method: b ? 'POST
   await scan('rider account', '/', rider, 'rider', async (p) => { await p.click('[data-tab="account"]'); });
   await scan('driver home', '/driver', driver, 'driver');
   await scan('driver earnings', '/driver', driver, 'driver', async (p) => { await p.click('[data-tab="earnings"]'); });
-  for (const u of ['/about', '/terms', '/privacy', '/support', '/delete-account']) await scan('page ' + u, u, null, 'rider');
+  for (const u of ['/about', '/terms', '/privacy', '/support', '/delete-account', '/company']) await scan('page ' + u, u, null, 'rider');
   await b.close(); srv.kill();
   console.log(failed ? `${failed} accessibility problem(s)` : 'all accessibility checks passed');
   process.exit(failed ? 1 : 0);

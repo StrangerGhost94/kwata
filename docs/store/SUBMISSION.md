@@ -42,7 +42,7 @@ To redraw them: `node tools/store-assets.js` and `node tools/store-screenshots.j
 
 ## 1. Accounts (start now, the waiting is the slow part)
 
-1. Get a free **D-U-N-S number** for the company (dnb.com). It can take up to two weeks.
+1. Get a free **D-U-N-S number** for the company (dnb.com). It can take up to two weeks. Give `https://flytte.co/company` as the company website. Set the `COMPANY_…` variables first (section 3), so the page shows the same legal name and address as your registration documents.
 2. Join the **Apple Developer Program** as an organisation (US$99 a year).
 3. Create a **Google Play Console** organisation account (US$25 once). An organisation account doesn't need the 14-day, 12-tester closed test that new personal accounts must run.
 4. Create a **Firebase** project (free), for push alerts.
@@ -72,6 +72,7 @@ To redraw them: `node tools/store-assets.js` and `node tools/store-screenshots.j
 | `APPSTORE_ID_RIDER`, `APPSTORE_ID_DRIVER` | the numeric App Store IDs, once the apps exist in App Store Connect | the "Update" button on iPhone |
 | `MIN_APP_VERSION` (or `_RIDER` / `_DRIVER`) | e.g. `1.0.0`; leave unset until needed | forcing very old versions to update |
 | `SUPPORT_EMAIL` | default `support@flytte.co` | the support page and the apps |
+| `COMPANY_NAME`, `COMPANY_REG_NO`, `COMPANY_ADDRESS` (use ` \| ` between lines), and optionally `COMPANY_TIN`, `COMPANY_FOUNDED`, `COMPANY_DIRECTORS`, `COMPANY_EMAIL`, `COMPANY_PHONE` | the company's registered details, exactly as on the certificate of incorporation | the company page at `https://flytte.co/company`, which is the website to give Dun & Bradstreet, Apple and Google |
 | `FLW_CARD_WALLETS` | `googlepay,applepay` (either or both), once Flutterwave has switched them on for your account and UGX | Google Pay / Apple Pay on card checkout. Apple Pay appears on the website in Safari; Apple turns it off inside apps' web pages, so the iPhone app shows cards. |
 | `REVIEW_CODE`, `REVIEW_RIDER_PHONE`, `REVIEW_DRIVER_PHONE`, `REVIEW_PIN` | see section 5 | app review only |
 
